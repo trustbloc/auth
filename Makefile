@@ -13,7 +13,7 @@ ALPINE_VER ?= 3.11
 GO_VER ?= 1.14
 
 .PHONY: all
-all: checks unit-test
+all: checks unit-test bdd-test
 
 .PHONY: checks
 checks: license lint
@@ -43,9 +43,24 @@ auth-rest-docker:
 	--build-arg GO_VER=$(GO_VER) \
 	--build-arg ALPINE_VER=$(ALPINE_VER) .
 
+.PHONY: bdd-test
+bdd-test: clean auth-rest-docker generate-test-keys
+	@scripts/check_integration.sh
+
+
+.PHONY: generate-test-keys
+generate-test-keys: clean
+	@mkdir -p -p test/bdd/fixtures/keys/tls
+	@docker run -i --rm \
+		-v $(abspath .):/opt/workspace/hub-auth \
+		--entrypoint "/opt/workspace/hub-auth/scripts/generate_test_keys.sh" \
+		frapsoft/openssl
+
 .PHONY: clean
 clean: clean-build
 
 .PHONY: clean-build
 clean-build:
 	@rm -Rf ./.build
+	@rm -Rf ./test/bdd/fixtures/keys/tls
+	@rm -Rf ./test/bdd/docker-compose.log
