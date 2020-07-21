@@ -13,6 +13,7 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/require"
+	"github.com/trustbloc/edge-core/pkg/log"
 )
 
 type mockServer struct{}
@@ -71,14 +72,28 @@ func TestStartCmdWithBlankEnvVar(t *testing.T) {
 }
 
 func TestStartCmdValidArgs(t *testing.T) {
-	startCmd := GetStartCmd(&mockServer{})
+	t.Run("Valid log level", func(t *testing.T) {
+		startCmd := GetStartCmd(&mockServer{})
 
-	args := []string{"--" + hostURLFlagName, "localhost:8080"}
-	startCmd.SetArgs(args)
+		args := []string{"--" + hostURLFlagName, "localhost:8080", "--" + logLevelFlagName, log.ParseString(log.DEBUG)}
+		startCmd.SetArgs(args)
 
-	err := startCmd.Execute()
+		err := startCmd.Execute()
 
-	require.Nil(t, err)
+		require.Nil(t, err)
+		require.Equal(t, log.DEBUG, log.GetLevel(""))
+	})
+	t.Run("Invalid log level - default to info", func(t *testing.T) {
+		startCmd := GetStartCmd(&mockServer{})
+
+		args := []string{"--" + hostURLFlagName, "localhost:8080", "--" + logLevelFlagName, "cherry"}
+		startCmd.SetArgs(args)
+
+		err := startCmd.Execute()
+
+		require.Nil(t, err)
+		require.Equal(t, log.INFO, log.GetLevel(""))
+	})
 }
 
 func TestHealthCheck(t *testing.T) {

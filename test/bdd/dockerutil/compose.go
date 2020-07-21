@@ -10,13 +10,15 @@ import (
 	"crypto/rand"
 	"fmt"
 	"io"
-	"log"
 	"os"
 	"os/exec"
 	"strings"
 
 	docker "github.com/fsouza/go-dockerclient"
+	"github.com/trustbloc/edge-core/pkg/log"
 )
+
+var logger = log.New("bdd-test-dockerutil")
 
 const dockerComposeCommand = "docker-compose"
 
@@ -131,7 +133,7 @@ func (c *Composition) Decompose(dir string) (output string, err error) {
 
 	_, err = c.issueCommand([]string{"stop"}, dir)
 	if err != nil {
-		log.Fatal(err)
+		logger.Fatalf(err.Error())
 	}
 
 	outputBytes, err = c.issueCommand([]string{"rm", "-f"}, dir)
@@ -139,7 +141,7 @@ func (c *Composition) Decompose(dir string) (output string, err error) {
 	containerErr := c.DockerHelper.RemoveContainersWithNamePrefix(c.ProjectName)
 
 	if containerErr != nil {
-		log.Fatal(containerErr)
+		logger.Fatalf(containerErr.Error())
 	}
 
 	return string(outputBytes), err
