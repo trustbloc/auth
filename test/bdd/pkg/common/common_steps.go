@@ -10,13 +10,16 @@ import (
 	"io/ioutil"
 	"net/http"
 
+	"github.com/trustbloc/edge-core/pkg/log"
+
 	"github.com/cucumber/godog"
 	"github.com/pkg/errors"
-	logger "github.com/sirupsen/logrus"
 	"github.com/tidwall/gjson"
 
 	"github.com/trustbloc/hub-auth/test/bdd/pkg/context"
 )
+
+var logger = log.New("bdd-test-common")
 
 // Steps is steps for VC BDD tests.
 type Steps struct {

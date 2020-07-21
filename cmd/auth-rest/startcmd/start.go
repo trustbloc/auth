@@ -11,10 +11,12 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/trustbloc/edge-core/pkg/restapi/logspec"
+
 	"github.com/gorilla/mux"
 	"github.com/rs/cors"
-	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
+	"github.com/trustbloc/edge-core/pkg/log"
 	cmdutils "github.com/trustbloc/edge-core/pkg/utils/cmd"
 	tlsutils "github.com/trustbloc/edge-core/pkg/utils/tls"
 )
@@ -35,6 +37,13 @@ const (
 	tlsCACertsFlagUsage = "Comma-Separated list of ca certs path." +
 		" Alternatively, this can be set with the following environment variable: " + tlsCACertsEnvKey
 	tlsCACertsEnvKey = "AUTH_REST_TLS_CACERTS"
+
+	logLevelFlagName        = "log-level"
+	logLevelEnvKey          = "LOG_LEVEL"
+	logLevelFlagShorthand   = "l"
+	logLevelPrefixFlagUsage = "Default logging level to set. Supported options: CRITICAL, ERROR, WARNING, INFO, DEBUG." +
+		`Defaults to info if not set. Setting to debug may adversely impact performance. Alternatively, this can be ` +
+		"set with the following environment variable: " + logLevelEnvKey
 )
 
 const (
@@ -42,10 +51,13 @@ const (
 	healthCheckEndpoint = "/healthcheck"
 )
 
+var logger = log.New("auth-rest")
+
 type authRestParameters struct {
 	hostURL           string
 	tlsSystemCertPool bool
 	tlsCACerts        []string
+	logLevel          string
 }
 
 type healthCheckResp struct {
@@ -101,10 +113,16 @@ func getAuthRestParameters(cmd *cobra.Command) (*authRestParameters, error) {
 		return nil, err
 	}
 
+	loggingLevel, err := cmdutils.GetUserSetVarFromString(cmd, logLevelFlagName, logLevelEnvKey, true)
+	if err != nil {
+		return nil, err
+	}
+
 	return &authRestParameters{
 		hostURL:           hostURL,
 		tlsSystemCertPool: tlsSystemCertPool,
 		tlsCACerts:        tlsCACerts,
+		logLevel:          loggingLevel,
 	}, nil
 }
 
@@ -135,24 +153,51 @@ func createFlags(startCmd *cobra.Command) {
 	startCmd.Flags().StringP(hostURLFlagName, hostURLFlagShorthand, "", hostURLFlagUsage)
 	startCmd.Flags().StringP(tlsSystemCertPoolFlagName, "", "", tlsSystemCertPoolFlagUsage)
 	startCmd.Flags().StringArrayP(tlsCACertsFlagName, "", []string{}, tlsCACertsFlagUsage)
+	startCmd.Flags().StringP(logLevelFlagName, logLevelFlagShorthand, "", logLevelPrefixFlagUsage)
 }
 
 func startAuthService(parameters *authRestParameters, srv server) error {
+	if parameters.logLevel != "" {
+		setDefaultLogLevel(parameters.logLevel)
+	}
+
 	rootCAs, err := tlsutils.GetCertPool(parameters.tlsSystemCertPool, parameters.tlsCACerts)
 	if err != nil {
 		return err
 	}
 
-	log.Infof("root ca's %v", rootCAs)
+	logger.Infof("root ca's %v", rootCAs)
 
 	router := mux.NewRouter()
 
 	// health check
 	router.HandleFunc(healthCheckEndpoint, healthCheckHandler).Methods(http.MethodGet)
 
-	log.Infof("starting auth rest server on host %s", parameters.hostURL)
+	for _, handler := range logspec.New().GetOperations() {
+		router.HandleFunc(handler.Path(), handler.Handle()).Methods(handler.Method())
+	}
+
+	logger.Infof("starting auth rest server on host %s", parameters.hostURL)
 
 	return srv.ListenAndServe(parameters.hostURL, constructCORSHandler(router))
+}
+
+func setDefaultLogLevel(userLogLevel string) {
+	logLevel, err := log.ParseLevel(userLogLevel)
+	if err != nil {
+		logger.Warnf(`%s is not a valid logging level. It must be one of the following: `+
+			log.ParseString(log.CRITICAL)+", "+
+			log.ParseString(log.ERROR)+", "+
+			log.ParseString(log.WARNING)+", "+
+			log.ParseString(log.INFO)+", "+
+			log.ParseString(log.DEBUG)+". Defaulting to info.", userLogLevel)
+
+		logLevel = log.INFO
+	} else if logLevel == log.DEBUG {
+		logger.Infof(`Log level set to "debug". Performance may be adversely impacted.`)
+	}
+
+	log.SetLevel("", logLevel)
 }
 
 func constructCORSHandler(handler http.Handler) http.Handler {
@@ -172,6 +217,6 @@ func healthCheckHandler(rw http.ResponseWriter, r *http.Request) {
 		CurrentTime: time.Now(),
 	})
 	if err != nil {
-		log.Errorf("healthcheck response failure, %s", err)
+		logger.Errorf("healthcheck response failure, %s", err)
 	}
 }
