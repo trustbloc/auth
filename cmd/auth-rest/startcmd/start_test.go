@@ -6,15 +6,20 @@ SPDX-License-Identifier: Apache-2.0
 package startcmd
 
 import (
+	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"testing"
 
+	"github.com/google/uuid"
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/require"
 	"github.com/trustbloc/edge-core/pkg/log"
 )
+
+const flag = "--"
 
 type mockServer struct{}
 
@@ -72,10 +77,23 @@ func TestStartCmdWithBlankEnvVar(t *testing.T) {
 }
 
 func TestStartCmdValidArgs(t *testing.T) {
+	path, cleanup := newTestOIDCProvider()
+	defer cleanup()
+
+	t.Run("start success", func(t *testing.T) {
+		startCmd := GetStartCmd(&mockServer{})
+
+		args := getValidArgs(log.ParseString(log.ERROR), path)
+		startCmd.SetArgs(args)
+
+		err := startCmd.Execute()
+		require.Nil(t, err)
+		require.Equal(t, log.ERROR, log.GetLevel(""))
+	})
 	t.Run("Valid log level", func(t *testing.T) {
 		startCmd := GetStartCmd(&mockServer{})
 
-		args := []string{"--" + hostURLFlagName, "localhost:8080", "--" + logLevelFlagName, log.ParseString(log.DEBUG)}
+		args := getValidArgs(log.ParseString(log.DEBUG), path)
 		startCmd.SetArgs(args)
 
 		err := startCmd.Execute()
@@ -86,7 +104,7 @@ func TestStartCmdValidArgs(t *testing.T) {
 	t.Run("Invalid log level - default to info", func(t *testing.T) {
 		startCmd := GetStartCmd(&mockServer{})
 
-		args := []string{"--" + hostURLFlagName, "localhost:8080", "--" + logLevelFlagName, "cherry"}
+		args := getValidArgs(log.ParseString(log.INFO), path)
 		startCmd.SetArgs(args)
 
 		err := startCmd.Execute()
@@ -106,7 +124,11 @@ func TestHealthCheck(t *testing.T) {
 func TestStartCmdValidArgsEnvVar(t *testing.T) {
 	startCmd := GetStartCmd(&mockServer{})
 
-	setEnvVars(t)
+	path, cleanup := newTestOIDCProvider()
+	defer cleanup()
+
+	args := getValidArgs(log.ParseString(log.ERROR), path)
+	startCmd.SetArgs(args)
 
 	defer unsetEnvVars(t)
 
@@ -117,7 +139,9 @@ func TestStartCmdValidArgsEnvVar(t *testing.T) {
 func TestTLSSystemCertPoolInvalidArgsEnvVar(t *testing.T) {
 	startCmd := GetStartCmd(&mockServer{})
 
-	setEnvVars(t)
+	path, cleanup := newTestOIDCProvider()
+	defer cleanup()
+	setEnvVars(t, path)
 
 	defer unsetEnvVars(t)
 	require.NoError(t, os.Setenv(tlsSystemCertPoolEnvKey, "wrongvalue"))
@@ -127,14 +151,34 @@ func TestTLSSystemCertPoolInvalidArgsEnvVar(t *testing.T) {
 	require.Contains(t, err.Error(), "invalid syntax")
 }
 
-func setEnvVars(t *testing.T) {
+func setEnvVars(t *testing.T, oidcProviderURL string) {
 	err := os.Setenv(hostURLEnvKey, "localhost:8080")
+	require.Nil(t, err)
+
+	err = os.Setenv(oidcProviderURLEnvKey, oidcProviderURL)
 	require.NoError(t, err)
 }
 
 func unsetEnvVars(t *testing.T) {
 	err := os.Unsetenv(hostURLEnvKey)
 	require.NoError(t, err)
+}
+
+func getValidArgs(logLevel, oidcProviderURL string) []string {
+	var args []string
+	args = append(args, hostURLArg()...)
+	args = append(args, oidcClientIDArg()...)
+	args = append(args, oidcClientSecretArg()...)
+
+	if logLevel != "" {
+		args = append(args, logLevelArg(logLevel)...)
+	}
+
+	if oidcProviderURL != "" {
+		args = append(args, oidcProviderURLArg(oidcProviderURL)...)
+	}
+
+	return args
 }
 
 func checkFlagPropertiesCorrect(t *testing.T, cmd *cobra.Command, flagName, flagShorthand, flagUsage string) {
@@ -148,4 +192,64 @@ func checkFlagPropertiesCorrect(t *testing.T, cmd *cobra.Command, flagName, flag
 
 	flagAnnotations := flag.Annotations
 	require.Nil(t, flagAnnotations)
+}
+
+func hostURLArg() []string {
+	return []string{flag + hostURLFlagName, "localhost:8080"}
+}
+
+func logLevelArg(logLevel string) []string {
+	return []string{flag + logLevelFlagName, logLevel}
+}
+
+func oidcProviderURLArg(oidcProviderURL string) []string {
+	return []string{flag + oidcProviderURLFlagName, oidcProviderURL}
+}
+
+func oidcClientIDArg() []string {
+	return []string{flag + oidcClientIDFlagName, uuid.New().String()}
+}
+
+func oidcClientSecretArg() []string {
+	return []string{flag + oidcClientSecretFlagName, uuid.New().String()}
+}
+
+func newTestOIDCProvider() (string, func()) {
+	h := &testOIDCProvider{}
+	srv := httptest.NewServer(h)
+	h.baseURL = srv.URL
+
+	return srv.URL, srv.Close
+}
+
+type oidcConfigJSON struct {
+	Issuer      string   `json:"issuer"`
+	AuthURL     string   `json:"authorization_endpoint"`
+	TokenURL    string   `json:"token_endpoint"`
+	JWKSURL     string   `json:"jwks_uri"`
+	UserInfoURL string   `json:"userinfo_endpoint"`
+	Algorithms  []string `json:"id_token_signing_alg_values_supported"`
+}
+
+type testOIDCProvider struct {
+	baseURL string
+}
+
+func (t *testOIDCProvider) ServeHTTP(w http.ResponseWriter, _ *http.Request) {
+	response, err := json.Marshal(&oidcConfigJSON{
+		Issuer:      t.baseURL,
+		AuthURL:     fmt.Sprintf("%s/oauth2/auth", t.baseURL),
+		TokenURL:    fmt.Sprintf("%s/oauth2/token", t.baseURL),
+		JWKSURL:     fmt.Sprintf("%s/oauth2/certs", t.baseURL),
+		UserInfoURL: fmt.Sprintf("%s/oauth2/userinfo", t.baseURL),
+		Algorithms:  []string{"RS256"},
+	})
+	if err != nil {
+		panic(err)
+	}
+
+	_, err = w.Write(response)
+	if err != nil {
+		panic(err)
+	}
 }

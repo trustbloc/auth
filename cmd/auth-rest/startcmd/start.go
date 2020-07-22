@@ -9,14 +9,15 @@ import (
 	"encoding/json"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
-
-	"github.com/trustbloc/edge-core/pkg/restapi/logspec"
 
 	"github.com/gorilla/mux"
 	"github.com/rs/cors"
 	"github.com/spf13/cobra"
+
 	"github.com/trustbloc/edge-core/pkg/log"
+	"github.com/trustbloc/edge-core/pkg/restapi/logspec"
 	cmdutils "github.com/trustbloc/edge-core/pkg/utils/cmd"
 	tlsutils "github.com/trustbloc/edge-core/pkg/utils/tls"
 )
@@ -44,6 +45,27 @@ const (
 	logLevelPrefixFlagUsage = "Default logging level to set. Supported options: CRITICAL, ERROR, WARNING, INFO, DEBUG." +
 		`Defaults to info if not set. Setting to debug may adversely impact performance. Alternatively, this can be ` +
 		"set with the following environment variable: " + logLevelEnvKey
+
+	// OIDC flags
+	oidcProviderURLFlagName  = "oidc-opurl"
+	oidcProviderURLFlagUsage = "URL for the OIDC provider." +
+		" Alternatively, this can be set with the following environment variable: " + oidcProviderURLEnvKey
+	oidcProviderURLEnvKey = "HUB_AUTH_OIDC_OPURL"
+
+	oidcClientIDFlagName  = "oidc-clientid"
+	oidcClientIDFlagUsage = "OAuth2 client_id for OIDC." +
+		" Alternatively, this can be set with the following environment variable: " + oidcProviderURLEnvKey
+	oidcClientIDEnvKey = "HUB_AUTH_OIDC_CLIENTID"
+
+	oidcClientSecretFlagName  = "oidc-clientsecret" //nolint:gosec
+	oidcClientSecretFlagUsage = "OAuth2 client secret for OIDC." +
+		" Alternatively, this can be set with the following environment variable: " + oidcClientSecretEnvKey
+	oidcClientSecretEnvKey = "HUB_AUTH_OIDC_CLIENTSECRET" //nolint:gosec
+
+	oidcCallbackURLFlagName  = "oidc-callback"
+	oidcCallbackURLFlagUsage = "Base URL for the OAuth2 callback endpoints." +
+		" Alternatively, this can be set with the following environment variable: " + oidcCallbackURLEnvKey
+	oidcCallbackURLEnvKey = "HUB_AUTH_OIDC_CALLBACK"
 )
 
 const (
@@ -54,15 +76,24 @@ const (
 var logger = log.New("auth-rest")
 
 type authRestParameters struct {
+	srv               server
 	hostURL           string
 	tlsSystemCertPool bool
 	tlsCACerts        []string
 	logLevel          string
+	oidcParameters    *oidcParameters
 }
 
 type healthCheckResp struct {
 	Status      string    `json:"status"`
 	CurrentTime time.Time `json:"currentTime"`
+}
+
+type oidcParameters struct {
+	oidcProviderURL  string
+	oidcClientID     string
+	oidcClientSecret string
+	oidcCallbackURL  string
 }
 
 type server interface {
@@ -92,17 +123,47 @@ func createStartCmd(srv server) *cobra.Command {
 		Short: "Start auth-rest",
 		Long:  "Start auth-rest inside the hub-auth",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			parameters, err := getAuthRestParameters(cmd)
+			parameters, err := getAuthRestParameters(cmd, srv)
 			if err != nil {
 				return err
 			}
 
-			return startAuthService(parameters, srv)
+			return startAuthService(parameters)
 		},
 	}
 }
 
-func getAuthRestParameters(cmd *cobra.Command) (*authRestParameters, error) {
+func getOIDCParameters(cmd *cobra.Command) (*oidcParameters, error) {
+	oidcProviderURL, err := cmdutils.GetUserSetVarFromString(cmd, oidcProviderURLFlagName, oidcProviderURLEnvKey, true)
+	if err != nil {
+		return nil, err
+	}
+
+	oidcClientID, err := cmdutils.GetUserSetVarFromString(cmd, oidcClientIDFlagName, oidcClientIDEnvKey, true)
+	if err != nil {
+		return nil, err
+	}
+
+	oidcClientSecret, err := cmdutils.GetUserSetVarFromString(
+		cmd, oidcClientSecretFlagName, oidcClientSecretEnvKey, true)
+	if err != nil {
+		return nil, err
+	}
+
+	oidcCallbackURL, err := cmdutils.GetUserSetVarFromString(cmd, oidcCallbackURLFlagName, oidcCallbackURLEnvKey, true)
+	if err != nil {
+		return nil, err
+	}
+
+	return &oidcParameters{
+		oidcProviderURL:  oidcProviderURL,
+		oidcClientID:     oidcClientID,
+		oidcClientSecret: oidcClientSecret,
+		oidcCallbackURL:  oidcCallbackURL,
+	}, nil
+}
+
+func getAuthRestParameters(cmd *cobra.Command, srv server) (*authRestParameters, error) {
 	hostURL, err := cmdutils.GetUserSetVarFromString(cmd, hostURLFlagName, hostURLEnvKey, false)
 	if err != nil {
 		return nil, err
@@ -113,16 +174,23 @@ func getAuthRestParameters(cmd *cobra.Command) (*authRestParameters, error) {
 		return nil, err
 	}
 
+	oidcParams, err := getOIDCParameters(cmd)
+	if err != nil {
+		return nil, err
+	}
+
 	loggingLevel, err := cmdutils.GetUserSetVarFromString(cmd, logLevelFlagName, logLevelEnvKey, true)
 	if err != nil {
 		return nil, err
 	}
 
 	return &authRestParameters{
-		hostURL:           hostURL,
+		srv:               srv,
+		hostURL:           strings.TrimSpace(hostURL),
 		tlsSystemCertPool: tlsSystemCertPool,
 		tlsCACerts:        tlsCACerts,
 		logLevel:          loggingLevel,
+		oidcParameters:    oidcParams,
 	}, nil
 }
 
@@ -141,7 +209,8 @@ func getTLS(cmd *cobra.Command) (bool, []string, error) {
 		}
 	}
 
-	tlsCACerts, err := cmdutils.GetUserSetVarFromArrayString(cmd, tlsCACertsFlagName, tlsCACertsEnvKey, true)
+	tlsCACerts, err := cmdutils.GetUserSetVarFromArrayString(cmd, tlsCACertsFlagName,
+		tlsCACertsEnvKey, true)
 	if err != nil {
 		return false, nil, err
 	}
@@ -154,9 +223,13 @@ func createFlags(startCmd *cobra.Command) {
 	startCmd.Flags().StringP(tlsSystemCertPoolFlagName, "", "", tlsSystemCertPoolFlagUsage)
 	startCmd.Flags().StringArrayP(tlsCACertsFlagName, "", []string{}, tlsCACertsFlagUsage)
 	startCmd.Flags().StringP(logLevelFlagName, logLevelFlagShorthand, "", logLevelPrefixFlagUsage)
+	startCmd.Flags().StringP(oidcProviderURLFlagName, "", "", oidcProviderURLFlagUsage)
+	startCmd.Flags().StringP(oidcClientIDFlagName, "", "", oidcClientIDFlagUsage)
+	startCmd.Flags().StringP(oidcClientSecretFlagName, "", "", oidcClientSecretFlagUsage)
+	startCmd.Flags().StringP(oidcCallbackURLFlagName, "", "", oidcCallbackURLFlagUsage)
 }
 
-func startAuthService(parameters *authRestParameters, srv server) error {
+func startAuthService(parameters *authRestParameters) error {
 	if parameters.logLevel != "" {
 		setDefaultLogLevel(parameters.logLevel)
 	}
@@ -179,7 +252,7 @@ func startAuthService(parameters *authRestParameters, srv server) error {
 
 	logger.Infof("starting auth rest server on host %s", parameters.hostURL)
 
-	return srv.ListenAndServe(parameters.hostURL, constructCORSHandler(router))
+	return parameters.srv.ListenAndServe(parameters.hostURL, constructCORSHandler(router))
 }
 
 func setDefaultLogLevel(userLogLevel string) {
