@@ -18,12 +18,14 @@ import (
 	"testing"
 
 	"github.com/coreos/go-oidc"
-
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
+	"github.com/trustbloc/edge-core/pkg/storage"
 	"github.com/trustbloc/edge-core/pkg/storage/memstore"
 	"github.com/trustbloc/edge-core/pkg/storage/mockstore"
 	"golang.org/x/oauth2"
+
+	"github.com/trustbloc/hub-auth/pkg/internal/common/mockstorage"
 )
 
 func TestNew(t *testing.T) {
@@ -135,7 +137,7 @@ func TestCreateOIDCRequest(t *testing.T) {
 }
 
 func TestHandleOIDCCallback(t *testing.T) {
-	t.Run("success", func(t *testing.T) {
+	t.Run("onboard user", func(t *testing.T) {
 		state := uuid.New().String()
 		code := uuid.New().String()
 
@@ -161,13 +163,21 @@ func TestHandleOIDCCallback(t *testing.T) {
 
 		o.oidcProvider = &mockOIDCProvider{
 			verifier: &mockVerifier{
-				verifyVal: &mockToken{},
+				verifyVal: &mockToken{
+					oidcClaimsFunc: func(v interface{}) error {
+						c, ok := v.(*oidcClaims)
+						require.True(t, ok)
+						c.Sub = uuid.New().String()
+
+						return nil
+					},
+				},
 			},
 		}
 
 		result := httptest.NewRecorder()
 		o.handleOIDCCallback(result, newOIDCCallback(state, code))
-		require.Equal(t, http.StatusOK, result.Code)
+		require.Equal(t, http.StatusFound, result.Code)
 	})
 
 	t.Run("error missing state", func(t *testing.T) {
@@ -177,7 +187,7 @@ func TestHandleOIDCCallback(t *testing.T) {
 		require.NoError(t, err)
 		result := httptest.NewRecorder()
 		svc.handleOIDCCallback(result, newOIDCCallback("", "code"))
-		require.Equal(t, http.StatusOK, result.Code)
+		require.Equal(t, http.StatusBadRequest, result.Code)
 	})
 
 	t.Run("error missing code", func(t *testing.T) {
@@ -187,7 +197,7 @@ func TestHandleOIDCCallback(t *testing.T) {
 		require.NoError(t, err)
 		result := httptest.NewRecorder()
 		svc.handleOIDCCallback(result, newOIDCCallback("state", ""))
-		require.Equal(t, http.StatusOK, result.Code)
+		require.Equal(t, http.StatusBadRequest, result.Code)
 	})
 
 	t.Run("error invalid state parameter", func(t *testing.T) {
@@ -197,7 +207,7 @@ func TestHandleOIDCCallback(t *testing.T) {
 		require.NoError(t, err)
 		result := httptest.NewRecorder()
 		svc.handleOIDCCallback(result, newOIDCCallback("state", "code"))
-		require.Equal(t, http.StatusOK, result.Code)
+		require.Equal(t, http.StatusBadRequest, result.Code)
 	})
 
 	t.Run("generic transient store error", func(t *testing.T) {
@@ -218,7 +228,108 @@ func TestHandleOIDCCallback(t *testing.T) {
 		require.NoError(t, err)
 		result := httptest.NewRecorder()
 		svc.handleOIDCCallback(result, newOIDCCallback(state, "code"))
-		require.Equal(t, http.StatusOK, result.Code)
+		require.Equal(t, http.StatusInternalServerError, result.Code)
+	})
+
+	t.Run("generic bootstrap store FETCH error", func(t *testing.T) {
+		sub := uuid.New().String()
+		state := uuid.New().String()
+		config, cleanup := config()
+		defer cleanup()
+
+		config.Provider = &mockstorage.Provider{
+			Stores: map[string]storage.Store{
+				transientStoreName: &mockstore.MockStore{
+					Store: map[string][]byte{
+						state: []byte(state),
+					},
+				},
+				bootstrapStoreName: &mockstore.MockStore{
+					Store: map[string][]byte{
+						sub: {},
+					},
+					ErrGet: errors.New("generic"),
+				},
+			},
+		}
+
+		svc, err := New(config)
+		require.NoError(t, err)
+
+		svc.oauth2ConfigFunc = func(...string) oauth2Config {
+			return &mockOAuth2Config{exchangeVal: &mockToken{
+				oauth2Claim: uuid.New().String(),
+			}}
+		}
+
+		svc.oidcProvider = &mockOIDCProvider{
+			verifier: &mockVerifier{
+				verifyVal: &mockToken{
+					oidcClaimsFunc: func(v interface{}) error {
+						c, ok := v.(*oidcClaims)
+						require.True(t, ok)
+						c.Sub = sub
+
+						return nil
+					},
+				},
+			},
+		}
+
+		result := httptest.NewRecorder()
+		svc.handleOIDCCallback(result, newOIDCCallback(state, "code"))
+		require.Equal(t, http.StatusInternalServerError, result.Code)
+	})
+
+	t.Run("generic bootstrap store PUT error while onboarding user", func(t *testing.T) {
+		sub := uuid.New().String()
+		state := uuid.New().String()
+		config, cleanup := config()
+		defer cleanup()
+
+		config.Provider = &mockstorage.Provider{
+			Stores: map[string]storage.Store{
+				transientStoreName: &mockstore.MockStore{
+					Store: map[string][]byte{
+						state: []byte(state),
+					},
+				},
+				bootstrapStoreName: &mockstore.MockStore{
+					Store: map[string][]byte{
+						sub: []byte("{}"),
+					},
+					ErrGet: storage.ErrValueNotFound,
+					ErrPut: errors.New("generic"),
+				},
+			},
+		}
+
+		svc, err := New(config)
+		require.NoError(t, err)
+
+		svc.oauth2ConfigFunc = func(...string) oauth2Config {
+			return &mockOAuth2Config{exchangeVal: &mockToken{
+				oauth2Claim: uuid.New().String(),
+			}}
+		}
+
+		svc.oidcProvider = &mockOIDCProvider{
+			verifier: &mockVerifier{
+				verifyVal: &mockToken{
+					oidcClaimsFunc: func(v interface{}) error {
+						c, ok := v.(*oidcClaims)
+						require.True(t, ok)
+						c.Sub = sub
+
+						return nil
+					},
+				},
+			},
+		}
+
+		result := httptest.NewRecorder()
+		svc.handleOIDCCallback(result, newOIDCCallback(state, "code"))
+		require.Equal(t, http.StatusInternalServerError, result.Code)
 	})
 
 	t.Run("error exchanging auth code", func(t *testing.T) {
@@ -239,7 +350,7 @@ func TestHandleOIDCCallback(t *testing.T) {
 		}
 		result := httptest.NewRecorder()
 		svc.handleOIDCCallback(result, newOIDCCallback(state, "code"))
-		require.Equal(t, http.StatusOK, result.Code)
+		require.Equal(t, http.StatusBadGateway, result.Code)
 	})
 
 	t.Run("error missing id_token", func(t *testing.T) {
@@ -261,7 +372,7 @@ func TestHandleOIDCCallback(t *testing.T) {
 		}
 		result := httptest.NewRecorder()
 		svc.handleOIDCCallback(result, newOIDCCallback(state, "code"))
-		require.Equal(t, http.StatusOK, result.Code)
+		require.Equal(t, http.StatusBadGateway, result.Code)
 	})
 
 	t.Run("error id_token verification", func(t *testing.T) {
@@ -283,7 +394,7 @@ func TestHandleOIDCCallback(t *testing.T) {
 		}
 		result := httptest.NewRecorder()
 		svc.handleOIDCCallback(result, newOIDCCallback(state, "code"))
-		require.Equal(t, http.StatusOK, result.Code)
+		require.Equal(t, http.StatusForbidden, result.Code)
 	})
 
 	t.Run("error scanning id_token claims", func(t *testing.T) {
@@ -305,7 +416,7 @@ func TestHandleOIDCCallback(t *testing.T) {
 		}
 		result := httptest.NewRecorder()
 		svc.handleOIDCCallback(result, newOIDCCallback(state, "code"))
-		require.Equal(t, http.StatusOK, result.Code)
+		require.Equal(t, http.StatusInternalServerError, result.Code)
 	})
 }
 

@@ -20,6 +20,7 @@ import (
 	"github.com/trustbloc/edge-core/pkg/storage"
 	"golang.org/x/oauth2"
 
+	"github.com/trustbloc/hub-auth/pkg/bootstrap/user"
 	"github.com/trustbloc/hub-auth/pkg/internal/common/support"
 )
 
@@ -34,6 +35,10 @@ const (
 )
 
 var logger = log.New("hub-auth-restapi")
+
+type oidcClaims struct {
+	Sub string `json:"sub"`
+}
 
 // Handler http handler for each controller API endpoint.
 type Handler interface {
@@ -103,7 +108,6 @@ type oauth2Token interface {
 
 // Operation defines handlers.
 type Operation struct {
-	handlers         []Handler
 	client           httpClient
 	requestTokens    map[string]string
 	transientStore   storage.Store
@@ -186,8 +190,6 @@ func New(config *Config) (*Operation, error) {
 
 	svc.bootstrapStore = bootstrapStore
 
-	svc.registerHandler()
-
 	return svc, nil
 }
 
@@ -246,50 +248,44 @@ func (c *Operation) createOIDCRequest(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (c *Operation) handleOIDCCallback(w http.ResponseWriter, r *http.Request) { //nolint:funlen
+func (c *Operation) handleOIDCCallback(w http.ResponseWriter, r *http.Request) { //nolint:funlen,gocyclo
 	state := r.URL.Query().Get("state")
 	if state == "" {
-		logger.Errorf("missing state")
-		c.hubAuthResult(w, "missing state")
+		handleAuthError(w, http.StatusBadRequest, "missing state")
 
 		return
 	}
 
 	code := r.URL.Query().Get("code")
 	if code == "" {
-		logger.Errorf("missing code")
-		c.hubAuthResult(w, "missing code")
+		handleAuthError(w, http.StatusBadRequest, "missing code")
 
 		return
 	}
 
 	_, err := c.transientStore.Get(state)
 	if errors.Is(err, storage.ErrValueNotFound) {
-		logger.Errorf("invalid state parameter")
-		c.hubAuthResult(w, "invalid state parameter")
+		handleAuthError(w, http.StatusBadRequest, "invalid state parameter")
 
 		return
 	}
 
 	if err != nil {
-		logger.Errorf("failed to query transient store for state : %s", err)
-		c.hubAuthResult(w, fmt.Sprintf("failed to query transient store for state : %s", err))
+		handleAuthError(w, http.StatusInternalServerError, fmt.Sprintf("failed to query transient store for state : %s", err))
 
 		return
 	}
 
 	oauthToken, err := c.oauth2Config().Exchange(r.Context(), code)
 	if err != nil {
-		logger.Errorf("failed to exchange oauth2 code for token : %s", err)
-		c.hubAuthResult(w, fmt.Sprintf("failed to exchange oauth2 code for token : %s", err))
+		handleAuthError(w, http.StatusBadGateway, fmt.Sprintf("failed to exchange oauth2 code for token : %s", err))
 
 		return
 	}
 
 	rawIDToken, ok := oauthToken.Extra("id_token").(string)
 	if !ok {
-		logger.Errorf("missing id_token")
-		c.hubAuthResult(w, "missing id_token")
+		handleAuthError(w, http.StatusBadGateway, "missing id_token")
 
 		return
 	}
@@ -298,34 +294,68 @@ func (c *Operation) handleOIDCCallback(w http.ResponseWriter, r *http.Request) {
 		ClientID: c.oidcClientID,
 	}).Verify(r.Context(), rawIDToken)
 	if err != nil {
-		logger.Errorf("failed to verify id_token : %s", err)
-		c.hubAuthResult(w, fmt.Sprintf("failed to verify id_token : %s", err))
+		handleAuthError(w, http.StatusForbidden, fmt.Sprintf("failed to verify id_token : %s", err))
 
 		return
 	}
 
-	userData := make(map[string]interface{})
+	claims := &oidcClaims{}
 
-	err = oidcToken.Claims(&userData)
+	err = oidcToken.Claims(claims)
 	if err != nil {
-		logger.Errorf("failed to extract user data from id_token : %s", err)
-		c.hubAuthResult(w, fmt.Sprintf("failed to extract user data from id_token : %s", err))
+		handleAuthError(w, http.StatusInternalServerError, fmt.Sprintf("failed to extract claims from id_token : %s", err))
 
 		return
 	}
 
-	// todo #issue-25 handle user data
-	_, err = json.Marshal(userData)
+	userProfile, err := user.NewStore(c.bootstrapStore).Get(claims.Sub)
+	if errors.Is(err, storage.ErrValueNotFound) {
+		userProfile, err = c.onboardUser(claims.Sub)
+		if err != nil {
+			handleAuthError(w, http.StatusInternalServerError, fmt.Sprintf("failed to onboard new user : %s", err))
+
+			return
+		}
+	}
+
 	if err != nil {
-		logger.Errorf("failed to marshal user data : %s", err)
-		c.hubAuthResult(w, fmt.Sprintf("failed to marshal user data : %s", err))
+		handleAuthError(w, http.StatusInternalServerError, fmt.Sprintf("failed to fetch user profile from store : %s", err))
 
 		return
 	}
+
+	handleAuthResult(w, r, userProfile)
 }
 
-func (c *Operation) hubAuthResult(w http.ResponseWriter, data string) {
+// TODO onboard user at key server and SDS: https://github.com/trustbloc/hub-auth/issues/38
+func (c *Operation) onboardUser(id string) (*user.Profile, error) {
+	userProfile := &user.Profile{
+		ID: id,
+	}
+
+	err := user.NewStore(c.bootstrapStore).Save(userProfile)
+	if err != nil {
+		return nil, fmt.Errorf("failed to save user profile : %w", err)
+	}
+
+	return userProfile, nil
+}
+
+// TODO redirect to the UI: https://github.com/trustbloc/hub-auth/issues/39
+func handleAuthResult(w http.ResponseWriter, r *http.Request, _ *user.Profile) {
+	http.Redirect(w, r, "", http.StatusFound)
+}
+
+func handleAuthError(w http.ResponseWriter, status int, msg string) {
 	// todo #issue-25 handle user data
+	logger.Errorf(msg)
+
+	w.WriteHeader(status)
+
+	_, err := w.Write([]byte(msg))
+	if err != nil {
+		logger.Errorf("failed to write error response : %w", err)
+	}
 }
 
 // writeResponse writes interface value to response.
@@ -339,18 +369,12 @@ func (c *Operation) writeErrorResponse(rw http.ResponseWriter, status int, msg s
 	}
 }
 
-// registerHandler register handlers to be exposed from this service as REST API endpoints.
-func (c *Operation) registerHandler() {
-	// Add more protocol endpoints here to expose them as controller API endpoints
-	c.handlers = []Handler{
+// GetRESTHandlers get all controller API handler available for this service.
+func (c *Operation) GetRESTHandlers() []Handler {
+	return []Handler{
 		support.NewHTTPHandler(oauth2GetRequestPath, http.MethodGet, c.createOIDCRequest),
 		support.NewHTTPHandler(oauth2CallbackPath, http.MethodGet, c.handleOIDCCallback),
 	}
-}
-
-// GetRESTHandlers get all controller API handler available for this service.
-func (c *Operation) GetRESTHandlers() []Handler {
-	return c.handlers
 }
 
 func (c *Operation) oauth2Config(scopes ...string) oauth2Config {
