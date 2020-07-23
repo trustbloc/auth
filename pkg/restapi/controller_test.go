@@ -4,7 +4,7 @@ Copyright SecureKey Technologies Inc. All Rights Reserved.
 SPDX-License-Identifier: Apache-2.0
 */
 
-package rp
+package restapi
 
 import (
 	"encoding/json"
@@ -32,7 +32,7 @@ func TestController_New(t *testing.T) {
 	t.Run("error if operations cannot start", func(t *testing.T) {
 		config, cleanup := config()
 		defer cleanup()
-		config.OIDCProviderURL = ""
+		config.OIDCProviderURL = "BadURL"
 
 		_, err := New(config)
 		require.Error(t, err)
@@ -55,8 +55,8 @@ func config() (*operation.Config, func()) {
 	path, cleanup := newTestOIDCProvider()
 
 	return &operation.Config{
-		OIDCProviderURL:        path,
-		TransientStoreProvider: memstore.NewProvider(),
+		OIDCProviderURL: path,
+		Provider:        memstore.NewProvider(),
 	}, cleanup
 }
 

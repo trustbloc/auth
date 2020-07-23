@@ -30,6 +30,7 @@ const (
 	scopeQueryParam = "scope"
 
 	transientStoreName = "hub-auth-rest-transient"
+	bootstrapStoreName = "bootstrap-data"
 )
 
 var logger = log.New("hub-auth-restapi")
@@ -111,17 +112,18 @@ type Operation struct {
 	oidcClientSecret string
 	oidcCallbackURL  string
 	oauth2ConfigFunc func(...string) oauth2Config
+	bootstrapStore   storage.Store
 }
 
 // Config defines configuration for rp operations.
 type Config struct {
-	TLSConfig              *tls.Config
-	RequestTokens          map[string]string
-	OIDCProviderURL        string
-	OIDCClientID           string
-	OIDCClientSecret       string
-	OIDCCallbackURL        string
-	TransientStoreProvider storage.Provider
+	TLSConfig        *tls.Config
+	RequestTokens    map[string]string
+	OIDCProviderURL  string
+	OIDCClientID     string
+	OIDCClientSecret string
+	OIDCCallbackURL  string
+	Provider         storage.Provider
 }
 
 type createOIDCRequestResponse struct {
@@ -137,46 +139,71 @@ func New(config *Config) (*Operation, error) {
 		oidcClientSecret: config.OIDCClientSecret,
 		oidcCallbackURL:  config.OIDCCallbackURL,
 	}
-
-	idp, err := oidc.NewProvider(
-		oidc.ClientContext(
-			context.Background(),
-			&http.Client{
-				Transport: &http.Transport{TLSClientConfig: config.TLSConfig},
-			},
-		),
-		config.OIDCProviderURL,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("failed to init oidc provider with url [%s] : %w", config.OIDCProviderURL, err)
-	}
-
-	svc.oidcProvider = &oidcProviderImpl{op: idp}
-
-	svc.transientStore, err = createStore(config.TransientStoreProvider)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create store : %w", err)
-	}
-
-	svc.oauth2ConfigFunc = func(scopes ...string) oauth2Config {
-		config := &oauth2.Config{
-			ClientID:     svc.oidcClientID,
-			ClientSecret: svc.oidcClientSecret,
-			Endpoint:     svc.oidcProvider.Endpoint(),
-			RedirectURL:  fmt.Sprintf("%s%s", svc.oidcCallbackURL, oauth2CallbackPath),
-			Scopes:       []string{oidc.ScopeOpenID},
+	// TODO remove this empty string check. This is just here temporarily to allow for testing of other parts
+	// while the OIDC stuff is in development
+	if config.OIDCProviderURL != "" {
+		idp, err := oidc.NewProvider(
+			oidc.ClientContext(
+				context.Background(),
+				&http.Client{
+					Transport: &http.Transport{TLSClientConfig: config.TLSConfig},
+				},
+			),
+			config.OIDCProviderURL,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to init oidc provider with url [%s]: %w", config.OIDCProviderURL, err)
 		}
 
-		if len(scopes) > 0 {
-			config.Scopes = append(config.Scopes, scopes...)
+		svc.oidcProvider = &oidcProviderImpl{op: idp}
+
+		svc.transientStore, err = createStore(config.Provider)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create store : %w", err)
 		}
 
-		return &oauth2ConfigImpl{oc: config}
+		svc.oauth2ConfigFunc = func(scopes ...string) oauth2Config {
+			config := &oauth2.Config{
+				ClientID:     svc.oidcClientID,
+				ClientSecret: svc.oidcClientSecret,
+				Endpoint:     svc.oidcProvider.Endpoint(),
+				RedirectURL:  fmt.Sprintf("%s%s", svc.oidcCallbackURL, oauth2CallbackPath),
+				Scopes:       []string{oidc.ScopeOpenID},
+			}
+
+			if len(scopes) > 0 {
+				config.Scopes = append(config.Scopes, scopes...)
+			}
+
+			return &oauth2ConfigImpl{oc: config}
+		}
 	}
+
+	bootstrapStore, err := openBootstrapStore(config.Provider)
+	if err != nil {
+		return nil, err
+	}
+
+	svc.bootstrapStore = bootstrapStore
 
 	svc.registerHandler()
 
 	return svc, nil
+}
+
+func openBootstrapStore(provider storage.Provider) (storage.Store, error) {
+	err := provider.CreateStore(bootstrapStoreName)
+	if err == nil {
+		logger.Infof(fmt.Sprintf("Created %s store.", bootstrapStoreName))
+	} else {
+		if !errors.Is(err, storage.ErrDuplicateStore) {
+			return nil, err
+		}
+
+		logger.Infof(fmt.Sprintf("%s store already exists. Skipping creation.", bootstrapStoreName))
+	}
+
+	return provider.OpenStore(bootstrapStoreName)
 }
 
 func (c *Operation) createOIDCRequest(w http.ResponseWriter, r *http.Request) {
