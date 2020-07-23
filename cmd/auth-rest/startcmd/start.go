@@ -23,6 +23,9 @@ import (
 	"github.com/trustbloc/edge-core/pkg/storage/memstore"
 	cmdutils "github.com/trustbloc/edge-core/pkg/utils/cmd"
 	tlsutils "github.com/trustbloc/edge-core/pkg/utils/tls"
+
+	"github.com/trustbloc/hub-auth/pkg/restapi"
+	"github.com/trustbloc/hub-auth/pkg/restapi/operation"
 )
 
 const (
@@ -220,8 +223,7 @@ func startAuthService(parameters *authRestParameters, srv server) error {
 		setDefaultLogLevel(parameters.logLevel)
 	}
 
-	// TODO #32 Use this newly created provider to create bootstrap store.
-	_, err := createProvider(parameters)
+	provider, err := createProvider(parameters)
 	if err != nil {
 		return err
 	}
@@ -240,6 +242,12 @@ func startAuthService(parameters *authRestParameters, srv server) error {
 
 	for _, handler := range logspec.New().GetOperations() {
 		router.HandleFunc(handler.Path(), handler.Handle()).Methods(handler.Method())
+	}
+
+	// TODO #34 add the handlers from this controller to the router so that the endpoints are reachable
+	_, err = restapi.New(&operation.Config{Provider: provider})
+	if err != nil {
+		return err
 	}
 
 	logger.Infof(`Starting hub-auth REST server with the following parameters: 

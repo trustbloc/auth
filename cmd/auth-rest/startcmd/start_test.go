@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/spf13/cobra"
@@ -96,16 +97,24 @@ func TestStartCmdValidArgs(t *testing.T) {
 		require.Nil(t, err)
 		require.Equal(t, log.INFO, log.GetLevel(""))
 	})
+}
+
+func TestStartCmdFailToCreateController(t *testing.T) {
 	t.Run("CouchDB storage", func(t *testing.T) {
 		startCmd := GetStartCmd(&mockServer{})
 
 		args := []string{"--" + hostURLFlagName, "localhost:8080", "--" + databaseTypeFlagName, "couchdb",
-			"--" + databaseURLFlagName, "localhost:5984"}
+			"--" + databaseURLFlagName, "BadURL"}
 		startCmd.SetArgs(args)
 
 		err := startCmd.Execute()
 
-		require.Nil(t, err)
+		require.NotNil(t, err)
+
+		containsLookupFailureErrMsg := strings.Contains(err.Error(), "Temporary failure in name resolution") ||
+			strings.Contains(err.Error(), "no such host")
+
+		require.True(t, containsLookupFailureErrMsg)
 	})
 }
 
@@ -152,14 +161,25 @@ func TestTLSSystemCertPoolInvalidArgsEnvVar(t *testing.T) {
 	require.Contains(t, err.Error(), "invalid syntax")
 }
 
-func Test_createProvider_EmptyCouchDBURL(t *testing.T) {
-	provider, err := createProvider(&authRestParameters{
-		databaseType: databaseTypeCouchDBOption,
-		databaseURL:  "",
-	})
+func Test_createProvider(t *testing.T) {
+	t.Run("Valid CouchDB URL", func(t *testing.T) {
+		provider, err := createProvider(&authRestParameters{
+			databaseType: databaseTypeCouchDBOption,
+			databaseURL:  "localhost:5984",
+		})
 
-	require.EqualError(t, err, "hostURL for new CouchDB provider can't be blank")
-	require.Nil(t, provider)
+		require.NoError(t, err)
+		require.NotNil(t, provider)
+	})
+	t.Run("Empty CouchDB URL", func(t *testing.T) {
+		provider, err := createProvider(&authRestParameters{
+			databaseType: databaseTypeCouchDBOption,
+			databaseURL:  "",
+		})
+
+		require.EqualError(t, err, "hostURL for new CouchDB provider can't be blank")
+		require.Nil(t, provider)
+	})
 }
 
 func setEnvVars(t *testing.T) {

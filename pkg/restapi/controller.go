@@ -4,7 +4,7 @@ Copyright SecureKey Technologies Inc. All Rights Reserved.
 SPDX-License-Identifier: Apache-2.0
 */
 
-package rp
+package restapi
 
 import (
 	"fmt"
@@ -18,7 +18,7 @@ func New(config *operation.Config) (*Controller, error) {
 
 	rpService, err := operation.New(config)
 	if err != nil {
-		return nil, fmt.Errorf("failed to initialize rp-rest operations : %w", err)
+		return nil, fmt.Errorf("failed to initialize hub-auth-rest operations: %w", err)
 	}
 
 	allHandlers = append(allHandlers, rpService.GetRESTHandlers()...)

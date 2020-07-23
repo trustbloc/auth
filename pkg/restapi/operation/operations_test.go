@@ -36,6 +36,21 @@ func TestNew(t *testing.T) {
 		require.Equal(t, 2, len(svc.GetRESTHandlers()))
 	})
 
+	t.Run("success, bootstrap store already exists", func(t *testing.T) {
+		config, cleanup := config()
+		defer cleanup()
+
+		config.Provider = memstore.NewProvider()
+
+		err := config.Provider.CreateStore(bootstrapStoreName)
+		require.NoError(t, err)
+
+		svc, err := New(config)
+		require.NoError(t, err)
+		require.NotNil(t, svc)
+		require.Equal(t, 2, len(svc.GetRESTHandlers()))
+	})
+
 	t.Run("error if oidc provider is invalid", func(t *testing.T) {
 		config, cleanup := config()
 		defer cleanup()
@@ -47,7 +62,7 @@ func TestNew(t *testing.T) {
 	t.Run("error if unable to open transient store", func(t *testing.T) {
 		config, cleanup := config()
 		defer cleanup()
-		config.TransientStoreProvider = &mockstore.Provider{
+		config.Provider = &mockstore.Provider{
 			ErrOpenStoreHandle: errors.New("test"),
 		}
 		_, err := New(config)
@@ -57,7 +72,7 @@ func TestNew(t *testing.T) {
 	t.Run("error if unable to create transient store", func(t *testing.T) {
 		config, cleanup := config()
 		defer cleanup()
-		config.TransientStoreProvider = &mockstore.Provider{
+		config.Provider = &mockstore.Provider{
 			ErrCreateStore: errors.New("generic"),
 		}
 		_, err := New(config)
@@ -103,7 +118,7 @@ func TestCreateOIDCRequest(t *testing.T) {
 	t.Run("internal server error if transient store fails", func(t *testing.T) {
 		config, cleanup := config()
 		defer cleanup()
-		config.TransientStoreProvider = &mockstore.Provider{
+		config.Provider = &mockstore.Provider{
 			Store: &mockstore.MockStore{
 				Store:  make(map[string][]byte),
 				ErrPut: errors.New("test"),
@@ -127,7 +142,7 @@ func TestHandleOIDCCallback(t *testing.T) {
 		config, configCleanup := config()
 		defer configCleanup()
 
-		config.TransientStoreProvider = &mockstore.Provider{
+		config.Provider = &mockstore.Provider{
 			Store: &mockstore.MockStore{
 				Store: map[string][]byte{
 					state: []byte(state),
@@ -190,7 +205,7 @@ func TestHandleOIDCCallback(t *testing.T) {
 		config, cleanup := config()
 		defer cleanup()
 
-		config.TransientStoreProvider = &mockstore.Provider{
+		config.Provider = &mockstore.Provider{
 			Store: &mockstore.MockStore{
 				Store: map[string][]byte{
 					state: []byte(state),
@@ -210,7 +225,7 @@ func TestHandleOIDCCallback(t *testing.T) {
 		state := uuid.New().String()
 		config, cleanup := config()
 		defer cleanup()
-		config.TransientStoreProvider = &mockstore.Provider{Store: &mockstore.MockStore{
+		config.Provider = &mockstore.Provider{Store: &mockstore.MockStore{
 			Store: map[string][]byte{
 				state: []byte(state),
 			},
@@ -231,7 +246,7 @@ func TestHandleOIDCCallback(t *testing.T) {
 		state := uuid.New().String()
 		config, cleanup := config()
 		defer cleanup()
-		config.TransientStoreProvider = &mockstore.Provider{Store: &mockstore.MockStore{
+		config.Provider = &mockstore.Provider{Store: &mockstore.MockStore{
 			Store: map[string][]byte{
 				state: []byte(state),
 			},
@@ -253,7 +268,7 @@ func TestHandleOIDCCallback(t *testing.T) {
 		state := uuid.New().String()
 		config, cleanup := config()
 		defer cleanup()
-		config.TransientStoreProvider = &mockstore.Provider{Store: &mockstore.MockStore{
+		config.Provider = &mockstore.Provider{Store: &mockstore.MockStore{
 			Store: map[string][]byte{
 				state: []byte(state),
 			},
@@ -275,7 +290,7 @@ func TestHandleOIDCCallback(t *testing.T) {
 		state := uuid.New().String()
 		config, cleanup := config()
 		defer cleanup()
-		config.TransientStoreProvider = &mockstore.Provider{Store: &mockstore.MockStore{
+		config.Provider = &mockstore.Provider{Store: &mockstore.MockStore{
 			Store: map[string][]byte{
 				state: []byte(state),
 			},
@@ -332,11 +347,11 @@ func config() (*Config, func()) {
 	path, oidcCleanup := newTestOIDCProvider()
 
 	return &Config{
-			OIDCProviderURL:        path,
-			OIDCClientID:           uuid.New().String(),
-			OIDCClientSecret:       uuid.New().String(),
-			OIDCCallbackURL:        "http://test.com",
-			TransientStoreProvider: memstore.NewProvider(),
+			OIDCProviderURL:  path,
+			OIDCClientID:     uuid.New().String(),
+			OIDCClientSecret: uuid.New().String(),
+			OIDCCallbackURL:  "http://test.com",
+			Provider:         memstore.NewProvider(),
 		}, func() {
 			oidcCleanup()
 		}
