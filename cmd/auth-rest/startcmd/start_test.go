@@ -72,10 +72,11 @@ func TestStartCmdWithBlankEnvVar(t *testing.T) {
 }
 
 func TestStartCmdValidArgs(t *testing.T) {
-	t.Run("Valid log level", func(t *testing.T) {
+	t.Run("In-memory storage, valid log level", func(t *testing.T) {
 		startCmd := GetStartCmd(&mockServer{})
 
-		args := []string{"--" + hostURLFlagName, "localhost:8080", "--" + logLevelFlagName, log.ParseString(log.DEBUG)}
+		args := []string{"--" + hostURLFlagName, "localhost:8080", "--" + logLevelFlagName, log.ParseString(log.DEBUG),
+			"--" + databaseTypeFlagName, "mem"}
 		startCmd.SetArgs(args)
 
 		err := startCmd.Execute()
@@ -86,7 +87,8 @@ func TestStartCmdValidArgs(t *testing.T) {
 	t.Run("Invalid log level - default to info", func(t *testing.T) {
 		startCmd := GetStartCmd(&mockServer{})
 
-		args := []string{"--" + hostURLFlagName, "localhost:8080", "--" + logLevelFlagName, "cherry"}
+		args := []string{"--" + hostURLFlagName, "localhost:8080", "--" + logLevelFlagName, "cherry",
+			"--" + databaseTypeFlagName, "mem"}
 		startCmd.SetArgs(args)
 
 		err := startCmd.Execute()
@@ -94,6 +96,29 @@ func TestStartCmdValidArgs(t *testing.T) {
 		require.Nil(t, err)
 		require.Equal(t, log.INFO, log.GetLevel(""))
 	})
+	t.Run("CouchDB storage", func(t *testing.T) {
+		startCmd := GetStartCmd(&mockServer{})
+
+		args := []string{"--" + hostURLFlagName, "localhost:8080", "--" + databaseTypeFlagName, "couchdb",
+			"--" + databaseURLFlagName, "localhost:5984"}
+		startCmd.SetArgs(args)
+
+		err := startCmd.Execute()
+
+		require.Nil(t, err)
+	})
+}
+
+func TestStartCmdInvalidDatabaseType(t *testing.T) {
+	startCmd := GetStartCmd(&mockServer{})
+
+	args := []string{"--" + hostURLFlagName, "localhost:8080", "--" + logLevelFlagName, log.ParseString(log.DEBUG),
+		"--" + databaseTypeFlagName, "ChesterfieldDB"}
+	startCmd.SetArgs(args)
+
+	err := startCmd.Execute()
+	require.EqualError(t, err,
+		"ChesterfieldDB is not a valid database type. Run start --help to see the available options")
 }
 
 func TestHealthCheck(t *testing.T) {
@@ -127,9 +152,21 @@ func TestTLSSystemCertPoolInvalidArgsEnvVar(t *testing.T) {
 	require.Contains(t, err.Error(), "invalid syntax")
 }
 
+func Test_createProvider_EmptyCouchDBURL(t *testing.T) {
+	provider, err := createProvider(&authRestParameters{
+		databaseType: databaseTypeCouchDBOption,
+		databaseURL:  "",
+	})
+
+	require.EqualError(t, err, "hostURL for new CouchDB provider can't be blank")
+	require.Nil(t, provider)
+}
+
 func setEnvVars(t *testing.T) {
 	err := os.Setenv(hostURLEnvKey, "localhost:8080")
 	require.NoError(t, err)
+	err = os.Setenv(databaseTypeEnvKey, "mem")
+	require.Nil(t, err)
 }
 
 func unsetEnvVars(t *testing.T) {
