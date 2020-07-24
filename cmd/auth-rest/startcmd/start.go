@@ -245,7 +245,7 @@ func startAuthService(parameters *authRestParameters, srv server) error {
 	}
 
 	// TODO #34 add the handlers from this controller to the router so that the endpoints are reachable
-	_, err = restapi.New(&operation.Config{Provider: provider})
+	_, err = restapi.New(&operation.Config{TransientStoreProvider: memstore.NewProvider(), StoreProvider: provider})
 	if err != nil {
 		return err
 	}
