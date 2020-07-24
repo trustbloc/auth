@@ -55,8 +55,9 @@ func config() (*operation.Config, func()) {
 	path, cleanup := newTestOIDCProvider()
 
 	return &operation.Config{
-		OIDCProviderURL: path,
-		Provider:        memstore.NewProvider(),
+		OIDCProviderURL:        path,
+		TransientStoreProvider: memstore.NewProvider(),
+		StoreProvider:          memstore.NewProvider(),
 	}, cleanup
 }
 

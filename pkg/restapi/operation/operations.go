@@ -121,13 +121,14 @@ type Operation struct {
 
 // Config defines configuration for rp operations.
 type Config struct {
-	TLSConfig        *tls.Config
-	RequestTokens    map[string]string
-	OIDCProviderURL  string
-	OIDCClientID     string
-	OIDCClientSecret string
-	OIDCCallbackURL  string
-	Provider         storage.Provider
+	TLSConfig              *tls.Config
+	RequestTokens          map[string]string
+	OIDCProviderURL        string
+	OIDCClientID           string
+	OIDCClientSecret       string
+	OIDCCallbackURL        string
+	TransientStoreProvider storage.Provider
+	StoreProvider          storage.Provider
 }
 
 type createOIDCRequestResponse struct {
@@ -161,7 +162,7 @@ func New(config *Config) (*Operation, error) {
 
 		svc.oidcProvider = &oidcProviderImpl{op: idp}
 
-		svc.transientStore, err = createStore(config.Provider)
+		svc.transientStore, err = createStore(config.TransientStoreProvider)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create store : %w", err)
 		}
@@ -183,7 +184,7 @@ func New(config *Config) (*Operation, error) {
 		}
 	}
 
-	bootstrapStore, err := openBootstrapStore(config.Provider)
+	bootstrapStore, err := openBootstrapStore(config.StoreProvider)
 	if err != nil {
 		return nil, err
 	}
