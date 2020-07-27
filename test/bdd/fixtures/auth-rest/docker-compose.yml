@@ -14,10 +14,66 @@ services:
       - AUTH_REST_HOST_URL=0.0.0.0:8070
       - AUTH_REST_TLS_CACERTS=/etc/tls/ec-cacert.pem
       - AUTH_REST_TLS_SYSTEMCERTPOOL=true
-      - DATABASE_TYPE=mem
+      - AUTH_REST_TLS_SERVE_CERT=/etc/tls/ec-pubCert.pem
+      - AUTH_REST_TLS_SERVE_KEY=/etc/tls/ec-key.pem
+      - AUTH_REST_DATABASE_TYPE=mem
+      - AUTH_REST_OIDC_CALLBACK=TODO   # https://github.com/trustbloc/hub-auth/issues/13
+      - AUTH_REST_GOOGLE_URL=http://mock.oidc.provider
+      - AUTH_REST_GOOGLE_CLIENTID=TODO # https://github.com/trustbloc/hub-auth/issues/9
+      - AUTH_REST_GOOGLE_CLIENTSECRET=TODO
     ports:
       - 8070:8070
     entrypoint: ""
-    command:  /bin/sh -c "auth-rest start"
+    command:  /bin/sh -c "sleep 10 && auth-rest start"
     volumes:
       - ../keys/tls:/etc/tls
+    depends_on:
+      - mock.oidc.provider
+    networks:
+      - bdd_test
+
+  mock.oidc.provider:
+    container_name: mock.oidc.provider
+    image: soluto/oidc-server-mock:0.2.2
+    ports:
+      - 4011:80
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      SERVER_OPTIONS_INLINE: |
+        {
+          "AccessTokenJwtType": "JWT",
+          "Discovery": {
+            "ShowKeySet": true
+          }
+        }
+      API_SCOPES_INLINE: |
+        [
+          "some-app-scope-1",
+          "some-app-scope-2"
+        ]
+      API_RESOURCES_INLINE: |
+        [
+          {
+            "Name": "some-app",
+            "Scopes": ["some-app-scope-1", "some-app-scope-2"]
+          }
+        ]
+      USERS_CONFIGURATION_INLINE: |
+        [
+          {
+            "SubjectId":"1",
+            "Username":"User1",
+            "Password":"pwd"
+          }
+        ]
+      CLIENTS_CONFIGURATION_PATH: /tmp/config/clients-config.json
+    volumes:
+      - ./oidc-config:/tmp/config:ro
+    networks:
+      bdd_test:
+        aliases:
+          - mock.oidc.provider
+
+networks:
+  bdd_test:
+    driver: bridge

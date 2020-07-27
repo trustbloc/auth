@@ -144,44 +144,42 @@ func New(config *Config) (*Operation, error) {
 		oidcClientSecret: config.OIDCClientSecret,
 		oidcCallbackURL:  config.OIDCCallbackURL,
 	}
-	// TODO remove this empty string check. This is just here temporarily to allow for testing of other parts
-	// while the OIDC stuff is in development
-	if config.OIDCProviderURL != "" {
-		idp, err := oidc.NewProvider(
-			oidc.ClientContext(
-				context.Background(),
-				&http.Client{
-					Transport: &http.Transport{TLSClientConfig: config.TLSConfig},
-				},
-			),
-			config.OIDCProviderURL,
-		)
-		if err != nil {
-			return nil, fmt.Errorf("failed to init oidc provider with url [%s]: %w", config.OIDCProviderURL, err)
+
+	// TODO implement retries: https://github.com/trustbloc/hub-auth/issues/45
+	idp, err := oidc.NewProvider(
+		oidc.ClientContext(
+			context.Background(),
+			&http.Client{
+				Transport: &http.Transport{TLSClientConfig: config.TLSConfig},
+			},
+		),
+		config.OIDCProviderURL,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to init oidc provider with url [%s]: %w", config.OIDCProviderURL, err)
+	}
+
+	svc.oidcProvider = &oidcProviderImpl{op: idp}
+
+	svc.transientStore, err = createStore(config.TransientStoreProvider)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create store: %w", err)
+	}
+
+	svc.oauth2ConfigFunc = func(scopes ...string) oauth2Config {
+		config := &oauth2.Config{
+			ClientID:     svc.oidcClientID,
+			ClientSecret: svc.oidcClientSecret,
+			Endpoint:     svc.oidcProvider.Endpoint(),
+			RedirectURL:  fmt.Sprintf("%s%s", svc.oidcCallbackURL, oauth2CallbackPath),
+			Scopes:       []string{oidc.ScopeOpenID},
 		}
 
-		svc.oidcProvider = &oidcProviderImpl{op: idp}
-
-		svc.transientStore, err = createStore(config.TransientStoreProvider)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create store : %w", err)
+		if len(scopes) > 0 {
+			config.Scopes = append(config.Scopes, scopes...)
 		}
 
-		svc.oauth2ConfigFunc = func(scopes ...string) oauth2Config {
-			config := &oauth2.Config{
-				ClientID:     svc.oidcClientID,
-				ClientSecret: svc.oidcClientSecret,
-				Endpoint:     svc.oidcProvider.Endpoint(),
-				RedirectURL:  fmt.Sprintf("%s%s", svc.oidcCallbackURL, oauth2CallbackPath),
-				Scopes:       []string{oidc.ScopeOpenID},
-			}
-
-			if len(scopes) > 0 {
-				config.Scopes = append(config.Scopes, scopes...)
-			}
-
-			return &oauth2ConfigImpl{oc: config}
-		}
+		return &oauth2ConfigImpl{oc: config}
 	}
 
 	bootstrapStore, err := openBootstrapStore(config.StoreProvider)

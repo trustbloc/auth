@@ -6,21 +6,100 @@ SPDX-License-Identifier: Apache-2.0
 package startcmd
 
 import (
+	"encoding/json"
+	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"strings"
 	"testing"
 
+	"github.com/google/uuid"
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/require"
 	"github.com/trustbloc/edge-core/pkg/log"
 )
 
-type mockServer struct{}
+type mockServer struct {
+	err error
+}
 
-func (s *mockServer) ListenAndServe(host string, handler http.Handler) error {
-	return nil
+func (s *mockServer) ListenAndServeTLS(host, certFile, keyFile string, handler http.Handler) error {
+	return s.err
+}
+
+func TestOIDCParameters(t *testing.T) {
+	t.Run("error on missing callback URL", func(t *testing.T) {
+		oidcURL := mockOIDCProvider(t)
+		startCmd := GetStartCmd(&mockServer{})
+
+		args := []string{
+			"--" + hostURLFlagName, "localhost:8080",
+			"--" + logLevelFlagName, log.ParseString(log.DEBUG),
+			"--" + databaseTypeFlagName, "mem",
+			"--" + googleProviderFlagName, oidcURL,
+			"--" + googleClientIDFlagName, uuid.New().String(),
+			"--" + googleClientSecretFlagName, uuid.New().String(),
+		}
+		startCmd.SetArgs(args)
+
+		err := startCmd.Execute()
+		require.Error(t, err)
+	})
+
+	t.Run("error on missing google provider URL", func(t *testing.T) {
+		startCmd := GetStartCmd(&mockServer{})
+
+		args := []string{
+			"--" + hostURLFlagName, "localhost:8080",
+			"--" + logLevelFlagName, log.ParseString(log.DEBUG),
+			"--" + databaseTypeFlagName, "mem",
+			"--" + oidcCallbackURLFlagName, "http://example.com/oauth2/callback",
+			"--" + googleClientIDFlagName, uuid.New().String(),
+			"--" + googleClientSecretFlagName, uuid.New().String(),
+		}
+		startCmd.SetArgs(args)
+
+		err := startCmd.Execute()
+		require.Error(t, err)
+	})
+
+	t.Run("error on missing google client ID", func(t *testing.T) {
+		oidcURL := mockOIDCProvider(t)
+		startCmd := GetStartCmd(&mockServer{})
+
+		args := []string{
+			"--" + hostURLFlagName, "localhost:8080",
+			"--" + logLevelFlagName, log.ParseString(log.DEBUG),
+			"--" + databaseTypeFlagName, "mem",
+			"--" + oidcCallbackURLFlagName, "http://example.com/oauth2/callback",
+			"--" + googleProviderFlagName, oidcURL,
+			"--" + googleClientSecretFlagName, uuid.New().String(),
+		}
+		startCmd.SetArgs(args)
+
+		err := startCmd.Execute()
+		require.Error(t, err)
+	})
+
+	t.Run("error on missing google client secret", func(t *testing.T) {
+		oidcURL := mockOIDCProvider(t)
+		startCmd := GetStartCmd(&mockServer{})
+
+		args := []string{
+			"--" + hostURLFlagName, "localhost:8080",
+			"--" + logLevelFlagName, log.ParseString(log.DEBUG),
+			"--" + databaseTypeFlagName, "mem",
+			"--" + oidcCallbackURLFlagName, "http://example.com/oauth2/callback",
+			"--" + googleProviderFlagName, oidcURL,
+			"--" + googleClientIDFlagName, uuid.New().String(),
+		}
+		startCmd.SetArgs(args)
+
+		err := startCmd.Execute()
+		require.Error(t, err)
+	})
 }
 
 func TestStartCmdContents(t *testing.T) {
@@ -74,10 +153,18 @@ func TestStartCmdWithBlankEnvVar(t *testing.T) {
 
 func TestStartCmdValidArgs(t *testing.T) {
 	t.Run("In-memory storage, valid log level", func(t *testing.T) {
+		oidcURL := mockOIDCProvider(t)
 		startCmd := GetStartCmd(&mockServer{})
 
-		args := []string{"--" + hostURLFlagName, "localhost:8080", "--" + logLevelFlagName, log.ParseString(log.DEBUG),
-			"--" + databaseTypeFlagName, "mem"}
+		args := []string{
+			"--" + hostURLFlagName, "localhost:8080",
+			"--" + logLevelFlagName, log.ParseString(log.DEBUG),
+			"--" + databaseTypeFlagName, "mem",
+			"--" + oidcCallbackURLFlagName, "http://example.com/oauth2/callback",
+			"--" + googleProviderFlagName, oidcURL,
+			"--" + googleClientIDFlagName, uuid.New().String(),
+			"--" + googleClientSecretFlagName, uuid.New().String(),
+		}
 		startCmd.SetArgs(args)
 
 		err := startCmd.Execute()
@@ -86,10 +173,19 @@ func TestStartCmdValidArgs(t *testing.T) {
 		require.Equal(t, log.DEBUG, log.GetLevel(""))
 	})
 	t.Run("Invalid log level - default to info", func(t *testing.T) {
+		oidcURL := mockOIDCProvider(t)
 		startCmd := GetStartCmd(&mockServer{})
 
-		args := []string{"--" + hostURLFlagName, "localhost:8080", "--" + logLevelFlagName, "cherry",
-			"--" + databaseTypeFlagName, "mem"}
+		args := []string{
+			"--" + hostURLFlagName, "localhost:8080",
+			"--" + logLevelFlagName, log.ParseString(log.DEBUG),
+			"--" + databaseTypeFlagName, "mem",
+			"--" + oidcCallbackURLFlagName, "http://example.com/oauth2/callback",
+			"--" + googleProviderFlagName, oidcURL,
+			"--" + googleClientIDFlagName, uuid.New().String(),
+			"--" + googleClientSecretFlagName, uuid.New().String(),
+			"--" + logLevelFlagName, "INVALID",
+		}
 		startCmd.SetArgs(args)
 
 		err := startCmd.Execute()
@@ -97,14 +193,45 @@ func TestStartCmdValidArgs(t *testing.T) {
 		require.Nil(t, err)
 		require.Equal(t, log.INFO, log.GetLevel(""))
 	})
+
+	t.Run("server failure", func(t *testing.T) {
+		expected := errors.New("test")
+		oidcURL := mockOIDCProvider(t)
+		startCmd := GetStartCmd(&mockServer{err: expected})
+
+		args := []string{
+			"--" + hostURLFlagName, "localhost:8080",
+			"--" + logLevelFlagName, log.ParseString(log.DEBUG),
+			"--" + databaseTypeFlagName, "mem",
+			"--" + oidcCallbackURLFlagName, "http://example.com/oauth2/callback",
+			"--" + googleProviderFlagName, oidcURL,
+			"--" + googleClientIDFlagName, uuid.New().String(),
+			"--" + googleClientSecretFlagName, uuid.New().String(),
+		}
+		startCmd.SetArgs(args)
+
+		err := startCmd.Execute()
+
+		require.Error(t, err)
+		require.True(t, errors.Is(err, expected))
+	})
 }
 
 func TestStartCmdFailToCreateController(t *testing.T) {
 	t.Run("CouchDB storage", func(t *testing.T) {
+		oidcURL := mockOIDCProvider(t)
 		startCmd := GetStartCmd(&mockServer{})
 
-		args := []string{"--" + hostURLFlagName, "localhost:8080", "--" + databaseTypeFlagName, "couchdb",
-			"--" + databaseURLFlagName, "BadURL"}
+		args := []string{
+			"--" + hostURLFlagName, "localhost:8080",
+			"--" + logLevelFlagName, log.ParseString(log.DEBUG),
+			"--" + databaseTypeFlagName, "couchdb",
+			"--" + databaseURLFlagName, "INVALID",
+			"--" + oidcCallbackURLFlagName, "http://example.com/oauth2/callback",
+			"--" + googleProviderFlagName, oidcURL,
+			"--" + googleClientIDFlagName, uuid.New().String(),
+			"--" + googleClientSecretFlagName, uuid.New().String(),
+		}
 		startCmd.SetArgs(args)
 
 		err := startCmd.Execute()
@@ -119,10 +246,18 @@ func TestStartCmdFailToCreateController(t *testing.T) {
 }
 
 func TestStartCmdInvalidDatabaseType(t *testing.T) {
+	oidcURL := mockOIDCProvider(t)
 	startCmd := GetStartCmd(&mockServer{})
 
-	args := []string{"--" + hostURLFlagName, "localhost:8080", "--" + logLevelFlagName, log.ParseString(log.DEBUG),
-		"--" + databaseTypeFlagName, "ChesterfieldDB"}
+	args := []string{
+		"--" + hostURLFlagName, "localhost:8080",
+		"--" + logLevelFlagName, log.ParseString(log.DEBUG),
+		"--" + databaseTypeFlagName, "ChesterfieldDB",
+		"--" + oidcCallbackURLFlagName, "http://example.com/oauth2/callback",
+		"--" + googleProviderFlagName, oidcURL,
+		"--" + googleClientIDFlagName, uuid.New().String(),
+		"--" + googleClientSecretFlagName, uuid.New().String(),
+	}
 	startCmd.SetArgs(args)
 
 	err := startCmd.Execute()
@@ -183,10 +318,20 @@ func Test_createProvider(t *testing.T) {
 }
 
 func setEnvVars(t *testing.T) {
+	oidcURL := mockOIDCProvider(t)
+
 	err := os.Setenv(hostURLEnvKey, "localhost:8080")
 	require.NoError(t, err)
 	err = os.Setenv(databaseTypeEnvKey, "mem")
 	require.Nil(t, err)
+	err = os.Setenv(oidcCallbackURLEnvKey, "http://example.com/oauth2/callback")
+	require.NoError(t, err)
+	err = os.Setenv(googleProviderEnvKey, oidcURL)
+	require.NoError(t, err)
+	err = os.Setenv(googleClientIDEnvKey, uuid.New().String())
+	require.NoError(t, err)
+	err = os.Setenv(googleClientSecretEnvKey, uuid.New().String())
+	require.NoError(t, err)
 }
 
 func unsetEnvVars(t *testing.T) {
@@ -205,4 +350,46 @@ func checkFlagPropertiesCorrect(t *testing.T, cmd *cobra.Command, flagName, flag
 
 	flagAnnotations := flag.Annotations
 	require.Nil(t, flagAnnotations)
+}
+
+func mockOIDCProvider(t *testing.T) string {
+	h := &testOIDCProvider{}
+	srv := httptest.NewServer(h)
+	h.baseURL = srv.URL
+
+	t.Cleanup(srv.Close)
+
+	return srv.URL
+}
+
+type oidcConfigJSON struct {
+	Issuer      string   `json:"issuer"`
+	AuthURL     string   `json:"authorization_endpoint"`
+	TokenURL    string   `json:"token_endpoint"`
+	JWKSURL     string   `json:"jwks_uri"`
+	UserInfoURL string   `json:"userinfo_endpoint"`
+	Algorithms  []string `json:"id_token_signing_alg_values_supported"`
+}
+
+type testOIDCProvider struct {
+	baseURL string
+}
+
+func (t *testOIDCProvider) ServeHTTP(w http.ResponseWriter, _ *http.Request) {
+	response, err := json.Marshal(&oidcConfigJSON{
+		Issuer:      t.baseURL,
+		AuthURL:     fmt.Sprintf("%s/oauth2/auth", t.baseURL),
+		TokenURL:    fmt.Sprintf("%s/oauth2/token", t.baseURL),
+		JWKSURL:     fmt.Sprintf("%s/oauth2/certs", t.baseURL),
+		UserInfoURL: fmt.Sprintf("%s/oauth2/userinfo", t.baseURL),
+		Algorithms:  []string{"RS256"},
+	})
+	if err != nil {
+		panic(err)
+	}
+
+	_, err = w.Write(response)
+	if err != nil {
+		panic(err)
+	}
 }
