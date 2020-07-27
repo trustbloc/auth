@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"strings"
 	"testing"
@@ -194,6 +195,26 @@ func TestStartCmdWithBlankEnvVar(t *testing.T) {
 		err = startCmd.Execute()
 		require.Error(t, err)
 		require.Equal(t, "AUTH_REST_HOST_URL value is empty", err.Error())
+	})
+}
+
+func TestUIHandler(t *testing.T) {
+	t.Run("handle base path", func(t *testing.T) {
+		handled := false
+		uiHandler(uiEndpoint, func(_ http.ResponseWriter, _ *http.Request, path string) {
+			handled = true
+			require.Equal(t, uiEndpoint+"/index.html", path)
+		})(nil, &http.Request{URL: &url.URL{Path: uiEndpoint}})
+		require.True(t, handled)
+	})
+	t.Run("handle subpaths", func(t *testing.T) {
+		const expected = uiEndpoint + "/css/abc123.css"
+		handled := false
+		uiHandler(uiEndpoint, func(_ http.ResponseWriter, _ *http.Request, path string) {
+			handled = true
+			require.Equal(t, expected, path)
+		})(nil, &http.Request{URL: &url.URL{Path: expected}})
+		require.True(t, handled)
 	})
 }
 
