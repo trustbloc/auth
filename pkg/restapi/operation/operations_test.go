@@ -17,6 +17,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/trustbloc/hub-auth/pkg/internal/common/mockoidc"
+
 	"github.com/coreos/go-oidc"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
@@ -30,8 +32,7 @@ import (
 
 func TestNew(t *testing.T) {
 	t.Run("success", func(t *testing.T) {
-		config, cleanup := config()
-		defer cleanup()
+		config := config(t)
 		svc, err := New(config)
 		require.NoError(t, err)
 		require.NotNil(t, svc)
@@ -39,8 +40,7 @@ func TestNew(t *testing.T) {
 	})
 
 	t.Run("success, bootstrap store already exists", func(t *testing.T) {
-		config, cleanup := config()
-		defer cleanup()
+		config := config(t)
 
 		config.TransientStoreProvider = memstore.NewProvider()
 
@@ -54,16 +54,14 @@ func TestNew(t *testing.T) {
 	})
 
 	t.Run("error if oidc provider is invalid", func(t *testing.T) {
-		config, cleanup := config()
-		defer cleanup()
+		config := config(t)
 		config.OIDCProviderURL = "INVALID"
 		_, err := New(config)
 		require.Error(t, err)
 	})
 
 	t.Run("error if unable to open transient store", func(t *testing.T) {
-		config, cleanup := config()
-		defer cleanup()
+		config := config(t)
 		config.TransientStoreProvider = &mockstore.Provider{
 			ErrOpenStoreHandle: errors.New("test"),
 		}
@@ -72,8 +70,7 @@ func TestNew(t *testing.T) {
 	})
 
 	t.Run("error if unable to create transient store", func(t *testing.T) {
-		config, cleanup := config()
-		defer cleanup()
+		config := config(t)
 		config.TransientStoreProvider = &mockstore.Provider{
 			ErrCreateStore: errors.New("generic"),
 		}
@@ -84,8 +81,7 @@ func TestNew(t *testing.T) {
 func TestCreateOIDCRequest(t *testing.T) {
 	t.Run("returns oidc request", func(t *testing.T) {
 		const scope = "CreditCardStatement"
-		config, cleanup := config()
-		defer cleanup()
+		config := config(t)
 		svc, err := New(config)
 		require.NoError(t, err)
 		svc.oidcProvider = &mockOIDCProvider{baseURL: "http://test.com"}
@@ -107,8 +103,7 @@ func TestCreateOIDCRequest(t *testing.T) {
 	})
 
 	t.Run("bad request if scope is missing", func(t *testing.T) {
-		config, cleanup := config()
-		defer cleanup()
+		config := config(t)
 		svc, err := New(config)
 		require.NoError(t, err)
 		svc.oidcProvider = &mockOIDCProvider{baseURL: "http://test.com"}
@@ -118,8 +113,7 @@ func TestCreateOIDCRequest(t *testing.T) {
 	})
 
 	t.Run("internal server error if transient store fails", func(t *testing.T) {
-		config, cleanup := config()
-		defer cleanup()
+		config := config(t)
 		config.TransientStoreProvider = &mockstore.Provider{
 			Store: &mockstore.MockStore{
 				Store:  make(map[string][]byte),
@@ -141,8 +135,7 @@ func TestHandleOIDCCallback(t *testing.T) {
 		state := uuid.New().String()
 		code := uuid.New().String()
 
-		config, configCleanup := config()
-		defer configCleanup()
+		config := config(t)
 
 		config.TransientStoreProvider = &mockstore.Provider{
 			Store: &mockstore.MockStore{
@@ -181,8 +174,7 @@ func TestHandleOIDCCallback(t *testing.T) {
 	})
 
 	t.Run("error missing state", func(t *testing.T) {
-		config, cleanup := config()
-		defer cleanup()
+		config := config(t)
 		svc, err := New(config)
 		require.NoError(t, err)
 		result := httptest.NewRecorder()
@@ -191,8 +183,7 @@ func TestHandleOIDCCallback(t *testing.T) {
 	})
 
 	t.Run("error missing code", func(t *testing.T) {
-		config, cleanup := config()
-		defer cleanup()
+		config := config(t)
 		svc, err := New(config)
 		require.NoError(t, err)
 		result := httptest.NewRecorder()
@@ -201,8 +192,7 @@ func TestHandleOIDCCallback(t *testing.T) {
 	})
 
 	t.Run("error invalid state parameter", func(t *testing.T) {
-		config, cleanup := config()
-		defer cleanup()
+		config := config(t)
 		svc, err := New(config)
 		require.NoError(t, err)
 		result := httptest.NewRecorder()
@@ -212,8 +202,7 @@ func TestHandleOIDCCallback(t *testing.T) {
 
 	t.Run("generic transient store error", func(t *testing.T) {
 		state := uuid.New().String()
-		config, cleanup := config()
-		defer cleanup()
+		config := config(t)
 
 		config.TransientStoreProvider = &mockstore.Provider{
 			Store: &mockstore.MockStore{
@@ -234,8 +223,7 @@ func TestHandleOIDCCallback(t *testing.T) {
 	t.Run("generic bootstrap store FETCH error", func(t *testing.T) {
 		id := uuid.New().String()
 		state := uuid.New().String()
-		config, cleanup := config()
-		defer cleanup()
+		config := config(t)
 
 		config.TransientStoreProvider = &mockstorage.Provider{
 			Stores: map[string]storage.Store{
@@ -289,8 +277,7 @@ func TestHandleOIDCCallback(t *testing.T) {
 	t.Run("generic bootstrap store PUT error while onboarding user", func(t *testing.T) {
 		id := uuid.New().String()
 		state := uuid.New().String()
-		config, cleanup := config()
-		defer cleanup()
+		config := config(t)
 
 		config.TransientStoreProvider = &mockstorage.Provider{
 			Stores: map[string]storage.Store{
@@ -344,8 +331,7 @@ func TestHandleOIDCCallback(t *testing.T) {
 
 	t.Run("error exchanging auth code", func(t *testing.T) {
 		state := uuid.New().String()
-		config, cleanup := config()
-		defer cleanup()
+		config := config(t)
 		config.TransientStoreProvider = &mockstore.Provider{Store: &mockstore.MockStore{
 			Store: map[string][]byte{
 				state: []byte(state),
@@ -365,8 +351,7 @@ func TestHandleOIDCCallback(t *testing.T) {
 
 	t.Run("error missing id_token", func(t *testing.T) {
 		state := uuid.New().String()
-		config, cleanup := config()
-		defer cleanup()
+		config := config(t)
 		config.TransientStoreProvider = &mockstore.Provider{Store: &mockstore.MockStore{
 			Store: map[string][]byte{
 				state: []byte(state),
@@ -387,8 +372,7 @@ func TestHandleOIDCCallback(t *testing.T) {
 
 	t.Run("error id_token verification", func(t *testing.T) {
 		state := uuid.New().String()
-		config, cleanup := config()
-		defer cleanup()
+		config := config(t)
 		config.TransientStoreProvider = &mockstore.Provider{Store: &mockstore.MockStore{
 			Store: map[string][]byte{
 				state: []byte(state),
@@ -409,8 +393,7 @@ func TestHandleOIDCCallback(t *testing.T) {
 
 	t.Run("error scanning id_token claims", func(t *testing.T) {
 		state := uuid.New().String()
-		config, cleanup := config()
-		defer cleanup()
+		config := config(t)
 		config.TransientStoreProvider = &mockstore.Provider{Store: &mockstore.MockStore{
 			Store: map[string][]byte{
 				state: []byte(state),
@@ -464,58 +447,14 @@ func (m *mockVerifier) Verify(ctx context.Context, token string) (idToken, error
 	return m.verifyVal, m.verifyErr
 }
 
-func config() (*Config, func()) {
-	path, oidcCleanup := newTestOIDCProvider()
-
+func config(t *testing.T) *Config {
 	return &Config{
-			OIDCProviderURL:        path,
-			OIDCClientID:           uuid.New().String(),
-			OIDCClientSecret:       uuid.New().String(),
-			OIDCCallbackURL:        "http://test.com",
-			TransientStoreProvider: memstore.NewProvider(),
-			StoreProvider:          memstore.NewProvider(),
-		}, func() {
-			oidcCleanup()
-		}
-}
-
-func newTestOIDCProvider() (string, func()) {
-	h := &testOIDCProvider{}
-	srv := httptest.NewServer(h)
-	h.baseURL = srv.URL
-
-	return srv.URL, srv.Close
-}
-
-type oidcConfigJSON struct {
-	Issuer      string   `json:"issuer"`
-	AuthURL     string   `json:"authorization_endpoint"`
-	TokenURL    string   `json:"token_endpoint"`
-	JWKSURL     string   `json:"jwks_uri"`
-	UserInfoURL string   `json:"userinfo_endpoint"`
-	Algorithms  []string `json:"id_token_signing_alg_values_supported"`
-}
-
-type testOIDCProvider struct {
-	baseURL string
-}
-
-func (t *testOIDCProvider) ServeHTTP(w http.ResponseWriter, _ *http.Request) {
-	response, err := json.Marshal(&oidcConfigJSON{
-		Issuer:      t.baseURL,
-		AuthURL:     fmt.Sprintf("%s/oauth2/auth", t.baseURL),
-		TokenURL:    fmt.Sprintf("%s/oauth2/token", t.baseURL),
-		JWKSURL:     fmt.Sprintf("%s/oauth2/certs", t.baseURL),
-		UserInfoURL: fmt.Sprintf("%s/oauth2/userinfo", t.baseURL),
-		Algorithms:  []string{"RS256"},
-	})
-	if err != nil {
-		panic(err)
-	}
-
-	_, err = w.Write(response)
-	if err != nil {
-		panic(err)
+		OIDCProviderURL:        mockoidc.StartProvider(t),
+		OIDCClientID:           uuid.New().String(),
+		OIDCClientSecret:       uuid.New().String(),
+		OIDCCallbackURL:        "http://test.com",
+		TransientStoreProvider: memstore.NewProvider(),
+		StoreProvider:          memstore.NewProvider(),
 	}
 }
 

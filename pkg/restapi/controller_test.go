@@ -7,11 +7,9 @@ SPDX-License-Identifier: Apache-2.0
 package restapi
 
 import (
-	"encoding/json"
-	"fmt"
-	"net/http"
-	"net/http/httptest"
 	"testing"
+
+	"github.com/trustbloc/hub-auth/pkg/internal/common/mockoidc"
 
 	"github.com/stretchr/testify/require"
 	"github.com/trustbloc/edge-core/pkg/storage/memstore"
@@ -21,8 +19,7 @@ import (
 
 func TestController_New(t *testing.T) {
 	t.Run("success", func(t *testing.T) {
-		config, cleanup := config()
-		defer cleanup()
+		config := config(t)
 
 		controller, err := New(config)
 		require.NoError(t, err)
@@ -30,8 +27,7 @@ func TestController_New(t *testing.T) {
 	})
 
 	t.Run("error if operations cannot start", func(t *testing.T) {
-		config, cleanup := config()
-		defer cleanup()
+		config := config(t)
 		config.OIDCProviderURL = "BadURL"
 
 		_, err := New(config)
@@ -40,8 +36,7 @@ func TestController_New(t *testing.T) {
 }
 
 func TestController_GetOperations(t *testing.T) {
-	config, cleanup := config()
-	defer cleanup()
+	config := config(t)
 
 	controller, err := New(config)
 	require.NoError(t, err)
@@ -51,52 +46,12 @@ func TestController_GetOperations(t *testing.T) {
 	require.Equal(t, 2, len(ops))
 }
 
-func config() (*operation.Config, func()) {
-	path, cleanup := newTestOIDCProvider()
+func config(t *testing.T) *operation.Config {
+	path := mockoidc.StartProvider(t)
 
 	return &operation.Config{
 		OIDCProviderURL:        path,
 		TransientStoreProvider: memstore.NewProvider(),
 		StoreProvider:          memstore.NewProvider(),
-	}, cleanup
-}
-
-func newTestOIDCProvider() (string, func()) {
-	h := &testOIDCProvider{}
-	srv := httptest.NewServer(h)
-	h.baseURL = srv.URL
-
-	return srv.URL, srv.Close
-}
-
-type oidcConfigJSON struct {
-	Issuer      string   `json:"issuer"`
-	AuthURL     string   `json:"authorization_endpoint"`
-	TokenURL    string   `json:"token_endpoint"`
-	JWKSURL     string   `json:"jwks_uri"`
-	UserInfoURL string   `json:"userinfo_endpoint"`
-	Algorithms  []string `json:"id_token_signing_alg_values_supported"`
-}
-
-type testOIDCProvider struct {
-	baseURL string
-}
-
-func (t *testOIDCProvider) ServeHTTP(w http.ResponseWriter, _ *http.Request) {
-	response, err := json.Marshal(&oidcConfigJSON{
-		Issuer:      t.baseURL,
-		AuthURL:     fmt.Sprintf("%s/oauth2/auth", t.baseURL),
-		TokenURL:    fmt.Sprintf("%s/oauth2/token", t.baseURL),
-		JWKSURL:     fmt.Sprintf("%s/oauth2/certs", t.baseURL),
-		UserInfoURL: fmt.Sprintf("%s/oauth2/userinfo", t.baseURL),
-		Algorithms:  []string{"RS256"},
-	})
-	if err != nil {
-		panic(err)
-	}
-
-	_, err = w.Write(response)
-	if err != nil {
-		panic(err)
 	}
 }
