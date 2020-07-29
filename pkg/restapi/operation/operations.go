@@ -25,8 +25,9 @@ import (
 )
 
 const (
-	oauth2GetRequestPath = "/oauth2/request"
-	oauth2CallbackPath   = "/oauth2/callback"
+	oauth2GetRequestPath    = "/oauth2/request"
+	oauth2CallbackPath      = "/oauth2/callback"
+	bootstrapGetRequestPath = "/bootstrap"
 	// api path params
 	scopeQueryParam = "scope"
 
@@ -117,6 +118,7 @@ type Operation struct {
 	oidcCallbackURL  string
 	oauth2ConfigFunc func(...string) oauth2Config
 	bootstrapStore   storage.Store
+	bootstrapConfig  *BootstrapConfig
 }
 
 // Config defines configuration for rp operations.
@@ -129,10 +131,13 @@ type Config struct {
 	OIDCCallbackURL        string
 	TransientStoreProvider storage.Provider
 	StoreProvider          storage.Provider
+	BootstrapConfig        *BootstrapConfig
 }
 
-type createOIDCRequestResponse struct {
-	Request string `json:"request"`
+// BootstrapConfig holds user bootstrap-related config.
+type BootstrapConfig struct {
+	SDSURL       string
+	KeyServerURL string
 }
 
 // New returns rp operation instance.
@@ -143,6 +148,7 @@ func New(config *Config) (*Operation, error) {
 		oidcClientID:     config.OIDCClientID,
 		oidcClientSecret: config.OIDCClientSecret,
 		oidcCallbackURL:  config.OIDCCallbackURL,
+		bootstrapConfig:  config.BootstrapConfig,
 	}
 
 	// TODO implement retries: https://github.com/trustbloc/hub-auth/issues/45
@@ -340,6 +346,48 @@ func (c *Operation) onboardUser(id string) (*user.Profile, error) {
 	return userProfile, nil
 }
 
+func (c *Operation) handleBootstrapDataRequest(w http.ResponseWriter, r *http.Request) {
+	handle := r.URL.Query().Get("up")
+	if handle == "" {
+		handleAuthError(w, http.StatusBadRequest, "missing handle")
+
+		return
+	}
+
+	profile, err := user.NewStore(c.transientStore).Get(handle)
+	if errors.Is(err, storage.ErrValueNotFound) {
+		handleAuthError(w, http.StatusBadRequest, "invalid handle")
+
+		return
+	}
+
+	if err != nil {
+		handleAuthError(w, http.StatusInternalServerError,
+			fmt.Sprintf("failed to query transient store for handle: %s", err))
+
+		return
+	}
+
+	response, err := json.Marshal(&bootstrapData{
+		SDSURL:            c.bootstrapConfig.SDSURL,
+		SDSPrimaryVaultID: profile.SDSPrimaryVaultID,
+		KeyServerURL:      c.bootstrapConfig.KeyServerURL,
+		KeyStoreIDs:       profile.KeyStoreIDs,
+	})
+	if err != nil {
+		handleAuthError(w, http.StatusInternalServerError, fmt.Sprintf("failed to marshal bootstrap data: %s", err))
+
+		return
+	}
+
+	// TODO We should delete the handle from the transient store after writing the response,
+	//  but edge-core store API doesn't have a Delete() operation: https://github.com/trustbloc/edge-core/issues/45
+	_, err = w.Write(response)
+	if err != nil {
+		logger.Errorf("failed to write bootstrap data to output: %s", err)
+	}
+}
+
 // TODO redirect to the UI: https://github.com/trustbloc/hub-auth/issues/39
 func handleAuthResult(w http.ResponseWriter, r *http.Request, _ *user.Profile) {
 	http.Redirect(w, r, "", http.StatusFound)
@@ -373,6 +421,7 @@ func (c *Operation) GetRESTHandlers() []Handler {
 	return []Handler{
 		support.NewHTTPHandler(oauth2GetRequestPath, http.MethodGet, c.createOIDCRequest),
 		support.NewHTTPHandler(oauth2CallbackPath, http.MethodGet, c.handleOIDCCallback),
+		support.NewHTTPHandler(bootstrapGetRequestPath, http.MethodGet, c.handleBootstrapDataRequest),
 	}
 }
 
