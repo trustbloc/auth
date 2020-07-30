@@ -17,8 +17,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/trustbloc/hub-auth/pkg/internal/common/mockoidc"
-
 	"github.com/coreos/go-oidc"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
@@ -27,6 +25,8 @@ import (
 	"github.com/trustbloc/edge-core/pkg/storage/mockstore"
 	"golang.org/x/oauth2"
 
+	"github.com/trustbloc/hub-auth/pkg/bootstrap/user"
+	"github.com/trustbloc/hub-auth/pkg/internal/common/mockoidc"
 	"github.com/trustbloc/hub-auth/pkg/internal/common/mockstorage"
 )
 
@@ -36,7 +36,7 @@ func TestNew(t *testing.T) {
 		svc, err := New(config)
 		require.NoError(t, err)
 		require.NotNil(t, svc)
-		require.Equal(t, 2, len(svc.GetRESTHandlers()))
+		require.Equal(t, 3, len(svc.GetRESTHandlers()))
 	})
 
 	t.Run("success, bootstrap store already exists", func(t *testing.T) {
@@ -50,7 +50,7 @@ func TestNew(t *testing.T) {
 		svc, err := New(config)
 		require.NoError(t, err)
 		require.NotNil(t, svc)
-		require.Equal(t, 2, len(svc.GetRESTHandlers()))
+		require.Equal(t, 3, len(svc.GetRESTHandlers()))
 	})
 
 	t.Run("error if oidc provider is invalid", func(t *testing.T) {
@@ -413,6 +413,69 @@ func TestHandleOIDCCallback(t *testing.T) {
 	})
 }
 
+func TestHandleBootstrapDataRequest(t *testing.T) {
+	t.Run("returns bootstrap data", func(t *testing.T) {
+		config := config(t)
+		svc, err := New(config)
+		require.NoError(t, err)
+		expected := &user.Profile{
+			SDSPrimaryVaultID: uuid.New().String(),
+			KeyStoreIDs:       []string{uuid.New().String()},
+		}
+
+		handle := uuid.New().String()
+
+		// put in transient store by onboardUser()
+		err = svc.transientStore.Put(handle, marshal(t, expected))
+		require.NoError(t, err)
+
+		w := httptest.NewRecorder()
+		svc.handleBootstrapDataRequest(w, newBootstrapDataRequest(handle))
+		require.Equal(t, http.StatusOK, w.Code)
+		result := &bootstrapData{}
+		err = json.NewDecoder(w.Body).Decode(result)
+		require.NoError(t, err)
+		require.Equal(t, expected.SDSPrimaryVaultID, result.SDSPrimaryVaultID)
+		require.Equal(t, expected.KeyStoreIDs, result.KeyStoreIDs)
+		require.Equal(t, config.BootstrapConfig.KeyServerURL, result.KeyServerURL)
+		require.Equal(t, config.BootstrapConfig.SDSURL, result.SDSURL)
+	})
+
+	t.Run("bad request if handle is missing", func(t *testing.T) {
+		svc, err := New(config(t))
+		require.NoError(t, err)
+		w := httptest.NewRecorder()
+		svc.handleBootstrapDataRequest(w, httptest.NewRequest(http.MethodGet, "http://examepl.com/bootstrap", nil))
+		require.Equal(t, http.StatusBadRequest, w.Code)
+	})
+
+	t.Run("bad request if handle is invalid", func(t *testing.T) {
+		svc, err := New(config(t))
+		require.NoError(t, err)
+		w := httptest.NewRecorder()
+		svc.handleBootstrapDataRequest(w, newBootstrapDataRequest("INVALID"))
+		require.Equal(t, http.StatusBadRequest, w.Code)
+	})
+
+	t.Run("internal server error if transient store FETCH fails generically", func(t *testing.T) {
+		config := config(t)
+		handle := uuid.New().String()
+		config.TransientStoreProvider = &mockstorage.Provider{
+			Store: &mockstorage.MockStore{
+				Store: map[string][]byte{
+					handle: marshal(t, &user.Profile{}),
+				},
+				ErrGet: errors.New("generic"),
+			},
+		}
+		svc, err := New(config)
+		require.NoError(t, err)
+		w := httptest.NewRecorder()
+		svc.handleBootstrapDataRequest(w, newBootstrapDataRequest(handle))
+		require.Equal(t, http.StatusInternalServerError, w.Code)
+	})
+}
+
 func newCreateOIDCHTTPRequest(scope string) *http.Request {
 	return httptest.NewRequest(http.MethodGet, fmt.Sprintf("http://example.com/oauth2/request?scope=%s", scope), nil)
 }
@@ -420,6 +483,11 @@ func newCreateOIDCHTTPRequest(scope string) *http.Request {
 func newOIDCCallback(state, code string) *http.Request {
 	return httptest.NewRequest(http.MethodGet,
 		fmt.Sprintf("http://example.com/oauth2/callback?state=%s&code=%s", state, code), nil)
+}
+
+func newBootstrapDataRequest(handle string) *http.Request {
+	return httptest.NewRequest(http.MethodGet,
+		fmt.Sprintf("http://example.com/bootstrap?up=%s", handle), nil)
 }
 
 type mockOIDCProvider struct {
@@ -455,7 +523,18 @@ func config(t *testing.T) *Config {
 		OIDCCallbackURL:        "http://test.com",
 		TransientStoreProvider: memstore.NewProvider(),
 		StoreProvider:          memstore.NewProvider(),
+		BootstrapConfig: &BootstrapConfig{
+			SDSURL:       "http://sds.example.com",
+			KeyServerURL: "http://keyserver.example.com",
+		},
 	}
+}
+
+func marshal(t *testing.T, v interface{}) []byte {
+	bits, err := json.Marshal(v)
+	require.NoError(t, err)
+
+	return bits
 }
 
 type mockOAuth2Config struct {

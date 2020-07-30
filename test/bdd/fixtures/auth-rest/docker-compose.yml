@@ -21,6 +21,8 @@ services:
       - AUTH_REST_GOOGLE_URL=http://mock.oidc.provider
       - AUTH_REST_GOOGLE_CLIENTID=TODO # https://github.com/trustbloc/hub-auth/issues/9
       - AUTH_REST_GOOGLE_CLIENTSECRET=TODO
+      - AUTH_REST_SDS_URL=TODO        # onboard user: https://github.com/trustbloc/hub-auth/issues/38
+      - AUTH_REST_KEYSERVER_URL=TODO  # onboard user: https://github.com/trustbloc/hub-auth/issues/38
     ports:
       - 8070:8070
     entrypoint: ""

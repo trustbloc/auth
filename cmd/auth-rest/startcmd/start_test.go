@@ -136,6 +136,52 @@ func TestStartCmdWithMissingArg(t *testing.T) {
 			"Neither host-url (command line flag) nor AUTH_REST_HOST_URL (environment variable) have been set.",
 			err.Error())
 	})
+
+	t.Run("missing sds url arg", func(t *testing.T) {
+		oidcURL := mockOIDCProvider(t)
+		startCmd := GetStartCmd(&mockServer{})
+
+		args := []string{
+			"--" + hostURLFlagName, "localhost:8080",
+			"--" + logLevelFlagName, log.ParseString(log.DEBUG),
+			"--" + databaseTypeFlagName, "mem",
+			"--" + oidcCallbackURLFlagName, "http://example.com/oauth2/callback",
+			"--" + googleProviderFlagName, oidcURL,
+			"--" + googleClientIDFlagName, uuid.New().String(),
+			"--" + googleClientSecretFlagName, uuid.New().String(),
+			"--" + keyServerURLFlagName, "http://keyserver.example.com",
+		}
+		startCmd.SetArgs(args)
+
+		err := startCmd.Execute()
+
+		require.Error(t, err)
+		require.Contains(t, err.Error(), sdsURLFlagName)
+		require.Contains(t, err.Error(), sdsURLEnvKey)
+	})
+
+	t.Run("missing keyserver url arg", func(t *testing.T) {
+		oidcURL := mockOIDCProvider(t)
+		startCmd := GetStartCmd(&mockServer{})
+
+		args := []string{
+			"--" + hostURLFlagName, "localhost:8080",
+			"--" + logLevelFlagName, log.ParseString(log.DEBUG),
+			"--" + databaseTypeFlagName, "mem",
+			"--" + oidcCallbackURLFlagName, "http://example.com/oauth2/callback",
+			"--" + googleProviderFlagName, oidcURL,
+			"--" + googleClientIDFlagName, uuid.New().String(),
+			"--" + googleClientSecretFlagName, uuid.New().String(),
+			"--" + sdsURLFlagName, "http://sds.example.com",
+		}
+		startCmd.SetArgs(args)
+
+		err := startCmd.Execute()
+
+		require.Error(t, err)
+		require.Contains(t, err.Error(), keyServerURLFlagName)
+		require.Contains(t, err.Error(), keyServerURLEnvKey)
+	})
 }
 
 func TestStartCmdWithBlankEnvVar(t *testing.T) {
@@ -164,6 +210,8 @@ func TestStartCmdValidArgs(t *testing.T) {
 			"--" + googleProviderFlagName, oidcURL,
 			"--" + googleClientIDFlagName, uuid.New().String(),
 			"--" + googleClientSecretFlagName, uuid.New().String(),
+			"--" + sdsURLFlagName, "http://sds.example.com",
+			"--" + keyServerURLFlagName, "http://keyserver.example.com",
 		}
 		startCmd.SetArgs(args)
 
@@ -185,6 +233,8 @@ func TestStartCmdValidArgs(t *testing.T) {
 			"--" + googleClientIDFlagName, uuid.New().String(),
 			"--" + googleClientSecretFlagName, uuid.New().String(),
 			"--" + logLevelFlagName, "INVALID",
+			"--" + sdsURLFlagName, "http://sds.example.com",
+			"--" + keyServerURLFlagName, "http://keyserver.example.com",
 		}
 		startCmd.SetArgs(args)
 
@@ -207,6 +257,8 @@ func TestStartCmdValidArgs(t *testing.T) {
 			"--" + googleProviderFlagName, oidcURL,
 			"--" + googleClientIDFlagName, uuid.New().String(),
 			"--" + googleClientSecretFlagName, uuid.New().String(),
+			"--" + sdsURLFlagName, "http://sds.example.com",
+			"--" + keyServerURLFlagName, "http://keyserver.example.com",
 		}
 		startCmd.SetArgs(args)
 
@@ -231,6 +283,8 @@ func TestStartCmdFailToCreateController(t *testing.T) {
 			"--" + googleProviderFlagName, oidcURL,
 			"--" + googleClientIDFlagName, uuid.New().String(),
 			"--" + googleClientSecretFlagName, uuid.New().String(),
+			"--" + sdsURLFlagName, "http://sds.example.com",
+			"--" + keyServerURLFlagName, "http://keyserver.example.com",
 		}
 		startCmd.SetArgs(args)
 
@@ -257,6 +311,8 @@ func TestStartCmdInvalidDatabaseType(t *testing.T) {
 		"--" + googleProviderFlagName, oidcURL,
 		"--" + googleClientIDFlagName, uuid.New().String(),
 		"--" + googleClientSecretFlagName, uuid.New().String(),
+		"--" + sdsURLFlagName, "http://sds.example.com",
+		"--" + keyServerURLFlagName, "http://keyserver.example.com",
 	}
 	startCmd.SetArgs(args)
 
@@ -331,6 +387,10 @@ func setEnvVars(t *testing.T) {
 	err = os.Setenv(googleClientIDEnvKey, uuid.New().String())
 	require.NoError(t, err)
 	err = os.Setenv(googleClientSecretEnvKey, uuid.New().String())
+	require.NoError(t, err)
+	err = os.Setenv(sdsURLEnvKey, "http://sds.example.com")
+	require.NoError(t, err)
+	err = os.Setenv(keyServerURLEnvKey, "http://keyserver.examepl.com")
 	require.NoError(t, err)
 }
 

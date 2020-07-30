@@ -114,6 +114,19 @@ const (
 	googleClientSecretEnvKey = "AUTH_REST_GOOGLE_CLIENTSECRET" // nolint:gosec
 )
 
+// Bootstrap parameters.
+const (
+	sdsURLFlagName  = "sds-url"
+	sdsURLFlagUsage = "URL for the Secure Data Storage service." +
+		" Alternatively, this can be set with the following environment variable: " + sdsURLEnvKey
+	sdsURLEnvKey = "AUTH_REST_SDS_URL"
+
+	keyServerURLFlagName  = "ks-url"
+	keyServerURLFlagUsage = "URL for the Key Server." +
+		" Alternatively, this can be set with the following environment variable: " + keyServerURLEnvKey
+	keyServerURLEnvKey = "AUTH_REST_KEYSERVER_URL"
+)
+
 const (
 	// api
 	healthCheckEndpoint = "/healthcheck"
@@ -122,13 +135,14 @@ const (
 var logger = log.New("auth-rest")
 
 type authRestParameters struct {
-	hostURL        string
-	logLevel       string
-	databaseType   string
-	databaseURL    string
-	databasePrefix string
-	tlsParams      *tlsParams
-	oidcParams     *oidcParams
+	hostURL         string
+	logLevel        string
+	databaseType    string
+	databaseURL     string
+	databasePrefix  string
+	tlsParams       *tlsParams
+	oidcParams      *oidcParams
+	bootstrapParams *bootstrapParams
 }
 
 type tlsParams struct {
@@ -147,6 +161,11 @@ type oidcProviderParams struct {
 	providerURL  string
 	clientID     string
 	clientSecret string
+}
+
+type bootstrapParams struct {
+	sdsURL       string
+	keyServerURL string
 }
 
 type healthCheckResp struct {
@@ -233,14 +252,20 @@ func getAuthRestParameters(cmd *cobra.Command) (*authRestParameters, error) {
 		return nil, err
 	}
 
+	bootstrapParams, err := getBootstrapParams(cmd)
+	if err != nil {
+		return nil, err
+	}
+
 	return &authRestParameters{
-		hostURL:        hostURL,
-		tlsParams:      tlsParams,
-		logLevel:       loggingLevel,
-		databaseType:   databaseType,
-		databaseURL:    databaseURL,
-		databasePrefix: databasePrefix,
-		oidcParams:     oidcParams,
+		hostURL:         hostURL,
+		tlsParams:       tlsParams,
+		logLevel:        loggingLevel,
+		databaseType:    databaseType,
+		databaseURL:     databaseURL,
+		databasePrefix:  databasePrefix,
+		oidcParams:      oidcParams,
+		bootstrapParams: bootstrapParams,
 	}, nil
 }
 
@@ -293,6 +318,8 @@ func createFlags(startCmd *cobra.Command) {
 	startCmd.Flags().StringP(googleProviderFlagName, "", "", googleProviderFlagUsage)
 	startCmd.Flags().StringP(googleClientIDFlagName, "", "", googleClientIDFlagUsage)
 	startCmd.Flags().StringP(googleClientSecretFlagName, "", "", googleClientSecretFlagUsage)
+	startCmd.Flags().StringP(sdsURLFlagName, "", "", sdsURLFlagUsage)
+	startCmd.Flags().StringP(keyServerURLFlagName, "", "", keyServerURLFlagUsage)
 }
 
 func startAuthService(parameters *authRestParameters, srv server) error {
@@ -328,6 +355,10 @@ func startAuthService(parameters *authRestParameters, srv server) error {
 		OIDCProviderURL:        parameters.oidcParams.google.providerURL,
 		OIDCClientID:           parameters.oidcParams.google.clientID,
 		OIDCClientSecret:       parameters.oidcParams.google.clientSecret,
+		BootstrapConfig: &operation.BootstrapConfig{
+			SDSURL:       parameters.bootstrapParams.sdsURL,
+			KeyServerURL: parameters.bootstrapParams.keyServerURL,
+		},
 	})
 	if err != nil {
 		return err
@@ -387,6 +418,21 @@ func getGoogleOIDCParams(cmd *cobra.Command) (*oidcProviderParams, error) {
 
 	params.clientSecret, err = cmdutils.GetUserSetVarFromString(cmd,
 		googleClientSecretFlagName, googleClientSecretEnvKey, false)
+
+	return params, err
+}
+
+func getBootstrapParams(cmd *cobra.Command) (*bootstrapParams, error) {
+	params := &bootstrapParams{}
+
+	var err error
+
+	params.sdsURL, err = cmdutils.GetUserSetVarFromString(cmd, sdsURLFlagName, sdsURLEnvKey, false)
+	if err != nil {
+		return nil, err
+	}
+
+	params.keyServerURL, err = cmdutils.GetUserSetVarFromString(cmd, keyServerURLFlagName, keyServerURLEnvKey, false)
 
 	return params, err
 }
