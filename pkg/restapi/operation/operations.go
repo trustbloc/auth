@@ -13,6 +13,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 
 	"github.com/coreos/go-oidc"
 	"github.com/google/uuid"
@@ -33,6 +34,9 @@ const (
 
 	transientStoreName = "hub-auth-rest-transient"
 	bootstrapStoreName = "bootstrap-data"
+
+	// redirect url parameter
+	userProfileQueryParam = "up"
 )
 
 var logger = log.New("hub-auth-restapi")
@@ -116,6 +120,7 @@ type Operation struct {
 	oidcClientID     string
 	oidcClientSecret string
 	oidcCallbackURL  string
+	uiEndpoint       string
 	oauth2ConfigFunc func(...string) oauth2Config
 	bootstrapStore   storage.Store
 	bootstrapConfig  *BootstrapConfig
@@ -129,6 +134,7 @@ type Config struct {
 	OIDCClientID           string
 	OIDCClientSecret       string
 	OIDCCallbackURL        string
+	UIEndpoint             string
 	TransientStoreProvider storage.Provider
 	StoreProvider          storage.Provider
 	BootstrapConfig        *BootstrapConfig
@@ -329,7 +335,15 @@ func (c *Operation) handleOIDCCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	handleAuthResult(w, r, userProfile)
+	profileBytes, err := json.Marshal(userProfile)
+	if err != nil {
+		c.writeErrorResponse(w, http.StatusInternalServerError,
+			fmt.Sprintf("failed to marshal user profile data : %s", err))
+
+		return
+	}
+
+	c.handleAuthResult(w, r, profileBytes)
 }
 
 // TODO onboard user at key server and SDS: https://github.com/trustbloc/hub-auth/issues/38
@@ -347,7 +361,7 @@ func (c *Operation) onboardUser(id string) (*user.Profile, error) {
 }
 
 func (c *Operation) handleBootstrapDataRequest(w http.ResponseWriter, r *http.Request) {
-	handle := r.URL.Query().Get("up")
+	handle := r.URL.Query().Get(userProfileQueryParam)
 	if handle == "" {
 		handleAuthError(w, http.StatusBadRequest, "missing handle")
 
@@ -388,9 +402,21 @@ func (c *Operation) handleBootstrapDataRequest(w http.ResponseWriter, r *http.Re
 	}
 }
 
-// TODO redirect to the UI: https://github.com/trustbloc/hub-auth/issues/39
-func handleAuthResult(w http.ResponseWriter, r *http.Request, _ *user.Profile) {
-	http.Redirect(w, r, "", http.StatusFound)
+func (c *Operation) handleAuthResult(w http.ResponseWriter, r *http.Request, profileBytes []byte) {
+	handle := url.QueryEscape(uuid.New().String())
+
+	err := c.transientStore.Put(handle, profileBytes)
+	if err != nil {
+		c.writeErrorResponse(w,
+			http.StatusInternalServerError, fmt.Sprintf("failed to write handle to transient store: %s", err))
+
+		return
+	}
+
+	redirectURL := fmt.Sprintf("%s?%s=%s", c.uiEndpoint, userProfileQueryParam, handle)
+
+	http.Redirect(w, r, redirectURL, http.StatusFound)
+	logger.Debugf("redirected to: %s", redirectURL)
 }
 
 func handleAuthError(w http.ResponseWriter, status int, msg string) {

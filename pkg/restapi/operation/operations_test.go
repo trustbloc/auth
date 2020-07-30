@@ -411,6 +411,30 @@ func TestHandleOIDCCallback(t *testing.T) {
 		svc.handleOIDCCallback(result, newOIDCCallback(state, "code"))
 		require.Equal(t, http.StatusInternalServerError, result.Code)
 	})
+	t.Run("PUT error while storing user info while handling callback user", func(t *testing.T) {
+		id := uuid.New().String()
+		state := uuid.New().String()
+		config := config(t)
+
+		config.TransientStoreProvider = &mockstorage.Provider{
+			Stores: map[string]storage.Store{
+				transientStoreName: &mockstore.MockStore{
+					Store: map[string][]byte{
+						id: []byte("{}"),
+					},
+					ErrGet: storage.ErrValueNotFound,
+					ErrPut: errors.New("generic"),
+				},
+			},
+		}
+
+		svc, err := New(config)
+		require.NoError(t, err)
+
+		result := httptest.NewRecorder()
+		svc.handleAuthResult(result, newOIDCCallback(state, "code"), nil)
+		require.Equal(t, http.StatusInternalServerError, result.Code)
+	})
 }
 
 func TestHandleBootstrapDataRequest(t *testing.T) {
@@ -487,7 +511,7 @@ func newOIDCCallback(state, code string) *http.Request {
 
 func newBootstrapDataRequest(handle string) *http.Request {
 	return httptest.NewRequest(http.MethodGet,
-		fmt.Sprintf("http://example.com/bootstrap?up=%s", handle), nil)
+		fmt.Sprintf("http://example.com/bootstrap?%s=%s", userProfileQueryParam, handle), nil)
 }
 
 type mockOIDCProvider struct {

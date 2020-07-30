@@ -79,6 +79,11 @@ const (
 		" For CouchDB, include the username:password@ text if required." +
 		" Alternatively, this can be set with the following environment variable: " + databaseURLEnvKey
 
+	staticFilesPathFlagName  = "static-path"
+	staticFilesPathFlagUsage = "Path to the folder where the static files are to be hosted under " + uiEndpoint + "." +
+		"Alternatively, this can be set with the following environment variable: " + staticFilesPathEnvKey
+	staticFilesPathEnvKey = "AUTH_REST_STATIC_FILES"
+
 	databasePrefixFlagName      = "database-prefix"
 	databasePrefixEnvKey        = "AUTH_REST_DATABASE_PREFIX"
 	databasePrefixFlagShorthand = "p"
@@ -129,6 +134,7 @@ const (
 
 const (
 	// api
+	uiEndpoint          = "/ui"
 	healthCheckEndpoint = "/healthcheck"
 )
 
@@ -143,6 +149,7 @@ type authRestParameters struct {
 	tlsParams       *tlsParams
 	oidcParams      *oidcParams
 	bootstrapParams *bootstrapParams
+	staticFiles     string
 }
 
 type tlsParams struct {
@@ -210,7 +217,7 @@ func createStartCmd(srv server) *cobra.Command {
 	}
 }
 
-func getAuthRestParameters(cmd *cobra.Command) (*authRestParameters, error) {
+func getAuthRestParameters(cmd *cobra.Command) (*authRestParameters, error) { //nolint:funlen,gocyclo
 	hostURL, err := cmdutils.GetUserSetVarFromString(cmd, hostURLFlagName, hostURLEnvKey, false)
 	if err != nil {
 		return nil, err
@@ -227,6 +234,11 @@ func getAuthRestParameters(cmd *cobra.Command) (*authRestParameters, error) {
 	}
 
 	databaseType, err := cmdutils.GetUserSetVarFromString(cmd, databaseTypeFlagName, databaseTypeEnvKey, false)
+	if err != nil {
+		return nil, err
+	}
+
+	staticFiles, err := cmdutils.GetUserSetVarFromString(cmd, staticFilesPathFlagName, staticFilesPathEnvKey, true)
 	if err != nil {
 		return nil, err
 	}
@@ -266,6 +278,7 @@ func getAuthRestParameters(cmd *cobra.Command) (*authRestParameters, error) {
 		databasePrefix:  databasePrefix,
 		oidcParams:      oidcParams,
 		bootstrapParams: bootstrapParams,
+		staticFiles:     staticFiles,
 	}, nil
 }
 
@@ -311,6 +324,7 @@ func createFlags(startCmd *cobra.Command) {
 	startCmd.Flags().StringP(tlsServeCertPathFlagName, "", "", tlsServeCertPathFlagUsage)
 	startCmd.Flags().StringP(tlsServeKeyPathFlagName, "", "", tlsServeKeyPathFlagUsage)
 	startCmd.Flags().StringP(logLevelFlagName, logLevelFlagShorthand, "", logLevelPrefixFlagUsage)
+	startCmd.Flags().StringP(staticFilesPathFlagName, "", "", staticFilesPathFlagUsage)
 	startCmd.Flags().StringP(databaseTypeFlagName, databaseTypeFlagShorthand, "", databaseTypeFlagUsage)
 	startCmd.Flags().StringP(databaseURLFlagName, databaseURLFlagShorthand, "", databaseURLFlagUsage)
 	startCmd.Flags().StringP(databasePrefixFlagName, databasePrefixFlagShorthand, "", databasePrefixFlagUsage)
@@ -340,7 +354,6 @@ func startAuthService(parameters *authRestParameters, srv server) error {
 	logger.Debugf("root ca's %v", rootCAs)
 
 	router := mux.NewRouter()
-
 	// health check
 	router.HandleFunc(healthCheckEndpoint, healthCheckHandler).Methods(http.MethodGet)
 
@@ -368,11 +381,15 @@ func startAuthService(parameters *authRestParameters, srv server) error {
 		router.HandleFunc(handler.Path(), handler.Handle()).Methods(handler.Method())
 	}
 
-	logger.Infof(`Starting hub-auth REST server with the following parameters: 
-Host URL: %s
-Database type: %s
+	logger.Infof(`Starting hub-auth REST server with the following parameters:Host URL: %s Database type: %s
 Database URL: %s
 Database prefix: %s`, parameters.hostURL, parameters.databaseType, parameters.databaseURL, parameters.databasePrefix)
+
+	// static frontend
+	router.PathPrefix(uiEndpoint).
+		Subrouter().
+		Methods(http.MethodGet).
+		HandlerFunc(uiHandler(parameters.staticFiles, http.ServeFile))
 
 	return srv.ListenAndServeTLS(
 		parameters.hostURL,
@@ -380,6 +397,19 @@ Database prefix: %s`, parameters.hostURL, parameters.databaseType, parameters.da
 		parameters.tlsParams.serveKeyPath,
 		constructCORSHandler(router),
 	)
+}
+
+func uiHandler(
+	basePath string,
+	fileServer func(http.ResponseWriter, *http.Request, string)) func(http.ResponseWriter, *http.Request) {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == uiEndpoint {
+			fileServer(w, r, strings.ReplaceAll(basePath+"/index.html", "//", "/"))
+			return
+		}
+
+		fileServer(w, r, strings.ReplaceAll(basePath+"/"+r.URL.Path[len(uiEndpoint):], "//", "/"))
+	}
 }
 
 func getOIDCParams(cmd *cobra.Command) (*oidcParams, error) {
