@@ -7,7 +7,6 @@ SPDX-License-Identifier: Apache-2.0
 package mockstorage
 
 import (
-	"errors"
 	"fmt"
 	"sync"
 
@@ -75,7 +74,7 @@ type MockStore struct {
 // Put stores the key-value pair.
 func (s *MockStore) Put(k string, v []byte) error {
 	if k == "" {
-		return errors.New("key is mandatory")
+		return storage.ErrKeyRequired
 	}
 
 	s.lock.Lock()
@@ -106,4 +105,9 @@ func (s *MockStore) CreateIndex(createIndexRequest storage.CreateIndexRequest) e
 // Query returns a mocked error.
 func (s *MockStore) Query(query string) (storage.ResultsIterator, error) {
 	return s.ResultsIteratorToReturn, s.ErrQuery
+}
+
+// Delete is currently unimplemented.
+func (s *MockStore) Delete(k string) error {
+	panic("implement me")
 }
