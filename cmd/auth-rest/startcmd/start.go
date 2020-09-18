@@ -9,11 +9,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/gorilla/mux"
+	"github.com/ory/hydra-client-go/client"
 	"github.com/rs/cors"
 	"github.com/spf13/cobra"
 	"github.com/trustbloc/edge-core/pkg/log"
@@ -96,6 +98,11 @@ const (
 
 // OIDC parameters.
 const (
+	hydraURLFlagName  = "hydra-url"
+	hydraURLFlagUsage = "Base URL to the hydra service." +
+		"Alternatively, this can be set with the following environment variable: " + hydraURLEnvKey
+	hydraURLEnvKey = "AUTH_REST_HYDRA_URL"
+
 	// assumed to be the same landing page for all callbacks from all OIDC providers
 	oidcCallbackURLFlagName  = "oidcCallbackURL"
 	oidcCallbackURLFlagUsage = "Base URL for the OIDC callback endpoint." +
@@ -160,6 +167,7 @@ type tlsParams struct {
 }
 
 type oidcParams struct {
+	hydraURL        *url.URL
 	baseCallbackURL string
 	google          *oidcProviderParams
 }
@@ -328,6 +336,7 @@ func createFlags(startCmd *cobra.Command) {
 	startCmd.Flags().StringP(databaseTypeFlagName, databaseTypeFlagShorthand, "", databaseTypeFlagUsage)
 	startCmd.Flags().StringP(databaseURLFlagName, databaseURLFlagShorthand, "", databaseURLFlagUsage)
 	startCmd.Flags().StringP(databasePrefixFlagName, databasePrefixFlagShorthand, "", databasePrefixFlagUsage)
+	startCmd.Flags().StringP(hydraURLFlagName, "", "", hydraURLFlagUsage)
 	startCmd.Flags().StringP(oidcCallbackURLFlagName, "", "", oidcCallbackURLFlagUsage)
 	startCmd.Flags().StringP(googleProviderFlagName, "", "", googleProviderFlagUsage)
 	startCmd.Flags().StringP(googleClientIDFlagName, "", "", googleClientIDFlagUsage)
@@ -336,6 +345,7 @@ func createFlags(startCmd *cobra.Command) {
 	startCmd.Flags().StringP(keyServerURLFlagName, "", "", keyServerURLFlagUsage)
 }
 
+// nolint:funlen
 func startAuthService(parameters *authRestParameters, srv server) error {
 	if parameters.logLevel != "" {
 		setDefaultLogLevel(parameters.logLevel)
@@ -368,6 +378,11 @@ func startAuthService(parameters *authRestParameters, srv server) error {
 		OIDCProviderURL:        parameters.oidcParams.google.providerURL,
 		OIDCClientID:           parameters.oidcParams.google.clientID,
 		OIDCClientSecret:       parameters.oidcParams.google.clientSecret,
+		Hydra: client.NewHTTPClientWithConfig(nil, &client.TransportConfig{
+			Schemes:  []string{parameters.oidcParams.hydraURL.Scheme},
+			Host:     parameters.oidcParams.hydraURL.Host,
+			BasePath: parameters.oidcParams.hydraURL.Path,
+		}).Admin,
 		BootstrapConfig: &operation.BootstrapConfig{
 			SDSURL:       parameters.bootstrapParams.sdsURL,
 			KeyServerURL: parameters.bootstrapParams.keyServerURL,
@@ -426,6 +441,16 @@ func getOIDCParams(cmd *cobra.Command) (*oidcParams, error) {
 	params.google, err = getGoogleOIDCParams(cmd)
 	if err != nil {
 		return nil, fmt.Errorf("misconfigured Google OIDC params: %w", err)
+	}
+
+	hydraURLString, err := cmdutils.GetUserSetVarFromString(cmd, hydraURLFlagName, hydraURLEnvKey, false)
+	if err != nil {
+		return nil, err
+	}
+
+	params.hydraURL, err = url.Parse(hydraURLString)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse hydra url: %w", err)
 	}
 
 	return params, nil

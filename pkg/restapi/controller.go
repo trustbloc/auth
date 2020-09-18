@@ -9,12 +9,13 @@ package restapi
 import (
 	"fmt"
 
+	"github.com/trustbloc/hub-auth/pkg/restapi/common"
 	"github.com/trustbloc/hub-auth/pkg/restapi/operation"
 )
 
 // New returns new controller instance.
 func New(config *operation.Config) (*Controller, error) {
-	var allHandlers []operation.Handler
+	var allHandlers []common.Handler
 
 	rpService, err := operation.New(config)
 	if err != nil {
@@ -28,10 +29,10 @@ func New(config *operation.Config) (*Controller, error) {
 
 // Controller contains handlers for controller.
 type Controller struct {
-	handlers []operation.Handler
+	handlers []common.Handler
 }
 
 // GetOperations returns all controller endpoints.
-func (c *Controller) GetOperations() []operation.Handler {
+func (c *Controller) GetOperations() []common.Handler {
 	return c.handlers
 }

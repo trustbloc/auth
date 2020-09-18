@@ -111,3 +111,8 @@ func (s *MockStore) Query(query string) (storage.ResultsIterator, error) {
 func (s *MockStore) Delete(k string) error {
 	panic("implement me")
 }
+
+// GetAll not implemented.
+func (s *MockStore) GetAll() (map[string][]byte, error) {
+	panic("implement me")
+}
