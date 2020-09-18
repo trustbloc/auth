@@ -19,6 +19,8 @@ import (
 
 	"github.com/coreos/go-oidc"
 	"github.com/google/uuid"
+	"github.com/ory/hydra-client-go/client/admin"
+	"github.com/ory/hydra-client-go/models"
 	"github.com/stretchr/testify/require"
 	"github.com/trustbloc/edge-core/pkg/storage"
 	"github.com/trustbloc/edge-core/pkg/storage/memstore"
@@ -36,7 +38,7 @@ func TestNew(t *testing.T) {
 		svc, err := New(config)
 		require.NoError(t, err)
 		require.NotNil(t, svc)
-		require.Equal(t, 3, len(svc.GetRESTHandlers()))
+		require.NotEmpty(t, svc.GetRESTHandlers())
 	})
 
 	t.Run("success, bootstrap store already exists", func(t *testing.T) {
@@ -50,7 +52,7 @@ func TestNew(t *testing.T) {
 		svc, err := New(config)
 		require.NoError(t, err)
 		require.NotNil(t, svc)
-		require.Equal(t, 3, len(svc.GetRESTHandlers()))
+		require.NotEmpty(t, svc.GetRESTHandlers())
 	})
 
 	t.Run("error if oidc provider is invalid", func(t *testing.T) {
@@ -500,6 +502,93 @@ func TestHandleBootstrapDataRequest(t *testing.T) {
 	})
 }
 
+func TestOperation_HydraLoginHandler(t *testing.T) {
+	t.Run("redirects to login UI", func(t *testing.T) {
+		uiEndpoint := "/ui"
+		hydraLoginRequest := &admin.GetLoginRequestOK{Payload: &models.LoginRequest{
+			Client: &models.OAuth2Client{
+				ClientID: uuid.New().String(),
+				Scope:    "registered scopes",
+			},
+			RequestedScope: []string{"requested", "scope"},
+		}}
+
+		store := make(map[string][]byte)
+
+		config := config(t)
+		config.UIEndpoint = uiEndpoint
+		config.TransientStoreProvider = &mockstorage.Provider{
+			Store: &mockstorage.MockStore{
+				Store: store,
+			},
+		}
+		config.Hydra = &mockHydra{
+			getLoginRequestValue: hydraLoginRequest,
+		}
+
+		o, err := New(config)
+		require.NoError(t, err)
+
+		w := httptest.NewRecorder()
+		o.hydraLoginHandler(w, newHydraLoginHTTPRequest(uuid.New().String()))
+
+		require.Equal(t, http.StatusFound, w.Code)
+		require.True(t, strings.HasPrefix(w.Header().Get("Location"), uiEndpoint))
+		uiURL, err := url.Parse(w.Header().Get("Location"))
+		require.NoError(t, err)
+		require.NotEmpty(t, uiURL.Query().Get(loginRequestQueryParam))
+		require.NotEmpty(t, store)
+	})
+
+	t.Run("error bad request if login_challenge is missing", func(t *testing.T) {
+		o, err := New(config(t))
+		require.NoError(t, err)
+
+		w := httptest.NewRecorder()
+		o.hydraLoginHandler(w, httptest.NewRequest(http.MethodGet, "/login", nil))
+
+		require.Equal(t, http.StatusBadRequest, w.Code)
+	})
+
+	t.Run("error bad gateway if cannot fetch login request from hydra", func(t *testing.T) {
+		config := config(t)
+		config.Hydra = &mockHydra{
+			getLoginRequestErr: errors.New("test"),
+		}
+
+		o, err := New(config)
+		require.NoError(t, err)
+
+		w := httptest.NewRecorder()
+		o.hydraLoginHandler(w, newHydraLoginHTTPRequest(uuid.New().String()))
+
+		require.Equal(t, http.StatusBadGateway, w.Code)
+	})
+
+	t.Run("error internal server error if cannot save to transient store", func(t *testing.T) {
+		config := config(t)
+		config.TransientStoreProvider = &mockstorage.Provider{
+			Store: &mockstorage.MockStore{
+				Store:  make(map[string][]byte),
+				ErrPut: errors.New("test"),
+			},
+		}
+
+		o, err := New(config)
+		require.NoError(t, err)
+
+		w := httptest.NewRecorder()
+		o.hydraLoginHandler(w, newHydraLoginHTTPRequest(uuid.New().String()))
+
+		require.Equal(t, http.StatusInternalServerError, w.Code)
+	})
+}
+
+func newHydraLoginHTTPRequest(challenge string) *http.Request {
+	return httptest.NewRequest(http.MethodGet,
+		fmt.Sprintf("http://hub-auth.com/hydra/login?login_challenge=%s", challenge), nil)
+}
+
 func newCreateOIDCHTTPRequest(scope string) *http.Request {
 	return httptest.NewRequest(http.MethodGet, fmt.Sprintf("http://example.com/oauth2/request?scope=%s", scope), nil)
 }
@@ -551,6 +640,7 @@ func config(t *testing.T) *Config {
 			SDSURL:       "http://sds.example.com",
 			KeyServerURL: "http://keyserver.example.com",
 		},
+		Hydra: &mockHydra{},
 	}
 }
 
@@ -596,4 +686,13 @@ func (m *mockToken) Claims(v interface{}) error {
 	}
 
 	return m.oidcClaimsErr
+}
+
+type mockHydra struct {
+	getLoginRequestValue *admin.GetLoginRequestOK
+	getLoginRequestErr   error
+}
+
+func (m *mockHydra) GetLoginRequest(_ *admin.GetLoginRequestParams) (*admin.GetLoginRequestOK, error) {
+	return m.getLoginRequestValue, m.getLoginRequestErr
 }

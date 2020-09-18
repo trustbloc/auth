@@ -23,6 +23,7 @@ services:
       - AUTH_REST_GOOGLE_CLIENTSECRET=TODO
       - AUTH_REST_SDS_URL=TODO        # onboard user: https://github.com/trustbloc/hub-auth/issues/38
       - AUTH_REST_KEYSERVER_URL=TODO  # onboard user: https://github.com/trustbloc/hub-auth/issues/38
+      - AUTH_REST_HYDRA_URL=http://TODO.com # TODO setup Hydra in BDD tests: https://github.com/trustbloc/hub-auth/issues/52
     ports:
       - 8070:8070
     entrypoint: ""

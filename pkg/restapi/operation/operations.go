@@ -17,15 +17,18 @@ import (
 
 	"github.com/coreos/go-oidc"
 	"github.com/google/uuid"
+	"github.com/ory/hydra-client-go/client/admin"
 	"github.com/trustbloc/edge-core/pkg/log"
 	"github.com/trustbloc/edge-core/pkg/storage"
 	"golang.org/x/oauth2"
 
 	"github.com/trustbloc/hub-auth/pkg/bootstrap/user"
 	"github.com/trustbloc/hub-auth/pkg/internal/common/support"
+	"github.com/trustbloc/hub-auth/pkg/restapi/common"
 )
 
 const (
+	hydraLoginPath          = "/hydra/login"
 	oauth2GetRequestPath    = "/oauth2/request"
 	oauth2CallbackPath      = "/oauth2/callback"
 	bootstrapGetRequestPath = "/bootstrap"
@@ -36,80 +39,11 @@ const (
 	bootstrapStoreName = "bootstrap-data"
 
 	// redirect url parameter
-	userProfileQueryParam = "up"
+	userProfileQueryParam  = "up"
+	loginRequestQueryParam = "h"
 )
 
 var logger = log.New("hub-auth-restapi")
-
-type oidcClaims struct {
-	Sub string `json:"sub"`
-}
-
-// Handler http handler for each controller API endpoint.
-type Handler interface {
-	Path() string
-	Method() string
-	Handle() http.HandlerFunc
-}
-
-type httpClient interface {
-	Do(req *http.Request) (*http.Response, error)
-}
-
-type oidcProvider interface {
-	Endpoint() oauth2.Endpoint
-	Verifier(*oidc.Config) verifier
-}
-
-type verifier interface {
-	Verify(context.Context, string) (idToken, error)
-}
-
-type oidcProviderImpl struct {
-	op *oidc.Provider
-}
-
-func (o *oidcProviderImpl) Verifier(config *oidc.Config) verifier {
-	return &verifierImpl{v: o.op.Verifier(config)}
-}
-
-type verifierImpl struct {
-	v *oidc.IDTokenVerifier
-}
-
-func (v *verifierImpl) Verify(ctx context.Context, token string) (idToken, error) {
-	return v.v.Verify(ctx, token)
-}
-
-func (o *oidcProviderImpl) Endpoint() oauth2.Endpoint {
-	return o.op.Endpoint()
-}
-
-type idToken interface {
-	Claims(interface{}) error
-}
-
-type oauth2Config interface {
-	AuthCodeURL(string, ...oauth2.AuthCodeOption) string
-	Exchange(context.Context, string, ...oauth2.AuthCodeOption) (oauth2Token, error)
-}
-
-type oauth2ConfigImpl struct {
-	oc *oauth2.Config
-}
-
-func (o *oauth2ConfigImpl) AuthCodeURL(state string, options ...oauth2.AuthCodeOption) string {
-	return o.oc.AuthCodeURL(state, options...)
-}
-
-func (o *oauth2ConfigImpl) Exchange(
-	ctx context.Context, code string, options ...oauth2.AuthCodeOption) (oauth2Token, error) {
-	return o.oc.Exchange(ctx, code, options...)
-}
-
-type oauth2Token interface {
-	Extra(string) interface{}
-}
 
 // Operation defines handlers.
 type Operation struct {
@@ -124,6 +58,7 @@ type Operation struct {
 	oauth2ConfigFunc func(...string) oauth2Config
 	bootstrapStore   storage.Store
 	bootstrapConfig  *BootstrapConfig
+	hydra            Hydra
 }
 
 // Config defines configuration for rp operations.
@@ -138,6 +73,7 @@ type Config struct {
 	TransientStoreProvider storage.Provider
 	StoreProvider          storage.Provider
 	BootstrapConfig        *BootstrapConfig
+	Hydra                  Hydra
 }
 
 // BootstrapConfig holds user bootstrap-related config.
@@ -155,6 +91,8 @@ func New(config *Config) (*Operation, error) {
 		oidcClientSecret: config.OIDCClientSecret,
 		oidcCallbackURL:  config.OIDCCallbackURL,
 		bootstrapConfig:  config.BootstrapConfig,
+		hydra:            config.Hydra,
+		uiEndpoint:       config.UIEndpoint,
 	}
 
 	// TODO implement retries: https://github.com/trustbloc/hub-auth/issues/45
@@ -204,19 +142,57 @@ func New(config *Config) (*Operation, error) {
 	return svc, nil
 }
 
-func openBootstrapStore(provider storage.Provider) (storage.Store, error) {
-	err := provider.CreateStore(bootstrapStoreName)
-	if err == nil {
-		logger.Infof(fmt.Sprintf("Created %s store.", bootstrapStoreName))
-	} else {
-		if !errors.Is(err, storage.ErrDuplicateStore) {
-			return nil, err
-		}
+// GetRESTHandlers get all controller API handler available for this service.
+func (c *Operation) GetRESTHandlers() []common.Handler {
+	return []common.Handler{
+		support.NewHTTPHandler(hydraLoginPath, http.MethodGet, c.hydraLoginHandler),
+		support.NewHTTPHandler(oauth2GetRequestPath, http.MethodGet, c.createOIDCRequest),
+		support.NewHTTPHandler(oauth2CallbackPath, http.MethodGet, c.handleOIDCCallback),
+		support.NewHTTPHandler(bootstrapGetRequestPath, http.MethodGet, c.handleBootstrapDataRequest),
+	}
+}
 
-		logger.Infof(fmt.Sprintf("%s store already exists. Skipping creation.", bootstrapStoreName))
+func (c *Operation) hydraLoginHandler(w http.ResponseWriter, r *http.Request) {
+	logger.Debugf("handling login request: %s", r.URL.String())
+
+	challenge := r.URL.Query().Get("login_challenge")
+	if challenge == "" {
+		common.WriteErrorResponsef(w, logger, http.StatusBadRequest, "missing challenge on login request")
+
+		return
 	}
 
-	return provider.OpenStore(bootstrapStoreName)
+	req := admin.NewGetLoginRequestParams()
+
+	req.SetLoginChallenge(challenge)
+
+	login, err := c.hydra.GetLoginRequest(req)
+	if err != nil {
+		common.WriteErrorResponsef(w, logger,
+			http.StatusBadGateway, "failed to fetch login request from hydra: %s", err.Error())
+
+		return
+	}
+
+	// TODO need to check if the relying party (login.Payload.Client.ClientID) is registered:
+	//  https://github.com/trustbloc/hub-auth/issues/53.
+
+	handle := url.QueryEscape(uuid.New().String())
+
+	err = newTransientData(c.transientStore).Put(handle, &loginCtx{
+		HydraLoginRequest: login,
+	})
+	if err != nil {
+		common.WriteErrorResponsef(w, logger,
+			http.StatusInternalServerError, "failed to save login ctx: %s", err.Error())
+
+		return
+	}
+
+	redirectURL := fmt.Sprintf("%s?%s=%s", c.uiEndpoint, loginRequestQueryParam, handle)
+
+	http.Redirect(w, r, redirectURL, http.StatusFound)
+	logger.Debugf("redirected to: %s", redirectURL)
 }
 
 func (c *Operation) createOIDCRequest(w http.ResponseWriter, r *http.Request) {
@@ -442,15 +418,6 @@ func (c *Operation) writeErrorResponse(rw http.ResponseWriter, status int, msg s
 	}
 }
 
-// GetRESTHandlers get all controller API handler available for this service.
-func (c *Operation) GetRESTHandlers() []Handler {
-	return []Handler{
-		support.NewHTTPHandler(oauth2GetRequestPath, http.MethodGet, c.createOIDCRequest),
-		support.NewHTTPHandler(oauth2CallbackPath, http.MethodGet, c.handleOIDCCallback),
-		support.NewHTTPHandler(bootstrapGetRequestPath, http.MethodGet, c.handleBootstrapDataRequest),
-	}
-}
-
 func (c *Operation) oauth2Config(scopes ...string) oauth2Config {
 	return c.oauth2ConfigFunc(scopes...)
 }
@@ -462,4 +429,19 @@ func createStore(p storage.Provider) (storage.Store, error) {
 	}
 
 	return p.OpenStore(transientStoreName)
+}
+
+func openBootstrapStore(provider storage.Provider) (storage.Store, error) {
+	err := provider.CreateStore(bootstrapStoreName)
+	if err == nil {
+		logger.Infof(fmt.Sprintf("Created %s store.", bootstrapStoreName))
+	} else {
+		if !errors.Is(err, storage.ErrDuplicateStore) {
+			return nil, err
+		}
+
+		logger.Infof(fmt.Sprintf("%s store already exists. Skipping creation.", bootstrapStoreName))
+	}
+
+	return provider.OpenStore(bootstrapStoreName)
 }

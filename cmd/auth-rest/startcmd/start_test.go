@@ -151,6 +151,7 @@ func TestStartCmdWithMissingArg(t *testing.T) {
 			"--" + googleClientIDFlagName, uuid.New().String(),
 			"--" + googleClientSecretFlagName, uuid.New().String(),
 			"--" + keyServerURLFlagName, "http://keyserver.example.com",
+			"--" + hydraURLFlagName, "http://hydra.example.com",
 		}
 		startCmd.SetArgs(args)
 
@@ -174,6 +175,7 @@ func TestStartCmdWithMissingArg(t *testing.T) {
 			"--" + googleClientIDFlagName, uuid.New().String(),
 			"--" + googleClientSecretFlagName, uuid.New().String(),
 			"--" + sdsURLFlagName, "http://sds.example.com",
+			"--" + hydraURLFlagName, "http://hydra.example.com",
 		}
 		startCmd.SetArgs(args)
 
@@ -233,6 +235,7 @@ func TestStartCmdValidArgs(t *testing.T) {
 			"--" + googleClientSecretFlagName, uuid.New().String(),
 			"--" + sdsURLFlagName, "http://sds.example.com",
 			"--" + keyServerURLFlagName, "http://keyserver.example.com",
+			"--" + hydraURLFlagName, "http://hydra.example.com",
 		}
 		startCmd.SetArgs(args)
 
@@ -256,6 +259,7 @@ func TestStartCmdValidArgs(t *testing.T) {
 			"--" + logLevelFlagName, "INVALID",
 			"--" + sdsURLFlagName, "http://sds.example.com",
 			"--" + keyServerURLFlagName, "http://keyserver.example.com",
+			"--" + hydraURLFlagName, "http://hydra.example.com",
 		}
 		startCmd.SetArgs(args)
 
@@ -280,6 +284,7 @@ func TestStartCmdValidArgs(t *testing.T) {
 			"--" + googleClientSecretFlagName, uuid.New().String(),
 			"--" + sdsURLFlagName, "http://sds.example.com",
 			"--" + keyServerURLFlagName, "http://keyserver.example.com",
+			"--" + hydraURLFlagName, "http://hydra.example.com",
 		}
 		startCmd.SetArgs(args)
 
@@ -287,6 +292,54 @@ func TestStartCmdValidArgs(t *testing.T) {
 
 		require.Error(t, err)
 		require.True(t, errors.Is(err, expected))
+	})
+}
+
+func TestInvalidArgs(t *testing.T) {
+	t.Run("missing hydra URL param", func(t *testing.T) {
+		oidcURL := mockOIDCProvider(t)
+		startCmd := GetStartCmd(&mockServer{})
+
+		args := []string{
+			"--" + hostURLFlagName, "localhost:8080",
+			"--" + logLevelFlagName, log.ParseString(log.DEBUG),
+			"--" + databaseTypeFlagName, "mem",
+			"--" + oidcCallbackURLFlagName, "http://example.com/oauth2/callback",
+			"--" + googleProviderFlagName, oidcURL,
+			"--" + googleClientIDFlagName, uuid.New().String(),
+			"--" + googleClientSecretFlagName, uuid.New().String(),
+			"--" + sdsURLFlagName, "http://sds.example.com",
+			"--" + keyServerURLFlagName, "http://keyserver.example.com",
+		}
+		startCmd.SetArgs(args)
+
+		err := startCmd.Execute()
+
+		require.EqualError(t, err,
+			"Neither hydra-url (command line flag) nor AUTH_REST_HYDRA_URL (environment variable) have been set.")
+	})
+
+	t.Run("malformed hydra URL param", func(t *testing.T) {
+		oidcURL := mockOIDCProvider(t)
+		startCmd := GetStartCmd(&mockServer{})
+
+		args := []string{
+			"--" + hostURLFlagName, "localhost:8080",
+			"--" + logLevelFlagName, log.ParseString(log.DEBUG),
+			"--" + databaseTypeFlagName, "mem",
+			"--" + oidcCallbackURLFlagName, "http://example.com/oauth2/callback",
+			"--" + googleProviderFlagName, oidcURL,
+			"--" + googleClientIDFlagName, uuid.New().String(),
+			"--" + googleClientSecretFlagName, uuid.New().String(),
+			"--" + sdsURLFlagName, "http://sds.example.com",
+			"--" + keyServerURLFlagName, "http://keyserver.example.com",
+			"--" + hydraURLFlagName, ":malformed_url",
+		}
+		startCmd.SetArgs(args)
+
+		err := startCmd.Execute()
+
+		require.EqualError(t, err, `failed to parse hydra url: parse ":malformed_url": missing protocol scheme`)
 	})
 }
 
@@ -306,12 +359,13 @@ func TestStartCmdFailToCreateController(t *testing.T) {
 			"--" + googleClientSecretFlagName, uuid.New().String(),
 			"--" + sdsURLFlagName, "http://sds.example.com",
 			"--" + keyServerURLFlagName, "http://keyserver.example.com",
+			"--" + hydraURLFlagName, "http://hydra.example.com",
 		}
 		startCmd.SetArgs(args)
 
 		err := startCmd.Execute()
 
-		require.NotNil(t, err)
+		require.Error(t, err)
 
 		containsLookupFailureErrMsg := strings.Contains(err.Error(), "Temporary failure in name resolution") ||
 			strings.Contains(err.Error(), "no such host")
@@ -334,6 +388,7 @@ func TestStartCmdInvalidDatabaseType(t *testing.T) {
 		"--" + googleClientSecretFlagName, uuid.New().String(),
 		"--" + sdsURLFlagName, "http://sds.example.com",
 		"--" + keyServerURLFlagName, "http://keyserver.example.com",
+		"--" + hydraURLFlagName, "http://hydra.example.com",
 	}
 	startCmd.SetArgs(args)
 
@@ -413,11 +468,20 @@ func setEnvVars(t *testing.T) {
 	require.NoError(t, err)
 	err = os.Setenv(keyServerURLEnvKey, "http://keyserver.examepl.com")
 	require.NoError(t, err)
+	err = os.Setenv(hydraURLEnvKey, "http://hydra.example.com")
+	require.NoError(t, err)
 }
 
 func unsetEnvVars(t *testing.T) {
-	err := os.Unsetenv(hostURLEnvKey)
-	require.NoError(t, err)
+	vars := []string{
+		hostURLEnvKey, databaseTypeEnvKey, oidcCallbackURLEnvKey, googleProviderEnvKey, googleClientIDEnvKey,
+		googleClientSecretEnvKey, sdsURLEnvKey, keyServerURLEnvKey, hydraURLEnvKey,
+	}
+
+	for _, envVar := range vars {
+		err := os.Unsetenv(envVar)
+		require.NoError(t, err)
+	}
 }
 
 func checkFlagPropertiesCorrect(t *testing.T, cmd *cobra.Command, flagName, flagShorthand, flagUsage string) {

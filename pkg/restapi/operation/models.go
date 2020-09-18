@@ -6,6 +6,8 @@ SPDX-License-Identifier: Apache-2.0
 
 package operation
 
+import "github.com/ory/hydra-client-go/client/admin"
+
 type createOIDCRequestResponse struct {
 	Request string `json:"request"`
 }
@@ -15,4 +17,12 @@ type bootstrapData struct {
 	SDSPrimaryVaultID string   `json:"sdsPrimaryVaultID"`
 	KeyServerURL      string   `json:"keyServerURL"`
 	KeyStoreIDs       []string `json:"keyStoreIDs"`
+}
+
+type oidcClaims struct {
+	Sub string `json:"sub"`
+}
+
+type loginCtx struct {
+	HydraLoginRequest *admin.GetLoginRequestOK
 }
