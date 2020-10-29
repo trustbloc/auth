@@ -341,6 +341,31 @@ func TestInvalidArgs(t *testing.T) {
 
 		require.EqualError(t, err, `failed to parse hydra url: parse ":malformed_url": missing protocol scheme`)
 	})
+
+	t.Run("non-bool bool variable", func(t *testing.T) {
+		oidcURL := mockOIDCProvider(t)
+		startCmd := GetStartCmd(&mockServer{})
+
+		args := []string{
+			"--" + hostURLFlagName, "localhost:8080",
+			"--" + logLevelFlagName, log.ParseString(log.DEBUG),
+			"--" + databaseTypeFlagName, "mem",
+			"--" + oidcCallbackURLFlagName, "http://example.com/oauth2/callback",
+			"--" + googleProviderFlagName, oidcURL,
+			"--" + googleClientIDFlagName, uuid.New().String(),
+			"--" + googleClientSecretFlagName, uuid.New().String(),
+			"--" + sdsURLFlagName, "http://sds.example.com",
+			"--" + keyServerURLFlagName, "http://keyserver.example.com",
+			"--" + hydraURLFlagName, "http://hydra.example.com",
+			"--" + deviceSystemCertPoolFlagName, "non-bool-value",
+		}
+		startCmd.SetArgs(args)
+
+		err := startCmd.Execute()
+
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "invalid syntax")
+	})
 }
 
 func TestStartCmdFailToCreateController(t *testing.T) {
