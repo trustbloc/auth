@@ -9,7 +9,9 @@ package operation
 import (
 	"context"
 	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
+	"encoding/pem"
 	"errors"
 	"fmt"
 	"net/http"
@@ -20,6 +22,7 @@ import (
 	"github.com/ory/hydra-client-go/client/admin"
 	"github.com/trustbloc/edge-core/pkg/log"
 	"github.com/trustbloc/edge-core/pkg/storage"
+	tlsutils "github.com/trustbloc/edge-core/pkg/utils/tls"
 	"golang.org/x/oauth2"
 
 	"github.com/trustbloc/hub-auth/pkg/bootstrap/user"
@@ -32,6 +35,7 @@ const (
 	oauth2GetRequestPath    = "/oauth2/request"
 	oauth2CallbackPath      = "/oauth2/callback"
 	bootstrapGetRequestPath = "/bootstrap"
+	deviceCertPath          = "/device"
 	// api path params
 	scopeQueryParam = "scope"
 
@@ -59,6 +63,7 @@ type Operation struct {
 	bootstrapStore   storage.Store
 	bootstrapConfig  *BootstrapConfig
 	hydra            Hydra
+	deviceRootCerts  *x509.CertPool
 }
 
 // Config defines configuration for rp operations.
@@ -74,6 +79,8 @@ type Config struct {
 	StoreProvider          storage.Provider
 	BootstrapConfig        *BootstrapConfig
 	Hydra                  Hydra
+	DeviceRootCerts        []string
+	DeviceCertSystemPool   bool
 }
 
 // BootstrapConfig holds user bootstrap-related config.
@@ -132,12 +139,15 @@ func New(config *Config) (*Operation, error) {
 		return &oauth2ConfigImpl{oc: config}
 	}
 
-	bootstrapStore, err := openBootstrapStore(config.StoreProvider)
+	svc.bootstrapStore, err = openBootstrapStore(config.StoreProvider)
 	if err != nil {
 		return nil, err
 	}
 
-	svc.bootstrapStore = bootstrapStore
+	svc.deviceRootCerts, err = tlsutils.GetCertPool(config.DeviceCertSystemPool, config.DeviceRootCerts)
+	if err != nil {
+		return nil, err
+	}
 
 	return svc, nil
 }
@@ -149,6 +159,7 @@ func (c *Operation) GetRESTHandlers() []common.Handler {
 		support.NewHTTPHandler(oauth2GetRequestPath, http.MethodGet, c.createOIDCRequest),
 		support.NewHTTPHandler(oauth2CallbackPath, http.MethodGet, c.handleOIDCCallback),
 		support.NewHTTPHandler(bootstrapGetRequestPath, http.MethodGet, c.handleBootstrapDataRequest),
+		support.NewHTTPHandler(deviceCertPath, http.MethodPost, c.deviceCertHandler),
 	}
 }
 
@@ -376,6 +387,89 @@ func (c *Operation) handleBootstrapDataRequest(w http.ResponseWriter, r *http.Re
 	if err != nil {
 		logger.Errorf("failed to write bootstrap data to output: %s", err)
 	}
+}
+
+type certHolder struct {
+	X5C    []string `json:"x5c"`
+	Sub    string   `json:"sub"`
+	AAGUID string   `json:"aaguid,omitempty"`
+}
+
+func (c *Operation) deviceCertHandler(w http.ResponseWriter, r *http.Request) {
+	dec := json.NewDecoder(r.Body)
+
+	var ch certHolder
+
+	err := dec.Decode(&ch)
+	if err != nil {
+		handleAuthError(w, http.StatusBadRequest, "cert request invalid json")
+		return
+	}
+
+	userProfile, err := user.NewStore(c.bootstrapStore).Get(ch.Sub)
+	if errors.Is(err, storage.ErrValueNotFound) {
+		handleAuthError(w, http.StatusBadRequest, "invalid user profile id")
+		return
+	} else if err != nil {
+		handleAuthError(w, http.StatusInternalServerError, "failed to load user profile")
+		return
+	}
+
+	err = c.verifyDeviceCert(&ch)
+	if err != nil {
+		handleAuthError(w, http.StatusBadRequest, err.Error())
+	}
+
+	userProfile.AAGUID = ch.AAGUID
+
+	profileBytes, err := json.Marshal(userProfile)
+	if err != nil {
+		c.writeErrorResponse(w, http.StatusInternalServerError,
+			fmt.Sprintf("failed to marshal user profile data : %s", err))
+		return
+	}
+
+	c.handleAuthResult(w, r, profileBytes)
+}
+
+func (c *Operation) verifyDeviceCert(ch *certHolder) error {
+	if len(ch.X5C) == 0 {
+		return errors.New("missing device certificate")
+	}
+
+	var certs = []*x509.Certificate{}
+
+	for _, x5c := range ch.X5C {
+		block, _ := pem.Decode([]byte(x5c))
+		if block == nil || block.Bytes == nil {
+			return errors.New("can't parse certificate PEM")
+		}
+
+		cert, e := x509.ParseCertificate(block.Bytes)
+		if e != nil {
+			return errors.New("can't parse certificate")
+		}
+
+		certs = append(certs, cert)
+	}
+
+	// first element is cert to verify
+	deviceCert := certs[0]
+	// any additional certs are intermediate certs
+	intermediateCerts := certs[1:]
+
+	intermediatePool := x509.NewCertPool()
+
+	for _, iCert := range intermediateCerts {
+		intermediatePool.AddCert(iCert)
+	}
+
+	_, err := deviceCert.Verify(x509.VerifyOptions{Intermediates: intermediatePool, Roots: c.deviceRootCerts})
+	if err != nil {
+		return errors.New("cert chain fails to authenticate")
+	}
+
+	return nil
 }
 
 func (c *Operation) handleAuthResult(w http.ResponseWriter, r *http.Request, profileBytes []byte) {

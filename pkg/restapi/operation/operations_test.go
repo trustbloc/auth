@@ -7,15 +7,24 @@ SPDX-License-Identifier: Apache-2.0
 package operation
 
 import (
+	"bytes"
 	"context"
+	"crypto/ed25519"
+	"crypto/rand"
+	"crypto/x509"
+	"crypto/x509/pkix"
 	"encoding/json"
+	"encoding/pem"
 	"errors"
 	"fmt"
+	"math"
+	"math/big"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/coreos/go-oidc"
 	"github.com/google/uuid"
@@ -76,6 +85,14 @@ func TestNew(t *testing.T) {
 		config.TransientStoreProvider = &mockstore.Provider{
 			ErrCreateStore: errors.New("generic"),
 		}
+		_, err := New(config)
+		require.Error(t, err)
+	})
+
+	t.Run("error if device certificate root CAs are invalid", func(t *testing.T) {
+		config := config(t)
+		config.DeviceRootCerts = []string{"invalid"}
+
 		_, err := New(config)
 		require.Error(t, err)
 	})
@@ -502,6 +519,307 @@ func TestHandleBootstrapDataRequest(t *testing.T) {
 	})
 }
 
+func TestOperation_DeviceCertHandler(t *testing.T) {
+	t.Run("invalid request json", func(t *testing.T) {
+		config := config(t)
+
+		svc, err := New(config)
+		require.NoError(t, err)
+
+		w := httptest.NewRecorder()
+
+		svc.deviceCertHandler(w, httptest.NewRequest(http.MethodPost, "http://example.com/device",
+			bytes.NewReader([]byte("not json"))))
+
+		require.Equal(t, http.StatusBadRequest, w.Code)
+		require.Contains(t, w.Body.String(), "invalid json")
+	})
+
+	t.Run("missing device certificate", func(t *testing.T) {
+		config := config(t)
+
+		handle := uuid.New().String()
+		config.StoreProvider = &mockstorage.Provider{
+			Store: &mockstorage.MockStore{
+				Store: map[string][]byte{
+					handle: marshal(t, &user.Profile{}),
+				},
+			},
+		}
+
+		svc, err := New(config)
+		require.NoError(t, err)
+
+		w := httptest.NewRecorder()
+
+		data := certHolder{
+			X5C:    nil,
+			Sub:    handle,
+			AAGUID: "AAGUID",
+		}
+
+		svc.deviceCertHandler(w, newDeviceCertRequest(t, &data))
+
+		require.Equal(t, http.StatusBadRequest, w.Code)
+		require.Equal(t, "missing device certificate", w.Body.String())
+	})
+
+	t.Run("invalid user profile id", func(t *testing.T) {
+		config := config(t)
+
+		svc, err := New(config)
+		require.NoError(t, err)
+
+		w := httptest.NewRecorder()
+
+		data := certHolder{
+			X5C:    []string{"abc", "abcd"},
+			Sub:    "bad handle",
+			AAGUID: "AAGUID",
+		}
+
+		svc.deviceCertHandler(w, newDeviceCertRequest(t, &data))
+
+		require.Equal(t, http.StatusBadRequest, w.Code)
+		require.Equal(t, "invalid user profile id", w.Body.String())
+	})
+
+	t.Run("can't load profile from store", func(t *testing.T) {
+		config := config(t)
+		handle := uuid.New().String()
+		config.StoreProvider = &mockstorage.Provider{
+			Store: &mockstorage.MockStore{
+				Store: map[string][]byte{
+					handle: marshal(t, &user.Profile{}),
+				},
+				ErrGet: errors.New("get error"),
+			},
+		}
+
+		svc, err := New(config)
+		require.NoError(t, err)
+
+		w := httptest.NewRecorder()
+
+		data := certHolder{
+			X5C:    []string{"abc", "abcd"},
+			Sub:    handle,
+			AAGUID: "AAGUID",
+		}
+
+		svc.deviceCertHandler(w, newDeviceCertRequest(t, &data))
+
+		require.Equal(t, http.StatusInternalServerError, w.Code)
+		require.Equal(t, "failed to load user profile", w.Body.String())
+	})
+
+	t.Run("invalid cert PEM", func(t *testing.T) {
+		config := config(t)
+		handle := uuid.New().String()
+		config.StoreProvider = &mockstorage.Provider{
+			Store: &mockstorage.MockStore{
+				Store: map[string][]byte{
+					handle: marshal(t, &user.Profile{}),
+				},
+			},
+		}
+
+		svc, err := New(config)
+		require.NoError(t, err)
+
+		w := httptest.NewRecorder()
+
+		data := certHolder{
+			X5C:    []string{"abc", "abcd"},
+			Sub:    handle,
+			AAGUID: "AAGUID",
+		}
+
+		svc.deviceCertHandler(w, newDeviceCertRequest(t, &data))
+
+		require.Equal(t, http.StatusBadRequest, w.Code)
+		require.Equal(t, "can't parse certificate PEM", w.Body.String())
+	})
+
+	t.Run("PEM does not encode a certificate", func(t *testing.T) {
+		config := config(t)
+		handle := uuid.New().String()
+		config.StoreProvider = &mockstorage.Provider{
+			Store: &mockstorage.MockStore{
+				Store: map[string][]byte{
+					handle: marshal(t, &user.Profile{}),
+				},
+			},
+		}
+
+		svc, err := New(config)
+		require.NoError(t, err)
+
+		w := httptest.NewRecorder()
+
+		data := certHolder{
+			X5C: []string{
+				string(pem.EncodeToMemory(&pem.Block{
+					Type:  "NOT A CERT",
+					Bytes: []byte("definitely not a cert"),
+				})),
+			},
+			Sub:    handle,
+			AAGUID: "AAGUID",
+		}
+
+		svc.deviceCertHandler(w, newDeviceCertRequest(t, &data))
+
+		require.Equal(t, http.StatusBadRequest, w.Code)
+		require.Equal(t, "can't parse certificate", w.Body.String())
+	})
+
+	t.Run("cert is not signed by chain from root CAs", func(t *testing.T) {
+		config := config(t)
+		handle := uuid.New().String()
+		config.StoreProvider = &mockstorage.Provider{
+			Store: &mockstorage.MockStore{
+				Store: map[string][]byte{
+					handle: marshal(t, &user.Profile{}),
+				},
+			},
+		}
+
+		svc, err := New(config)
+		require.NoError(t, err)
+
+		w := httptest.NewRecorder()
+
+		data := certHolder{
+			X5C: []string{
+				makeSelfSignedCert(t),
+			},
+			Sub:    handle,
+			AAGUID: "AAGUID",
+		}
+
+		svc.deviceCertHandler(w, newDeviceCertRequest(t, &data))
+
+		require.Equal(t, http.StatusBadRequest, w.Code)
+		require.Equal(t, "cert chain fails to authenticate", w.Body.String())
+	})
+
+	t.Run("success - device cert is a root cert", func(t *testing.T) {
+		config := config(t)
+		handle := uuid.New().String()
+		config.StoreProvider = &mockstorage.Provider{
+			Store: &mockstorage.MockStore{
+				Store: map[string][]byte{
+					handle: marshal(t, &user.Profile{}),
+				},
+			},
+		}
+
+		svc, err := New(config)
+		require.NoError(t, err)
+
+		w := httptest.NewRecorder()
+
+		_, devicePEM, _ := makeCACert(t)
+
+		// device PEM is added to roots
+		ok := svc.deviceRootCerts.AppendCertsFromPEM([]byte(devicePEM))
+		require.True(t, ok)
+
+		data := certHolder{
+			X5C: []string{
+				devicePEM,
+			},
+			Sub:    handle,
+			AAGUID: "AAGUID",
+		}
+
+		svc.deviceCertHandler(w, newDeviceCertRequest(t, &data))
+
+		require.Equal(t, http.StatusFound, w.Code)
+	})
+
+	t.Run("success - device cert is signed by root cert", func(t *testing.T) {
+		config := config(t)
+		handle := uuid.New().String()
+		config.StoreProvider = &mockstorage.Provider{
+			Store: &mockstorage.MockStore{
+				Store: map[string][]byte{
+					handle: marshal(t, &user.Profile{}),
+				},
+			},
+		}
+
+		svc, err := New(config)
+		require.NoError(t, err)
+
+		w := httptest.NewRecorder()
+
+		rootCert, rootPEM, rootKey := makeCACert(t)
+
+		_, devicePEM, _ := makeChildCert(t, rootCert, rootKey, false)
+
+		// CA cert PEM is added to roots
+		ok := svc.deviceRootCerts.AppendCertsFromPEM([]byte(rootPEM))
+		require.True(t, ok)
+
+		data := certHolder{
+			X5C: []string{
+				devicePEM,
+			},
+			Sub:    handle,
+			AAGUID: "AAGUID",
+		}
+
+		svc.deviceCertHandler(w, newDeviceCertRequest(t, &data))
+
+		require.Equal(t, http.StatusFound, w.Code)
+	})
+
+	t.Run("success - device cert is signed by a rooted certificate chain", func(t *testing.T) {
+		config := config(t)
+		handle := uuid.New().String()
+		config.StoreProvider = &mockstorage.Provider{
+			Store: &mockstorage.MockStore{
+				Store: map[string][]byte{
+					handle: marshal(t, &user.Profile{}),
+				},
+			},
+		}
+
+		svc, err := New(config)
+		require.NoError(t, err)
+
+		w := httptest.NewRecorder()
+
+		rootCert, rootPEM, rootKey := makeCACert(t)
+
+		i1Cert, i1PEM, i1Key := makeChildCert(t, rootCert, rootKey, true)
+		i2Cert, i2PEM, i2Key := makeChildCert(t, i1Cert, i1Key, true)
+
+		_, devicePEM, _ := makeChildCert(t, i2Cert, i2Key, false)
+
+		// CA cert PEM is added to roots
+		ok := svc.deviceRootCerts.AppendCertsFromPEM([]byte(rootPEM))
+		require.True(t, ok)
+
+		data := certHolder{
+			X5C: []string{
+				devicePEM,
+				i2PEM,
+				i1PEM,
+			},
+			Sub:    handle,
+			AAGUID: "AAGUID",
+		}
+
+		svc.deviceCertHandler(w, newDeviceCertRequest(t, &data))
+
+		require.Equal(t, "", w.Body.String())
+		require.Equal(t, http.StatusFound, w.Code)
+	})
+}
+
 func TestOperation_HydraLoginHandler(t *testing.T) {
 	t.Run("redirects to login UI", func(t *testing.T) {
 		uiEndpoint := "/ui"
@@ -603,6 +921,15 @@ func newBootstrapDataRequest(handle string) *http.Request {
 		fmt.Sprintf("http://example.com/bootstrap?%s=%s", userProfileQueryParam, handle), nil)
 }
 
+func newDeviceCertRequest(t *testing.T, data *certHolder) *http.Request {
+	dataBytes, err := json.Marshal(data)
+	require.NoError(t, err)
+
+	dataReader := bytes.NewReader(dataBytes)
+
+	return httptest.NewRequest(http.MethodPost, "http://example.com/device", dataReader)
+}
+
 type mockOIDCProvider struct {
 	baseURL  string
 	verifier *mockVerifier
@@ -695,4 +1022,99 @@ type mockHydra struct {
 
 func (m *mockHydra) GetLoginRequest(_ *admin.GetLoginRequestParams) (*admin.GetLoginRequestOK, error) {
 	return m.getLoginRequestValue, m.getLoginRequestErr
+}
+
+// makeSelfSignedCert returns a PEM-encoded self-signed certificate.
+func makeSelfSignedCert(t *testing.T) string {
+	template := x509.Certificate{
+		SerialNumber:          big.NewInt(1234),
+		NotBefore:             time.Now().Add(-time.Hour),
+		NotAfter:              time.Now().Add(time.Hour * 24),
+		KeyUsage:              x509.KeyUsageDigitalSignature,
+		BasicConstraintsValid: true,
+	}
+
+	pub, priv, err := ed25519.GenerateKey(rand.Reader)
+	require.NoError(t, err)
+
+	certBytes, err := x509.CreateCertificate(rand.Reader, &template, &template, pub, priv)
+	require.NoError(t, err)
+
+	pemBytes := &bytes.Buffer{}
+	err = pem.Encode(pemBytes, &pem.Block{Type: "CERTIFICATE", Bytes: certBytes})
+	require.NoError(t, err)
+
+	return pemBytes.String()
+}
+
+// makeCACert returns a CA certificate, self-signed, with its PEM encoding and private key.
+func makeCACert(t *testing.T) (*x509.Certificate, string, interface{}) {
+	certSerialNumber, err := rand.Int(rand.Reader, big.NewInt(math.MaxInt32))
+	require.NoError(t, err)
+
+	template := x509.Certificate{
+		SerialNumber: certSerialNumber,
+		Subject: pkix.Name{
+			CommonName:   "Testing CA",
+			SerialNumber: fmt.Sprint(*certSerialNumber),
+		},
+		NotBefore:             time.Now().Add(-time.Hour),
+		NotAfter:              time.Now().Add(time.Hour * 24),
+		KeyUsage:              x509.KeyUsageDigitalSignature | x509.KeyUsageCertSign,
+		BasicConstraintsValid: true,
+		IsCA:                  true,
+	}
+
+	pub, priv, err := ed25519.GenerateKey(rand.Reader)
+	require.NoError(t, err)
+
+	certBytes, err := x509.CreateCertificate(rand.Reader, &template, &template, pub, priv)
+	require.NoError(t, err)
+
+	pemBytes := &bytes.Buffer{}
+	err = pem.Encode(pemBytes, &pem.Block{Type: "CERTIFICATE", Bytes: certBytes})
+	require.NoError(t, err)
+
+	return &template, pemBytes.String(), priv
+}
+
+// makeChildCert returns a certificate signed by parent, with its PEM encoding and private key.
+func makeChildCert(t *testing.T, parent *x509.Certificate, parentPriv interface{},
+	isIntermediate bool) (*x509.Certificate, string, interface{}) {
+	certSerialNumber, err := rand.Int(rand.Reader, big.NewInt(math.MaxInt32))
+	require.NoError(t, err)
+
+	keyID := make([]byte, 16)
+	_, err = rand.Read(keyID)
+	require.NoError(t, err)
+
+	template := x509.Certificate{
+		SerialNumber: certSerialNumber,
+		Subject: pkix.Name{
+			CommonName:   "Testing child cert",
+			SerialNumber: fmt.Sprint(*certSerialNumber),
+		},
+		NotBefore:             time.Now().Add(-time.Hour),
+		NotAfter:              time.Now().Add(time.Hour * 24),
+		KeyUsage:              x509.KeyUsageDigitalSignature,
+		BasicConstraintsValid: true,
+		SubjectKeyId:          keyID,
+		IsCA:                  isIntermediate,
+	}
+
+	if isIntermediate {
+		template.KeyUsage |= x509.KeyUsageCertSign
+	}
+
+	pub, priv, err := ed25519.GenerateKey(rand.Reader)
+	require.NoError(t, err)
+
+	certBytes, err := x509.CreateCertificate(rand.Reader, &template, parent, pub, parentPriv)
+	require.NoError(t, err)
+
+	pemBytes := &bytes.Buffer{}
+	err = pem.Encode(pemBytes, &pem.Block{Type: "CERTIFICATE", Bytes: certBytes})
+	require.NoError(t, err)
+
+	return &template, pemBytes.String(), priv
 }

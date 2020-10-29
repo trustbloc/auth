@@ -126,6 +126,20 @@ const (
 	googleClientSecretEnvKey = "AUTH_REST_GOOGLE_CLIENTSECRET" // nolint:gosec
 )
 
+// Device certificate validation parameters.
+const (
+	deviceSystemCertPoolFlagName  = "device-systemcertpool"
+	deviceSystemCertPoolFlagUsage = "Use system certificate pool." +
+		" Possible values [true] [false]. Defaults to false if not set." +
+		" Alternatively, this can be set with the following environment variable: " + deviceSystemCertPoolEnvKey
+	deviceSystemCertPoolEnvKey = "AUTH_REST_DEVICE_SYSTEMCERTPOOL"
+
+	deviceCACertsFlagName  = "device-cacerts"
+	deviceCACertsFlagUsage = "Comma-Separated list of ca certs path." +
+		" Alternatively, this can be set with the following environment variable: " + deviceCACertsEnvKey
+	deviceCACertsEnvKey = "AUTH_REST_DEVICE_CACERTS"
+)
+
 // Bootstrap parameters.
 const (
 	sdsURLFlagName  = "sds-url"
@@ -148,15 +162,16 @@ const (
 var logger = log.New("auth-rest")
 
 type authRestParameters struct {
-	hostURL         string
-	logLevel        string
-	databaseType    string
-	databaseURL     string
-	databasePrefix  string
-	tlsParams       *tlsParams
-	oidcParams      *oidcParams
-	bootstrapParams *bootstrapParams
-	staticFiles     string
+	hostURL          string
+	logLevel         string
+	databaseType     string
+	databaseURL      string
+	databasePrefix   string
+	tlsParams        *tlsParams
+	oidcParams       *oidcParams
+	bootstrapParams  *bootstrapParams
+	devicecertParams *deviceCertParams
+	staticFiles      string
 }
 
 type tlsParams struct {
@@ -164,6 +179,11 @@ type tlsParams struct {
 	caCerts           []string
 	serveCertPath     string
 	serveKeyPath      string
+}
+
+type deviceCertParams struct {
+	useSystemCertPool bool
+	caCerts           []string
 }
 
 type oidcParams struct {
@@ -277,16 +297,22 @@ func getAuthRestParameters(cmd *cobra.Command) (*authRestParameters, error) { //
 		return nil, err
 	}
 
+	deviceCertParams, err := getDeviceCertParams(cmd)
+	if err != nil {
+		return nil, err
+	}
+
 	return &authRestParameters{
-		hostURL:         hostURL,
-		tlsParams:       tlsParams,
-		logLevel:        loggingLevel,
-		databaseType:    databaseType,
-		databaseURL:     databaseURL,
-		databasePrefix:  databasePrefix,
-		oidcParams:      oidcParams,
-		bootstrapParams: bootstrapParams,
-		staticFiles:     staticFiles,
+		hostURL:          hostURL,
+		tlsParams:        tlsParams,
+		logLevel:         loggingLevel,
+		databaseType:     databaseType,
+		databaseURL:      databaseURL,
+		databasePrefix:   databasePrefix,
+		oidcParams:       oidcParams,
+		bootstrapParams:  bootstrapParams,
+		staticFiles:      staticFiles,
+		devicecertParams: deviceCertParams,
 	}, nil
 }
 
@@ -343,6 +369,8 @@ func createFlags(startCmd *cobra.Command) {
 	startCmd.Flags().StringP(googleClientSecretFlagName, "", "", googleClientSecretFlagUsage)
 	startCmd.Flags().StringP(sdsURLFlagName, "", "", sdsURLFlagUsage)
 	startCmd.Flags().StringP(keyServerURLFlagName, "", "", keyServerURLFlagUsage)
+	startCmd.Flags().StringP(deviceSystemCertPoolFlagName, "", "", deviceSystemCertPoolFlagUsage)
+	startCmd.Flags().StringArrayP(deviceCACertsFlagName, "", []string{}, deviceCACertsFlagUsage)
 }
 
 // nolint:funlen
@@ -387,6 +415,7 @@ func startAuthService(parameters *authRestParameters, srv server) error {
 			SDSURL:       parameters.bootstrapParams.sdsURL,
 			KeyServerURL: parameters.bootstrapParams.keyServerURL,
 		},
+		DeviceRootCerts: parameters.devicecertParams.caCerts,
 	})
 	if err != nil {
 		return err
@@ -488,6 +517,32 @@ func getBootstrapParams(cmd *cobra.Command) (*bootstrapParams, error) {
 	}
 
 	params.keyServerURL, err = cmdutils.GetUserSetVarFromString(cmd, keyServerURLFlagName, keyServerURLEnvKey, false)
+
+	return params, err
+}
+
+func getDeviceCertParams(cmd *cobra.Command) (*deviceCertParams, error) {
+	params := &deviceCertParams{}
+
+	var err error
+
+	useSystemCertPoolString, err := cmdutils.GetUserSetVarFromString(cmd, deviceSystemCertPoolFlagName,
+		deviceSystemCertPoolEnvKey, true)
+	if err != nil {
+		return nil, err
+	}
+
+	if useSystemCertPoolString != "" {
+		params.useSystemCertPool, err = strconv.ParseBool(useSystemCertPoolString)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	params.caCerts, err = cmdutils.GetUserSetVarFromArrayString(cmd, deviceCACertsFlagName, deviceCACertsEnvKey, true)
+	if err != nil {
+		return nil, err
+	}
 
 	return params, err
 }
