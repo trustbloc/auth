@@ -21,7 +21,6 @@ import (
 	"math/big"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -105,7 +104,7 @@ func TestOIDCLoginHandler(t *testing.T) {
 		config := config(t)
 		svc, err := New(config)
 		require.NoError(t, err)
-		svc.cookies = mockCookies("")
+		svc.cookies = mockCookies()
 		svc.oidcProvider = &mockOIDCProvider{baseURL: "http://test.com"}
 		w := httptest.NewRecorder()
 		svc.oidcLoginHandler(w, newOIDCLoginRequest("google"))
@@ -156,21 +155,21 @@ func TestOIDCCallbackHandler(t *testing.T) {
 	t.Run("onboard user", func(t *testing.T) {
 		state := uuid.New().String()
 		code := uuid.New().String()
+		hydraChallenge := uuid.New().String()
+		hydraRedirectURL := fmt.Sprintf("http://example.org/foo/%s", uuid.New().String())
 
 		config := config(t)
 
-		config.TransientStoreProvider = &mockstore.Provider{
-			Store: &mockstore.MockStore{
-				Store: map[string][]byte{
-					state: []byte(state),
-				},
-			},
+		config.Hydra = &mockHydra{
+			acceptLoginRequestValue: &admin.AcceptLoginRequestOK{Payload: &models.CompletedRequest{
+				RedirectTo: &hydraRedirectURL,
+			}},
 		}
 
 		o, err := New(config)
 		require.NoError(t, err)
 
-		o.cookies = mockCookies(state)
+		o.cookies = mockCookies(withState(state), withHydraLoginChallenge(hydraChallenge))
 
 		o.oauth2ConfigFunc = func(...string) oauth2Config {
 			return &mockOAuth2Config{exchangeVal: &mockToken{
@@ -195,6 +194,7 @@ func TestOIDCCallbackHandler(t *testing.T) {
 		result := httptest.NewRecorder()
 		o.oidcCallbackHandler(result, newOIDCCallback(state, code))
 		require.Equal(t, http.StatusFound, result.Code)
+		require.Equal(t, hydraRedirectURL, result.Header().Get("location"))
 	})
 
 	t.Run("error missing state", func(t *testing.T) {
@@ -212,10 +212,11 @@ func TestOIDCCallbackHandler(t *testing.T) {
 		require.NotEqual(t, state, mismatch)
 		svc, err := New(config(t))
 		require.NoError(t, err)
-		svc.cookies = mockCookies(mismatch)
+		svc.cookies = mockCookies(withState("MISMATCH"), withHydraLoginChallenge("challenge"))
 		result := httptest.NewRecorder()
 		svc.oidcCallbackHandler(result, newOIDCCallback(state, "code"))
 		require.Equal(t, http.StatusBadRequest, result.Code)
+		require.Contains(t, result.Body.String(), "invalid state parameter")
 	})
 
 	t.Run("error missing code", func(t *testing.T) {
@@ -265,7 +266,7 @@ func TestOIDCCallbackHandler(t *testing.T) {
 		svc, err := New(config)
 		require.NoError(t, err)
 
-		svc.cookies = mockCookies(state)
+		svc.cookies = mockCookies(withState(state), withHydraLoginChallenge("challenge"))
 
 		svc.oauth2ConfigFunc = func(...string) oauth2Config {
 			return &mockOAuth2Config{exchangeVal: &mockToken{
@@ -322,7 +323,7 @@ func TestOIDCCallbackHandler(t *testing.T) {
 		svc, err := New(config)
 		require.NoError(t, err)
 
-		svc.cookies = mockCookies(state)
+		svc.cookies = mockCookies(withState(state), withHydraLoginChallenge("challenge"))
 
 		svc.oauth2ConfigFunc = func(...string) oauth2Config {
 			return &mockOAuth2Config{exchangeVal: &mockToken{
@@ -359,7 +360,7 @@ func TestOIDCCallbackHandler(t *testing.T) {
 		}}
 		svc, err := New(config)
 		require.NoError(t, err)
-		svc.cookies = mockCookies(state)
+		svc.cookies = mockCookies(withState(state), withHydraLoginChallenge("challenge"))
 		svc.oauth2ConfigFunc = func(...string) oauth2Config {
 			return &mockOAuth2Config{
 				exchangeErr: errors.New("test"),
@@ -380,7 +381,7 @@ func TestOIDCCallbackHandler(t *testing.T) {
 		}}
 		svc, err := New(config)
 		require.NoError(t, err)
-		svc.cookies = mockCookies(state)
+		svc.cookies = mockCookies(withState(state), withHydraLoginChallenge("challenge"))
 		svc.oauth2ConfigFunc = func(...string) oauth2Config {
 			return &mockOAuth2Config{exchangeVal: &mockToken{}}
 		}
@@ -402,7 +403,7 @@ func TestOIDCCallbackHandler(t *testing.T) {
 		}}
 		svc, err := New(config)
 		require.NoError(t, err)
-		svc.cookies = mockCookies(state)
+		svc.cookies = mockCookies(withState(state), withHydraLoginChallenge("challenge"))
 		svc.oauth2ConfigFunc = func(...string) oauth2Config {
 			return &mockOAuth2Config{exchangeVal: &mockToken{oauth2Claim: "id_token"}}
 		}
@@ -424,7 +425,7 @@ func TestOIDCCallbackHandler(t *testing.T) {
 		}}
 		svc, err := New(config)
 		require.NoError(t, err)
-		svc.cookies = mockCookies(state)
+		svc.cookies = mockCookies(withState(state), withHydraLoginChallenge("challenge"))
 		svc.oauth2ConfigFunc = func(...string) oauth2Config {
 			return &mockOAuth2Config{exchangeVal: &mockToken{oauth2Claim: "id_token"}}
 		}
@@ -458,6 +459,150 @@ func TestOIDCCallbackHandler(t *testing.T) {
 		result := httptest.NewRecorder()
 		svc.handleAuthResult(result, newOIDCCallback(state, "code"), nil)
 		require.Equal(t, http.StatusInternalServerError, result.Code)
+	})
+
+	t.Run("error bad gateway if hydra fails to accept login request", func(t *testing.T) {
+		state := uuid.New().String()
+		code := uuid.New().String()
+		hydraChallenge := uuid.New().String()
+
+		config := config(t)
+
+		config.Hydra = &mockHydra{
+			acceptLoginRequestErr: errors.New("test"),
+		}
+
+		o, err := New(config)
+		require.NoError(t, err)
+
+		o.cookies = mockCookies(withState(state), withHydraLoginChallenge(hydraChallenge))
+
+		o.oauth2ConfigFunc = func(...string) oauth2Config {
+			return &mockOAuth2Config{exchangeVal: &mockToken{
+				oauth2Claim: uuid.New().String(),
+			}}
+		}
+
+		o.oidcProvider = &mockOIDCProvider{
+			verifier: &mockVerifier{
+				verifyVal: &mockToken{},
+			},
+		}
+
+		result := httptest.NewRecorder()
+		o.oidcCallbackHandler(result, newOIDCCallback(state, code))
+		require.Equal(t, http.StatusBadGateway, result.Code)
+		require.Contains(t, result.Body.String(), "hydra failed to accept login request")
+	})
+}
+
+func TestOperations_HydraConsentHandler(t *testing.T) {
+	t.Run("redirects back to hydra", func(t *testing.T) {
+		redirectURL := fmt.Sprintf("https://example.org/foo/%s", uuid.New().String())
+		sub := uuid.New().String()
+		challenge := uuid.New().String()
+
+		config := config(t)
+		config.Hydra = &mockHydra{
+			getConsentRequestValue: &admin.GetConsentRequestOK{Payload: &models.ConsentRequest{
+				Subject:   sub,
+				Challenge: &challenge,
+			}},
+			acceptConsentRequestValue: &admin.AcceptConsentRequestOK{Payload: &models.CompletedRequest{
+				RedirectTo: &redirectURL,
+			}},
+		}
+		config.StoreProvider = &mockstorage.Provider{
+			Store: &mockstorage.MockStore{
+				Store: map[string][]byte{
+					sub: marshal(t, &user.Profile{}),
+				},
+			},
+		}
+
+		o, err := New(config)
+		require.NoError(t, err)
+
+		result := httptest.NewRecorder()
+		o.hydraConsentHandler(result, newHydraConsentHTTPRequest(uuid.New().String()))
+		require.Equal(t, http.StatusFound, result.Code)
+		require.Equal(t, redirectURL, result.Header().Get("location"))
+	})
+
+	t.Run("err bad request if consent challenge is missing", func(t *testing.T) {
+		o, err := New(config(t))
+		require.NoError(t, err)
+
+		result := httptest.NewRecorder()
+		o.hydraConsentHandler(result, newHydraConsentHTTPRequest(""))
+		require.Equal(t, http.StatusBadRequest, result.Code)
+		require.Contains(t, result.Body.String(), "missing consent_challenge")
+	})
+
+	t.Run("err badgateway if cannot fetch hydra consent request", func(t *testing.T) {
+		config := config(t)
+		config.Hydra = &mockHydra{
+			getConsentRequestErr: errors.New("test"),
+		}
+
+		o, err := New(config)
+		require.NoError(t, err)
+
+		result := httptest.NewRecorder()
+		o.hydraConsentHandler(result, newHydraConsentHTTPRequest("challenge"))
+		require.Equal(t, http.StatusBadGateway, result.Code)
+		require.Contains(t, result.Body.String(), "failed to fetch consent request from hydra")
+	})
+
+	t.Run("err internalservererror if cannot fetch user from store", func(t *testing.T) {
+		config := config(t)
+		config.StoreProvider = &mockstorage.Provider{
+			Store: &mockstorage.MockStore{
+				ErrGet: errors.New("test"),
+			},
+		}
+		config.Hydra = &mockHydra{
+			getConsentRequestValue: &admin.GetConsentRequestOK{Payload: &models.ConsentRequest{
+				Subject: uuid.New().String(),
+			}},
+		}
+
+		o, err := New(config)
+		require.NoError(t, err)
+
+		result := httptest.NewRecorder()
+		o.hydraConsentHandler(result, newHydraConsentHTTPRequest("challenge"))
+		require.Equal(t, http.StatusInternalServerError, result.Code)
+		require.Contains(t, result.Body.String(), "failed to query for user profile")
+	})
+
+	t.Run("error badgateway if hydra fails to accept consent request", func(t *testing.T) {
+		sub := uuid.New().String()
+		challenge := uuid.New().String()
+
+		config := config(t)
+		config.StoreProvider = &mockstorage.Provider{
+			Store: &mockstorage.MockStore{
+				Store: map[string][]byte{
+					sub: marshal(t, &user.Profile{}),
+				},
+			},
+		}
+		config.Hydra = &mockHydra{
+			getConsentRequestValue: &admin.GetConsentRequestOK{Payload: &models.ConsentRequest{
+				Challenge: &challenge,
+				Subject:   sub,
+			}},
+			acceptConsentRequestErr: errors.New("test"),
+		}
+
+		o, err := New(config)
+		require.NoError(t, err)
+
+		result := httptest.NewRecorder()
+		o.hydraConsentHandler(result, newHydraConsentHTTPRequest(challenge))
+		require.Equal(t, http.StatusBadGateway, result.Code)
+		require.Contains(t, result.Body.String(), "hydra failed to accept consent request")
 	})
 }
 
@@ -836,15 +981,8 @@ func TestOperation_HydraLoginHandler(t *testing.T) {
 			RequestedScope: []string{"requested", "scope"},
 		}}
 
-		store := make(map[string][]byte)
-
 		config := config(t)
 		config.UIEndpoint = uiEndpoint
-		config.TransientStoreProvider = &mockstorage.Provider{
-			Store: &mockstorage.MockStore{
-				Store: store,
-			},
-		}
 		config.Hydra = &mockHydra{
 			getLoginRequestValue: hydraLoginRequest,
 		}
@@ -852,15 +990,14 @@ func TestOperation_HydraLoginHandler(t *testing.T) {
 		o, err := New(config)
 		require.NoError(t, err)
 
+		o.cookies = mockCookies()
+
 		w := httptest.NewRecorder()
 		o.hydraLoginHandler(w, newHydraLoginHTTPRequest(uuid.New().String()))
 
 		require.Equal(t, http.StatusFound, w.Code)
 		require.True(t, strings.HasPrefix(w.Header().Get("Location"), uiEndpoint))
-		uiURL, err := url.Parse(w.Header().Get("Location"))
-		require.NoError(t, err)
-		require.NotEmpty(t, uiURL.Query().Get(loginRequestQueryParam))
-		require.NotEmpty(t, store)
+		require.Equal(t, uiEndpoint, w.Header().Get("location"))
 	})
 
 	t.Run("error bad request if login_challenge is missing", func(t *testing.T) {
@@ -888,21 +1025,16 @@ func TestOperation_HydraLoginHandler(t *testing.T) {
 		require.Equal(t, http.StatusBadGateway, w.Code)
 	})
 
-	t.Run("error internal server error if cannot save to transient store", func(t *testing.T) {
-		config := config(t)
-		config.TransientStoreProvider = &mockstorage.Provider{
-			Store: &mockstorage.MockStore{
-				Store:  make(map[string][]byte),
-				ErrPut: errors.New("test"),
-			},
-		}
-
-		o, err := New(config)
+	t.Run("error internal server error if cannot open cookie store", func(t *testing.T) {
+		o, err := New(config(t))
 		require.NoError(t, err)
+
+		o.cookies = &cookie.MockStore{
+			OpenErr: errors.New("test"),
+		}
 
 		w := httptest.NewRecorder()
 		o.hydraLoginHandler(w, newHydraLoginHTTPRequest(uuid.New().String()))
-
 		require.Equal(t, http.StatusInternalServerError, w.Code)
 	})
 }
@@ -910,6 +1042,11 @@ func TestOperation_HydraLoginHandler(t *testing.T) {
 func newHydraLoginHTTPRequest(challenge string) *http.Request {
 	return httptest.NewRequest(http.MethodGet,
 		fmt.Sprintf("http://hub-auth.com/hydra/login?login_challenge=%s", challenge), nil)
+}
+
+func newHydraConsentHTTPRequest(challenge string) *http.Request {
+	return httptest.NewRequest(http.MethodGet,
+		fmt.Sprintf("http://hub-auth.com/hydra/consent?consent_challenge=%s", challenge), nil)
 }
 
 func newOIDCLoginRequest(provider string) *http.Request {
@@ -1021,12 +1158,30 @@ func (m *mockToken) Claims(v interface{}) error {
 }
 
 type mockHydra struct {
-	getLoginRequestValue *admin.GetLoginRequestOK
-	getLoginRequestErr   error
+	getLoginRequestValue      *admin.GetLoginRequestOK
+	getLoginRequestErr        error
+	acceptLoginRequestValue   *admin.AcceptLoginRequestOK
+	acceptLoginRequestErr     error
+	getConsentRequestValue    *admin.GetConsentRequestOK
+	getConsentRequestErr      error
+	acceptConsentRequestValue *admin.AcceptConsentRequestOK
+	acceptConsentRequestErr   error
 }
 
 func (m *mockHydra) GetLoginRequest(_ *admin.GetLoginRequestParams) (*admin.GetLoginRequestOK, error) {
 	return m.getLoginRequestValue, m.getLoginRequestErr
+}
+
+func (m *mockHydra) AcceptLoginRequest(_ *admin.AcceptLoginRequestParams) (*admin.AcceptLoginRequestOK, error) {
+	return m.acceptLoginRequestValue, m.acceptLoginRequestErr
+}
+
+func (m *mockHydra) GetConsentRequest(_ *admin.GetConsentRequestParams) (*admin.GetConsentRequestOK, error) {
+	return m.getConsentRequestValue, m.getConsentRequestErr
+}
+
+func (m *mockHydra) AcceptConsentRequest(_ *admin.AcceptConsentRequestParams) (*admin.AcceptConsentRequestOK, error) {
+	return m.acceptConsentRequestValue, m.acceptConsentRequestErr
 }
 
 // makeSelfSignedCert returns a PEM-encoded self-signed certificate.
@@ -1124,12 +1279,36 @@ func makeChildCert(t *testing.T, parent *x509.Certificate, parentPriv interface{
 	return &template, pemBytes.String(), priv
 }
 
-func mockCookies(state string) *cookie.MockStore {
+type cookieOpt func(map[string]string)
+
+func withState(state string) cookieOpt {
+	return func(c map[string]string) {
+		c[stateCookie] = state
+	}
+}
+
+func withHydraLoginChallenge(challenge string) cookieOpt {
+	return func(c map[string]string) {
+		c[hydraLoginChallengeCookie] = challenge
+	}
+}
+
+func mockCookies(c ...cookieOpt) *cookie.MockStore {
+	t := make(map[string]string)
+
+	for i := range c {
+		c[i](t)
+	}
+
+	cookies := make(map[interface{}]interface{}, len(c))
+
+	for k, v := range t {
+		cookies[k] = v
+	}
+
 	return &cookie.MockStore{
 		Jar: &cookie.MockJar{
-			Cookies: map[interface{}]interface{}{
-				stateCookieName: state,
-			},
+			Cookies: cookies,
 		},
 	}
 }
