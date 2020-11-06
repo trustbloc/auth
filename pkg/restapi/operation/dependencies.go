@@ -77,4 +77,7 @@ type httpClient interface {
 // Hydra is the client used to interface with the Hydra service.
 type Hydra interface {
 	GetLoginRequest(*admin.GetLoginRequestParams) (*admin.GetLoginRequestOK, error)
+	AcceptLoginRequest(*admin.AcceptLoginRequestParams) (*admin.AcceptLoginRequestOK, error)
+	GetConsentRequest(*admin.GetConsentRequestParams) (*admin.GetConsentRequestOK, error)
+	AcceptConsentRequest(*admin.AcceptConsentRequestParams) (*admin.AcceptConsentRequestOK, error)
 }

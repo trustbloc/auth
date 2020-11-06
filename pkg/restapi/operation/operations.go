@@ -17,6 +17,8 @@ import (
 	"net/http"
 	"net/url"
 
+	"github.com/ory/hydra-client-go/models"
+
 	"github.com/trustbloc/hub-auth/pkg/restapi/common/store/cookie"
 
 	"github.com/coreos/go-oidc"
@@ -34,20 +36,21 @@ import (
 
 const (
 	hydraLoginPath          = "/hydra/login"
+	hydraConsentPath        = "/hydra/consent"
 	oidcLoginPath           = "/oauth2/request"
 	oauth2CallbackPath      = "/oauth2/callback"
 	bootstrapGetRequestPath = "/bootstrap"
 	deviceCertPath          = "/device"
 	// api path params
-	providerQueryParam = "provider"
-	stateCookieName    = "oauth2_state"
+	providerQueryParam        = "provider"
+	stateCookie               = "oauth2_state"
+	hydraLoginChallengeCookie = "hydra_login_challenge"
 
 	transientStoreName = "hub-auth-rest-transient"
 	bootstrapStoreName = "bootstrap-data"
 
 	// redirect url parameter
-	userProfileQueryParam  = "up"
-	loginRequestQueryParam = "h"
+	userProfileQueryParam = "up"
 )
 
 var logger = log.New("hub-auth-restapi")
@@ -158,17 +161,18 @@ func New(config *Config) (*Operation, error) {
 }
 
 // GetRESTHandlers get all controller API handler available for this service.
-func (c *Operation) GetRESTHandlers() []common.Handler {
+func (o *Operation) GetRESTHandlers() []common.Handler {
 	return []common.Handler{
-		support.NewHTTPHandler(hydraLoginPath, http.MethodGet, c.hydraLoginHandler),
-		support.NewHTTPHandler(oidcLoginPath, http.MethodGet, c.oidcLoginHandler),
-		support.NewHTTPHandler(oauth2CallbackPath, http.MethodGet, c.oidcCallbackHandler),
-		support.NewHTTPHandler(bootstrapGetRequestPath, http.MethodGet, c.handleBootstrapDataRequest),
-		support.NewHTTPHandler(deviceCertPath, http.MethodPost, c.deviceCertHandler),
+		support.NewHTTPHandler(hydraLoginPath, http.MethodGet, o.hydraLoginHandler),
+		support.NewHTTPHandler(oidcLoginPath, http.MethodGet, o.oidcLoginHandler),
+		support.NewHTTPHandler(oauth2CallbackPath, http.MethodGet, o.oidcCallbackHandler),
+		support.NewHTTPHandler(hydraConsentPath, http.MethodGet, o.hydraConsentHandler),
+		support.NewHTTPHandler(bootstrapGetRequestPath, http.MethodGet, o.handleBootstrapDataRequest),
+		support.NewHTTPHandler(deviceCertPath, http.MethodPost, o.deviceCertHandler),
 	}
 }
 
-func (c *Operation) hydraLoginHandler(w http.ResponseWriter, r *http.Request) {
+func (o *Operation) hydraLoginHandler(w http.ResponseWriter, r *http.Request) {
 	logger.Debugf("handling login request: %s", r.URL.String())
 
 	challenge := r.URL.Query().Get("login_challenge")
@@ -182,7 +186,8 @@ func (c *Operation) hydraLoginHandler(w http.ResponseWriter, r *http.Request) {
 
 	req.SetLoginChallenge(challenge)
 
-	login, err := c.hydra.GetLoginRequest(req)
+	// ensure login request is valid
+	_, err := o.hydra.GetLoginRequest(req) // nolint:errcheck // don't know why errcheck is complaining
 	if err != nil {
 		common.WriteErrorResponsef(w, logger,
 			http.StatusBadGateway, "failed to fetch login request from hydra: %s", err.Error())
@@ -190,33 +195,37 @@ func (c *Operation) hydraLoginHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// TODO need to check if the relying party (login.Payload.Client.ClientID) is registered:
-	//  https://github.com/trustbloc/hub-auth/issues/53.
-
-	handle := url.QueryEscape(uuid.New().String())
-
-	err = newTransientData(c.transientStore).Put(handle, &loginCtx{
-		HydraLoginRequest: login,
-	})
+	jar, err := o.cookies.Open(r)
 	if err != nil {
-		common.WriteErrorResponsef(w, logger,
-			http.StatusInternalServerError, "failed to save login ctx: %s", err.Error())
+		o.writeErrorResponse(w, http.StatusInternalServerError, "failed to open cookie store: %s", err.Error())
 
 		return
 	}
 
-	redirectURL := fmt.Sprintf("%s?%s=%s", c.uiEndpoint, loginRequestQueryParam, handle)
+	jar.Set(hydraLoginChallengeCookie, challenge)
+
+	err = jar.Save(r, w)
+	if err != nil {
+		o.writeErrorResponse(w, http.StatusInternalServerError, "failed to save hydra login cookie: %s", err.Error())
+
+		return
+	}
+
+	// TODO need to check if the relying party (login.Payload.Client.ClientID) is registered:
+	//  https://github.com/trustbloc/hub-auth/issues/53.
+
+	redirectURL := o.uiEndpoint
 
 	http.Redirect(w, r, redirectURL, http.StatusFound)
 	logger.Debugf("redirected to: %s", redirectURL)
 }
 
-func (c *Operation) oidcLoginHandler(w http.ResponseWriter, r *http.Request) {
+func (o *Operation) oidcLoginHandler(w http.ResponseWriter, r *http.Request) {
 	logger.Debugf("handling request: %s", r.URL.String())
 
 	provider := r.URL.Query().Get(providerQueryParam)
 	if provider == "" {
-		c.writeErrorResponse(w, http.StatusBadRequest, "missing provider")
+		o.writeErrorResponse(w, http.StatusBadRequest, "missing provider")
 
 		return
 	}
@@ -224,18 +233,18 @@ func (c *Operation) oidcLoginHandler(w http.ResponseWriter, r *http.Request) {
 	// TODO support multiple OIDC providers: https://github.com/trustbloc/hub-auth/issues/61
 	state := uuid.New().String()
 
-	jar, err := c.cookies.Open(r)
+	jar, err := o.cookies.Open(r)
 	if err != nil {
-		c.writeErrorResponse(w, http.StatusInternalServerError, "failed to open session cookies: %s", err.Error())
+		o.writeErrorResponse(w, http.StatusInternalServerError, "failed to open session cookies: %s", err.Error())
 
 		return
 	}
 
-	jar.Set(stateCookieName, state)
+	jar.Set(stateCookie, state)
 
 	err = jar.Save(r, w)
 	if err != nil {
-		c.writeErrorResponse(w, http.StatusInternalServerError, "failed to persist session cookies: %w", err.Error())
+		o.writeErrorResponse(w, http.StatusInternalServerError, "failed to persist session cookies: %w", err.Error())
 
 		return
 	}
@@ -243,51 +252,64 @@ func (c *Operation) oidcLoginHandler(w http.ResponseWriter, r *http.Request) {
 	// TODO hard-coding google's scope values (that are actually part of the standard):
 	//  https://developers.google.com/identity/protocols/oauth2/openid-connect#scope-param
 	//  need to support multiple OIDC providers - see https://github.com/trustbloc/hub-auth/issues/61.
-	redirectURL := c.oauth2Config("profile email").AuthCodeURL(state, oauth2.AccessTypeOnline)
+	redirectURL := o.oauth2Config("profile email").AuthCodeURL(state, oauth2.AccessTypeOnline)
 
 	http.Redirect(w, r, redirectURL, http.StatusFound)
 
 	logger.Debugf("redirected to: %s", redirectURL)
 }
 
-func (c *Operation) oidcCallbackHandler(w http.ResponseWriter, r *http.Request) { //nolint:funlen,gocyclo
+func (o *Operation) oidcCallbackHandler(w http.ResponseWriter, r *http.Request) { //nolint:funlen,gocyclo
 	state := r.URL.Query().Get("state")
 	if state == "" {
-		c.writeErrorResponse(w, http.StatusBadRequest, "missing state")
+		o.writeErrorResponse(w, http.StatusBadRequest, "missing state")
 
 		return
 	}
 
 	code := r.URL.Query().Get("code")
 	if code == "" {
-		c.writeErrorResponse(w, http.StatusBadRequest, "missing code")
+		o.writeErrorResponse(w, http.StatusBadRequest, "missing code")
 
 		return
 	}
 
-	jar, err := c.cookies.Open(r)
+	jar, err := o.cookies.Open(r)
 	if err != nil {
-		c.writeErrorResponse(w, http.StatusInternalServerError, "failed to get cookies: %s", err.Error())
+		o.writeErrorResponse(w, http.StatusInternalServerError, "failed to get cookies: %s", err.Error())
 
 		return
 	}
 
-	cookieState, found := jar.Get(stateCookieName)
+	cookieState, found := jar.Get(stateCookie)
 	if !found {
-		c.writeErrorResponse(w, http.StatusBadRequest, "missing state cookie")
+		o.writeErrorResponse(w, http.StatusBadRequest, "missing state cookie")
 
 		return
 	}
 
 	if state != cookieState {
-		c.writeErrorResponse(w, http.StatusBadRequest, "invalid state parameter")
+		o.writeErrorResponse(w, http.StatusBadRequest, "invalid state parameter")
 
 		return
 	}
 
-	oauthToken, err := c.oauth2Config().Exchange(r.Context(), code)
+	hydraLoginChallenge, found := jar.Get(hydraLoginChallengeCookie)
+	if !found {
+		o.writeErrorResponse(w, http.StatusBadRequest, "missing hydra login challenge cookie")
+
+		return
+	}
+
+	loginChallenge, ok := hydraLoginChallenge.(string)
+	if !ok {
+		o.writeErrorResponse(w, http.StatusInternalServerError,
+			"should not have happened: hydra login challenge is not a string")
+	}
+
+	oauthToken, err := o.oauth2Config().Exchange(r.Context(), code)
 	if err != nil {
-		c.writeErrorResponse(w, http.StatusBadGateway,
+		o.writeErrorResponse(w, http.StatusBadGateway,
 			fmt.Sprintf("failed to exchange oauth2 code for token : %s", err))
 
 		return
@@ -295,16 +317,16 @@ func (c *Operation) oidcCallbackHandler(w http.ResponseWriter, r *http.Request) 
 
 	rawIDToken, ok := oauthToken.Extra("id_token").(string)
 	if !ok {
-		c.writeErrorResponse(w, http.StatusBadGateway, "missing id_token")
+		o.writeErrorResponse(w, http.StatusBadGateway, "missing id_token")
 
 		return
 	}
 
-	oidcToken, err := c.oidcProvider.Verifier(&oidc.Config{
-		ClientID: c.oidcClientID,
+	oidcToken, err := o.oidcProvider.Verifier(&oidc.Config{
+		ClientID: o.oidcClientID,
 	}).Verify(r.Context(), rawIDToken)
 	if err != nil {
-		c.writeErrorResponse(w, http.StatusForbidden, fmt.Sprintf("failed to verify id_token : %s", err))
+		o.writeErrorResponse(w, http.StatusForbidden, fmt.Sprintf("failed to verify id_token : %s", err))
 
 		return
 	}
@@ -313,47 +335,106 @@ func (c *Operation) oidcCallbackHandler(w http.ResponseWriter, r *http.Request) 
 
 	err = oidcToken.Claims(claims)
 	if err != nil {
-		c.writeErrorResponse(w, http.StatusInternalServerError,
+		o.writeErrorResponse(w, http.StatusInternalServerError,
 			fmt.Sprintf("failed to extract claims from id_token : %s", err))
 
 		return
 	}
 
-	userProfile, err := user.NewStore(c.bootstrapStore).Get(claims.Sub)
+	_, err = user.NewStore(o.bootstrapStore).Get(claims.Sub)
 	if errors.Is(err, storage.ErrValueNotFound) {
-		userProfile, err = c.onboardUser(claims.Sub)
+		_, err = o.onboardUser(claims.Sub)
 		if err != nil {
-			c.writeErrorResponse(w, http.StatusInternalServerError, fmt.Sprintf("failed to onboard new user : %s", err))
+			o.writeErrorResponse(w, http.StatusInternalServerError, fmt.Sprintf("failed to onboard new user : %s", err))
 
 			return
 		}
 	}
 
 	if err != nil {
-		c.writeErrorResponse(w, http.StatusInternalServerError,
+		o.writeErrorResponse(w, http.StatusInternalServerError,
 			fmt.Sprintf("failed to fetch user profile from store : %s", err))
 
 		return
 	}
 
-	profileBytes, err := json.Marshal(userProfile)
+	req := admin.NewGetLoginRequestParams()
+	req.SetLoginChallenge(loginChallenge)
+
+	accept := admin.NewAcceptLoginRequestParams()
+
+	accept.SetLoginChallenge(loginChallenge)
+	accept.SetBody(&models.AcceptLoginRequest{
+		Subject: &claims.Sub,
+	})
+
+	loginResponse, err := o.hydra.AcceptLoginRequest(accept)
 	if err != nil {
-		c.writeErrorResponse(w, http.StatusInternalServerError,
-			fmt.Sprintf("failed to marshal user profile data : %s", err))
+		o.writeErrorResponse(w, http.StatusBadGateway,
+			"hydra failed to accept login request : %s", err.Error())
 
 		return
 	}
 
-	c.handleAuthResult(w, r, profileBytes)
+	redirectURL := *loginResponse.Payload.RedirectTo
+
+	http.Redirect(w, r, redirectURL, http.StatusFound)
+	logger.Debugf("redirected to: %s", redirectURL)
+}
+
+func (o *Operation) hydraConsentHandler(w http.ResponseWriter, r *http.Request) {
+	logger.Debugf("handling request: %s", r.URL.String())
+
+	challenge := r.URL.Query().Get("consent_challenge")
+	if challenge == "" {
+		o.writeErrorResponse(w, http.StatusBadRequest, "missing consent_challenge")
+
+		return
+	}
+
+	req := admin.NewGetConsentRequestParamsWithContext(r.Context())
+	req.SetConsentChallenge(challenge)
+
+	consent, err := o.hydra.GetConsentRequest(req)
+	if err != nil {
+		o.writeErrorResponse(w, http.StatusBadGateway,
+			"failed to fetch consent request from hydra : %s", err)
+
+		return
+	}
+
+	// ensure user exists
+	_, err = user.NewStore(o.bootstrapStore).Get(consent.Payload.Subject)
+	if err != nil {
+		o.writeErrorResponse(w, http.StatusInternalServerError, "failed to query for user profile: %s", err.Error())
+
+		return
+	}
+
+	params := admin.NewAcceptConsentRequestParamsWithContext(r.Context())
+
+	params.SetConsentChallenge(*consent.Payload.Challenge)
+
+	accepted, err := o.hydra.AcceptConsentRequest(params)
+	if err != nil {
+		o.writeErrorResponse(w, http.StatusBadGateway, "hydra failed to accept consent request: %s", err.Error())
+
+		return
+	}
+
+	redirectURL := *accepted.Payload.RedirectTo
+
+	http.Redirect(w, r, redirectURL, http.StatusFound)
+	logger.Debugf("redirected to: %s", redirectURL)
 }
 
 // TODO onboard user at key server and SDS: https://github.com/trustbloc/hub-auth/issues/38
-func (c *Operation) onboardUser(id string) (*user.Profile, error) {
+func (o *Operation) onboardUser(id string) (*user.Profile, error) {
 	userProfile := &user.Profile{
 		ID: id,
 	}
 
-	err := user.NewStore(c.bootstrapStore).Save(userProfile)
+	err := user.NewStore(o.bootstrapStore).Save(userProfile)
 	if err != nil {
 		return nil, fmt.Errorf("failed to save user profile : %w", err)
 	}
@@ -361,36 +442,36 @@ func (c *Operation) onboardUser(id string) (*user.Profile, error) {
 	return userProfile, nil
 }
 
-func (c *Operation) handleBootstrapDataRequest(w http.ResponseWriter, r *http.Request) {
+func (o *Operation) handleBootstrapDataRequest(w http.ResponseWriter, r *http.Request) {
 	handle := r.URL.Query().Get(userProfileQueryParam)
 	if handle == "" {
-		c.writeErrorResponse(w, http.StatusBadRequest, "missing handle")
+		o.writeErrorResponse(w, http.StatusBadRequest, "missing handle")
 
 		return
 	}
 
-	profile, err := user.NewStore(c.transientStore).Get(handle)
+	profile, err := user.NewStore(o.transientStore).Get(handle)
 	if errors.Is(err, storage.ErrValueNotFound) {
-		c.writeErrorResponse(w, http.StatusBadRequest, "invalid handle")
+		o.writeErrorResponse(w, http.StatusBadRequest, "invalid handle")
 
 		return
 	}
 
 	if err != nil {
-		c.writeErrorResponse(w, http.StatusInternalServerError,
+		o.writeErrorResponse(w, http.StatusInternalServerError,
 			fmt.Sprintf("failed to query transient store for handle: %s", err))
 
 		return
 	}
 
 	response, err := json.Marshal(&bootstrapData{
-		SDSURL:            c.bootstrapConfig.SDSURL,
+		SDSURL:            o.bootstrapConfig.SDSURL,
 		SDSPrimaryVaultID: profile.SDSPrimaryVaultID,
-		KeyServerURL:      c.bootstrapConfig.KeyServerURL,
+		KeyServerURL:      o.bootstrapConfig.KeyServerURL,
 		KeyStoreIDs:       profile.KeyStoreIDs,
 	})
 	if err != nil {
-		c.writeErrorResponse(w, http.StatusInternalServerError, fmt.Sprintf("failed to marshal bootstrap data: %s", err))
+		o.writeErrorResponse(w, http.StatusInternalServerError, fmt.Sprintf("failed to marshal bootstrap data: %s", err))
 
 		return
 	}
@@ -409,44 +490,44 @@ type certHolder struct {
 	AAGUID string   `json:"aaguid,omitempty"`
 }
 
-func (c *Operation) deviceCertHandler(w http.ResponseWriter, r *http.Request) {
+func (o *Operation) deviceCertHandler(w http.ResponseWriter, r *http.Request) {
 	dec := json.NewDecoder(r.Body)
 
 	var ch certHolder
 
 	err := dec.Decode(&ch)
 	if err != nil {
-		c.writeErrorResponse(w, http.StatusBadRequest, "cert request invalid json")
+		o.writeErrorResponse(w, http.StatusBadRequest, "cert request invalid json")
 		return
 	}
 
-	userProfile, err := user.NewStore(c.bootstrapStore).Get(ch.Sub)
+	userProfile, err := user.NewStore(o.bootstrapStore).Get(ch.Sub)
 	if errors.Is(err, storage.ErrValueNotFound) {
-		c.writeErrorResponse(w, http.StatusBadRequest, "invalid user profile id")
+		o.writeErrorResponse(w, http.StatusBadRequest, "invalid user profile id")
 		return
 	} else if err != nil {
-		c.writeErrorResponse(w, http.StatusInternalServerError, "failed to load user profile")
+		o.writeErrorResponse(w, http.StatusInternalServerError, "failed to load user profile")
 		return
 	}
 
-	err = c.verifyDeviceCert(&ch)
+	err = o.verifyDeviceCert(&ch)
 	if err != nil {
-		c.writeErrorResponse(w, http.StatusBadRequest, err.Error())
+		o.writeErrorResponse(w, http.StatusBadRequest, err.Error())
 	}
 
 	userProfile.AAGUID = ch.AAGUID
 
 	profileBytes, err := json.Marshal(userProfile)
 	if err != nil {
-		c.writeErrorResponse(w, http.StatusInternalServerError,
+		o.writeErrorResponse(w, http.StatusInternalServerError,
 			fmt.Sprintf("failed to marshal user profile data : %s", err))
 		return
 	}
 
-	c.handleAuthResult(w, r, profileBytes)
+	o.handleAuthResult(w, r, profileBytes)
 }
 
-func (c *Operation) verifyDeviceCert(ch *certHolder) error {
+func (o *Operation) verifyDeviceCert(ch *certHolder) error {
 	if len(ch.X5C) == 0 {
 		return errors.New("missing device certificate")
 	}
@@ -478,7 +559,7 @@ func (c *Operation) verifyDeviceCert(ch *certHolder) error {
 		intermediatePool.AddCert(iCert)
 	}
 
-	_, err := deviceCert.Verify(x509.VerifyOptions{Intermediates: intermediatePool, Roots: c.deviceRootCerts})
+	_, err := deviceCert.Verify(x509.VerifyOptions{Intermediates: intermediatePool, Roots: o.deviceRootCerts})
 	if err != nil {
 		return errors.New("cert chain fails to authenticate")
 	}
@@ -486,25 +567,25 @@ func (c *Operation) verifyDeviceCert(ch *certHolder) error {
 	return nil
 }
 
-func (c *Operation) handleAuthResult(w http.ResponseWriter, r *http.Request, profileBytes []byte) {
+func (o *Operation) handleAuthResult(w http.ResponseWriter, r *http.Request, profileBytes []byte) {
 	handle := url.QueryEscape(uuid.New().String())
 
-	err := c.transientStore.Put(handle, profileBytes)
+	err := o.transientStore.Put(handle, profileBytes)
 	if err != nil {
-		c.writeErrorResponse(w,
+		o.writeErrorResponse(w,
 			http.StatusInternalServerError, fmt.Sprintf("failed to write handle to transient store: %s", err))
 
 		return
 	}
 
-	redirectURL := fmt.Sprintf("%s?%s=%s", c.uiEndpoint, userProfileQueryParam, handle)
+	redirectURL := fmt.Sprintf("%s?%s=%s", o.uiEndpoint, userProfileQueryParam, handle)
 
 	http.Redirect(w, r, redirectURL, http.StatusFound)
 	logger.Debugf("redirected to: %s", redirectURL)
 }
 
 // writeResponse writes interface value to response.
-func (c *Operation) writeErrorResponse(rw http.ResponseWriter, status int, msg string, args ...interface{}) {
+func (o *Operation) writeErrorResponse(rw http.ResponseWriter, status int, msg string, args ...interface{}) {
 	logger.Errorf(msg, args...)
 
 	rw.WriteHeader(status)
@@ -514,8 +595,8 @@ func (c *Operation) writeErrorResponse(rw http.ResponseWriter, status int, msg s
 	}
 }
 
-func (c *Operation) oauth2Config(scopes ...string) oauth2Config {
-	return c.oauth2ConfigFunc(scopes...)
+func (o *Operation) oauth2Config(scopes ...string) oauth2Config {
+	return o.oauth2ConfigFunc(scopes...)
 }
 
 func createStore(p storage.Provider) (storage.Store, error) {
