@@ -26,6 +26,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/trustbloc/hub-auth/pkg/restapi/common/store/cookie"
+
 	"github.com/coreos/go-oidc"
 	"github.com/google/uuid"
 	"github.com/ory/hydra-client-go/client/admin"
@@ -97,28 +99,29 @@ func TestNew(t *testing.T) {
 		require.Error(t, err)
 	})
 }
-func TestCreateOIDCRequest(t *testing.T) {
+
+func TestOIDCLoginHandler(t *testing.T) {
 	t.Run("returns oidc request", func(t *testing.T) {
-		const scope = "CreditCardStatement"
 		config := config(t)
 		svc, err := New(config)
 		require.NoError(t, err)
+		svc.cookies = mockCookies("")
 		svc.oidcProvider = &mockOIDCProvider{baseURL: "http://test.com"}
 		w := httptest.NewRecorder()
-		svc.createOIDCRequest(w, newCreateOIDCHTTPRequest(scope))
-		require.Equal(t, http.StatusOK, w.Code)
-		result := &createOIDCRequestResponse{}
-		err = json.NewDecoder(w.Body).Decode(result)
+		svc.oidcLoginHandler(w, newOIDCLoginRequest("google"))
+		require.Equal(t, http.StatusFound, w.Code)
+		require.NotEmpty(t, w.Header().Get("location"))
+	})
+
+	t.Run("internal server error if cannot open cookie store", func(t *testing.T) {
+		svc, err := New(config(t))
 		require.NoError(t, err)
-		u, err := url.Parse(result.Request)
-		require.NoError(t, err)
-		scopes := strings.Split(u.Query().Get("scope"), " ")
-		require.Contains(t, scopes, oidc.ScopeOpenID)
-		require.Contains(t, scopes, scope)
-		require.NotEmpty(t, u.Query().Get("state"))
-		require.Equal(t, config.OIDCClientID, u.Query().Get("client_id"))
-		require.Equal(t,
-			fmt.Sprintf("%s%s", config.OIDCCallbackURL, oauth2CallbackPath), u.Query().Get("redirect_uri"))
+		svc.cookies = &cookie.MockStore{
+			OpenErr: errors.New("test"),
+		}
+		w := httptest.NewRecorder()
+		svc.oidcLoginHandler(w, newOIDCLoginRequest("google"))
+		require.Equal(t, http.StatusInternalServerError, w.Code)
 	})
 
 	t.Run("bad request if scope is missing", func(t *testing.T) {
@@ -127,7 +130,7 @@ func TestCreateOIDCRequest(t *testing.T) {
 		require.NoError(t, err)
 		svc.oidcProvider = &mockOIDCProvider{baseURL: "http://test.com"}
 		w := httptest.NewRecorder()
-		svc.createOIDCRequest(w, newCreateOIDCHTTPRequest(""))
+		svc.oidcLoginHandler(w, newOIDCLoginRequest(""))
 		require.Equal(t, http.StatusBadRequest, w.Code)
 	})
 
@@ -144,12 +147,12 @@ func TestCreateOIDCRequest(t *testing.T) {
 		require.NoError(t, err)
 		svc.oidcProvider = &mockOIDCProvider{baseURL: "http://test.com"}
 		w := httptest.NewRecorder()
-		svc.createOIDCRequest(w, newCreateOIDCHTTPRequest("CreditCardStatement"))
+		svc.oidcLoginHandler(w, newOIDCLoginRequest("CreditCardStatement"))
 		require.Equal(t, http.StatusInternalServerError, w.Code)
 	})
 }
 
-func TestHandleOIDCCallback(t *testing.T) {
+func TestOIDCCallbackHandler(t *testing.T) {
 	t.Run("onboard user", func(t *testing.T) {
 		state := uuid.New().String()
 		code := uuid.New().String()
@@ -166,6 +169,8 @@ func TestHandleOIDCCallback(t *testing.T) {
 
 		o, err := New(config)
 		require.NoError(t, err)
+
+		o.cookies = mockCookies(state)
 
 		o.oauth2ConfigFunc = func(...string) oauth2Config {
 			return &mockOAuth2Config{exchangeVal: &mockToken{
@@ -188,7 +193,7 @@ func TestHandleOIDCCallback(t *testing.T) {
 		}
 
 		result := httptest.NewRecorder()
-		o.handleOIDCCallback(result, newOIDCCallback(state, code))
+		o.oidcCallbackHandler(result, newOIDCCallback(state, code))
 		require.Equal(t, http.StatusFound, result.Code)
 	})
 
@@ -197,7 +202,19 @@ func TestHandleOIDCCallback(t *testing.T) {
 		svc, err := New(config)
 		require.NoError(t, err)
 		result := httptest.NewRecorder()
-		svc.handleOIDCCallback(result, newOIDCCallback("", "code"))
+		svc.oidcCallbackHandler(result, newOIDCCallback("", "code"))
+		require.Equal(t, http.StatusBadRequest, result.Code)
+	})
+
+	t.Run("error mismatching state", func(t *testing.T) {
+		state := uuid.New().String()
+		mismatch := "mismatch"
+		require.NotEqual(t, state, mismatch)
+		svc, err := New(config(t))
+		require.NoError(t, err)
+		svc.cookies = mockCookies(mismatch)
+		result := httptest.NewRecorder()
+		svc.oidcCallbackHandler(result, newOIDCCallback(state, "code"))
 		require.Equal(t, http.StatusBadRequest, result.Code)
 	})
 
@@ -206,7 +223,7 @@ func TestHandleOIDCCallback(t *testing.T) {
 		svc, err := New(config)
 		require.NoError(t, err)
 		result := httptest.NewRecorder()
-		svc.handleOIDCCallback(result, newOIDCCallback("state", ""))
+		svc.oidcCallbackHandler(result, newOIDCCallback("state", ""))
 		require.Equal(t, http.StatusBadRequest, result.Code)
 	})
 
@@ -215,28 +232,8 @@ func TestHandleOIDCCallback(t *testing.T) {
 		svc, err := New(config)
 		require.NoError(t, err)
 		result := httptest.NewRecorder()
-		svc.handleOIDCCallback(result, newOIDCCallback("state", "code"))
+		svc.oidcCallbackHandler(result, newOIDCCallback("state", "code"))
 		require.Equal(t, http.StatusBadRequest, result.Code)
-	})
-
-	t.Run("generic transient store error", func(t *testing.T) {
-		state := uuid.New().String()
-		config := config(t)
-
-		config.TransientStoreProvider = &mockstore.Provider{
-			Store: &mockstore.MockStore{
-				Store: map[string][]byte{
-					state: []byte(state),
-				},
-				ErrGet: errors.New("generic"),
-			},
-		}
-
-		svc, err := New(config)
-		require.NoError(t, err)
-		result := httptest.NewRecorder()
-		svc.handleOIDCCallback(result, newOIDCCallback(state, "code"))
-		require.Equal(t, http.StatusInternalServerError, result.Code)
 	})
 
 	t.Run("generic bootstrap store FETCH error", func(t *testing.T) {
@@ -268,6 +265,8 @@ func TestHandleOIDCCallback(t *testing.T) {
 		svc, err := New(config)
 		require.NoError(t, err)
 
+		svc.cookies = mockCookies(state)
+
 		svc.oauth2ConfigFunc = func(...string) oauth2Config {
 			return &mockOAuth2Config{exchangeVal: &mockToken{
 				oauth2Claim: uuid.New().String(),
@@ -289,7 +288,7 @@ func TestHandleOIDCCallback(t *testing.T) {
 		}
 
 		result := httptest.NewRecorder()
-		svc.handleOIDCCallback(result, newOIDCCallback(state, "code"))
+		svc.oidcCallbackHandler(result, newOIDCCallback(state, "code"))
 		require.Equal(t, http.StatusInternalServerError, result.Code)
 	})
 
@@ -323,6 +322,8 @@ func TestHandleOIDCCallback(t *testing.T) {
 		svc, err := New(config)
 		require.NoError(t, err)
 
+		svc.cookies = mockCookies(state)
+
 		svc.oauth2ConfigFunc = func(...string) oauth2Config {
 			return &mockOAuth2Config{exchangeVal: &mockToken{
 				oauth2Claim: uuid.New().String(),
@@ -344,7 +345,7 @@ func TestHandleOIDCCallback(t *testing.T) {
 		}
 
 		result := httptest.NewRecorder()
-		svc.handleOIDCCallback(result, newOIDCCallback(state, "code"))
+		svc.oidcCallbackHandler(result, newOIDCCallback(state, "code"))
 		require.Equal(t, http.StatusInternalServerError, result.Code)
 	})
 
@@ -358,13 +359,14 @@ func TestHandleOIDCCallback(t *testing.T) {
 		}}
 		svc, err := New(config)
 		require.NoError(t, err)
+		svc.cookies = mockCookies(state)
 		svc.oauth2ConfigFunc = func(...string) oauth2Config {
 			return &mockOAuth2Config{
 				exchangeErr: errors.New("test"),
 			}
 		}
 		result := httptest.NewRecorder()
-		svc.handleOIDCCallback(result, newOIDCCallback(state, "code"))
+		svc.oidcCallbackHandler(result, newOIDCCallback(state, "code"))
 		require.Equal(t, http.StatusBadGateway, result.Code)
 	})
 
@@ -378,6 +380,7 @@ func TestHandleOIDCCallback(t *testing.T) {
 		}}
 		svc, err := New(config)
 		require.NoError(t, err)
+		svc.cookies = mockCookies(state)
 		svc.oauth2ConfigFunc = func(...string) oauth2Config {
 			return &mockOAuth2Config{exchangeVal: &mockToken{}}
 		}
@@ -385,7 +388,7 @@ func TestHandleOIDCCallback(t *testing.T) {
 			verifier: &mockVerifier{verifyVal: &mockToken{}},
 		}
 		result := httptest.NewRecorder()
-		svc.handleOIDCCallback(result, newOIDCCallback(state, "code"))
+		svc.oidcCallbackHandler(result, newOIDCCallback(state, "code"))
 		require.Equal(t, http.StatusBadGateway, result.Code)
 	})
 
@@ -399,6 +402,7 @@ func TestHandleOIDCCallback(t *testing.T) {
 		}}
 		svc, err := New(config)
 		require.NoError(t, err)
+		svc.cookies = mockCookies(state)
 		svc.oauth2ConfigFunc = func(...string) oauth2Config {
 			return &mockOAuth2Config{exchangeVal: &mockToken{oauth2Claim: "id_token"}}
 		}
@@ -406,7 +410,7 @@ func TestHandleOIDCCallback(t *testing.T) {
 			verifier: &mockVerifier{verifyErr: errors.New("test")},
 		}
 		result := httptest.NewRecorder()
-		svc.handleOIDCCallback(result, newOIDCCallback(state, "code"))
+		svc.oidcCallbackHandler(result, newOIDCCallback(state, "code"))
 		require.Equal(t, http.StatusForbidden, result.Code)
 	})
 
@@ -420,6 +424,7 @@ func TestHandleOIDCCallback(t *testing.T) {
 		}}
 		svc, err := New(config)
 		require.NoError(t, err)
+		svc.cookies = mockCookies(state)
 		svc.oauth2ConfigFunc = func(...string) oauth2Config {
 			return &mockOAuth2Config{exchangeVal: &mockToken{oauth2Claim: "id_token"}}
 		}
@@ -427,7 +432,7 @@ func TestHandleOIDCCallback(t *testing.T) {
 			verifier: &mockVerifier{verifyVal: &mockToken{oidcClaimsErr: errors.New("test")}},
 		}
 		result := httptest.NewRecorder()
-		svc.handleOIDCCallback(result, newOIDCCallback(state, "code"))
+		svc.oidcCallbackHandler(result, newOIDCCallback(state, "code"))
 		require.Equal(t, http.StatusInternalServerError, result.Code)
 	})
 	t.Run("PUT error while storing user info while handling callback user", func(t *testing.T) {
@@ -907,8 +912,8 @@ func newHydraLoginHTTPRequest(challenge string) *http.Request {
 		fmt.Sprintf("http://hub-auth.com/hydra/login?login_challenge=%s", challenge), nil)
 }
 
-func newCreateOIDCHTTPRequest(scope string) *http.Request {
-	return httptest.NewRequest(http.MethodGet, fmt.Sprintf("http://example.com/oauth2/request?scope=%s", scope), nil)
+func newOIDCLoginRequest(provider string) *http.Request {
+	return httptest.NewRequest(http.MethodGet, fmt.Sprintf("http://example.com/oauth2/login?provider=%s", provider), nil)
 }
 
 func newOIDCCallback(state, code string) *http.Request {
@@ -1117,4 +1122,14 @@ func makeChildCert(t *testing.T, parent *x509.Certificate, parentPriv interface{
 	require.NoError(t, err)
 
 	return &template, pemBytes.String(), priv
+}
+
+func mockCookies(state string) *cookie.MockStore {
+	return &cookie.MockStore{
+		Jar: &cookie.MockJar{
+			Cookies: map[interface{}]interface{}{
+				stateCookieName: state,
+			},
+		},
+	}
 }

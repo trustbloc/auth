@@ -9,6 +9,7 @@ go 1.14
 require (
 	github.com/coreos/go-oidc v2.2.1+incompatible
 	github.com/google/uuid v1.1.1
+	github.com/gorilla/sessions v1.2.1
 	github.com/ory/hydra-client-go v1.7.4
 	github.com/pquerna/cachecontrol v0.0.0-20180517163645-1555304b9b35 // indirect
 	github.com/stretchr/testify v1.6.1
