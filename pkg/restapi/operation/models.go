@@ -8,10 +8,6 @@ package operation
 
 import "github.com/ory/hydra-client-go/client/admin"
 
-type createOIDCRequestResponse struct {
-	Request string `json:"request"`
-}
-
 type bootstrapData struct {
 	SDSURL            string   `json:"sdsURL"`
 	SDSPrimaryVaultID string   `json:"sdsPrimaryVaultID"`
