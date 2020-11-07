@@ -43,8 +43,13 @@ auth-rest-docker:
 	--build-arg GO_VER=$(GO_VER) \
 	--build-arg ALPINE_VER=$(ALPINE_VER) .
 
+.PHONY: mock-login-consent-docker
+mock-login-consent-docker:
+	@echo "Building mock login consent server for BDD tests..."
+	@cd test/bdd/mock/loginconsent && docker build -f image/Dockerfile --build-arg GO_VER=$(GO_VER) --build-arg ALPINE_VER=$(ALPINE_VER) -t hubauth/mockloginconsent:latest .
+
 .PHONY: bdd-test
-bdd-test: clean auth-rest-docker generate-test-keys
+bdd-test: clean auth-rest-docker generate-test-keys mock-login-consent-docker
 	@scripts/check_integration.sh
 
 

@@ -9,6 +9,7 @@ package operation
 import (
 	"bytes"
 	"context"
+	"crypto/aes"
 	"crypto/ed25519"
 	"crypto/rand"
 	"crypto/x509"
@@ -131,23 +132,6 @@ func TestOIDCLoginHandler(t *testing.T) {
 		w := httptest.NewRecorder()
 		svc.oidcLoginHandler(w, newOIDCLoginRequest(""))
 		require.Equal(t, http.StatusBadRequest, w.Code)
-	})
-
-	t.Run("internal server error if transient store fails", func(t *testing.T) {
-		config := config(t)
-		config.TransientStoreProvider = &mockstore.Provider{
-			Store: &mockstore.MockStore{
-				Store:  make(map[string][]byte),
-				ErrPut: errors.New("test"),
-			},
-		}
-
-		svc, err := New(config)
-		require.NoError(t, err)
-		svc.oidcProvider = &mockOIDCProvider{baseURL: "http://test.com"}
-		w := httptest.NewRecorder()
-		svc.oidcLoginHandler(w, newOIDCLoginRequest("CreditCardStatement"))
-		require.Equal(t, http.StatusInternalServerError, w.Code)
 	})
 }
 
@@ -1110,7 +1094,20 @@ func config(t *testing.T) *Config {
 			KeyServerURL: "http://keyserver.example.com",
 		},
 		Hydra: &mockHydra{},
+		Cookies: &CookieConfig{
+			AuthKey: cookieKey(t),
+			EncKey:  cookieKey(t),
+		},
 	}
+}
+
+func cookieKey(t *testing.T) []byte {
+	key := make([]byte, aes.BlockSize)
+
+	_, err := rand.Read(key)
+	require.NoError(t, err)
+
+	return key
 }
 
 func marshal(t *testing.T, v interface{}) []byte {
