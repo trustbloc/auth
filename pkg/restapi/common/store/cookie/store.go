@@ -16,7 +16,7 @@ import (
 const (
 	// StoreName is the name of the cookie store.
 	StoreName = "edgeagent_wallet"
-	// TODO make session cookies max age configurable: https://github.com/trustbloc/edge-agent/issues/388
+	// TODO make session cookies max age configurable: https://github.com/trustbloc/hub-auth/issues/66.
 	storeMaxAge = 900 // 15 mins
 )
 

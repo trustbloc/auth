@@ -6,6 +6,9 @@ SPDX-License-Identifier: Apache-2.0
 package startcmd
 
 import (
+	"crypto/aes"
+	"crypto/rand"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -14,8 +17,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/trustbloc/hub-auth/pkg/restapi/common/hydra"
+
 	"github.com/gorilla/mux"
-	"github.com/ory/hydra-client-go/client"
 	"github.com/rs/cors"
 	"github.com/spf13/cobra"
 	"github.com/trustbloc/edge-core/pkg/log"
@@ -187,9 +191,9 @@ type deviceCertParams struct {
 }
 
 type oidcParams struct {
-	hydraURL        *url.URL
-	baseCallbackURL string
-	google          *oidcProviderParams
+	hydraURL    *url.URL
+	callbackURL string
+	google      *oidcProviderParams
 }
 
 type oidcProviderParams struct {
@@ -389,8 +393,6 @@ func startAuthService(parameters *authRestParameters, srv server) error {
 		return err
 	}
 
-	logger.Debugf("root ca's %v", rootCAs)
-
 	router := mux.NewRouter()
 	// health check
 	router.HandleFunc(healthCheckEndpoint, healthCheckHandler).Methods(http.MethodGet)
@@ -399,23 +401,33 @@ func startAuthService(parameters *authRestParameters, srv server) error {
 		router.HandleFunc(handler.Path(), handler.Handle()).Methods(handler.Method())
 	}
 
+	// TODO configure cookie auth and enc keys: https://github.com/trustbloc/hub-auth/issues/65
+	key := make([]byte, aes.BlockSize)
+
+	_, err = rand.Reader.Read(key)
+	if err != nil {
+		return fmt.Errorf("failed to read random key: %w", err)
+	}
+
 	svc, err := restapi.New(&operation.Config{
 		TransientStoreProvider: memstore.NewProvider(),
 		StoreProvider:          provider,
-		OIDCCallbackURL:        parameters.oidcParams.baseCallbackURL,
+		OIDCCallbackURL:        parameters.oidcParams.callbackURL,
 		OIDCProviderURL:        parameters.oidcParams.google.providerURL,
 		OIDCClientID:           parameters.oidcParams.google.clientID,
 		OIDCClientSecret:       parameters.oidcParams.google.clientSecret,
-		Hydra: client.NewHTTPClientWithConfig(nil, &client.TransportConfig{
-			Schemes:  []string{parameters.oidcParams.hydraURL.Scheme},
-			Host:     parameters.oidcParams.hydraURL.Host,
-			BasePath: parameters.oidcParams.hydraURL.Path,
-		}).Admin,
+		Hydra:                  hydra.NewClient(parameters.oidcParams.hydraURL, rootCAs),
 		BootstrapConfig: &operation.BootstrapConfig{
 			SDSURL:       parameters.bootstrapParams.sdsURL,
 			KeyServerURL: parameters.bootstrapParams.keyServerURL,
 		},
 		DeviceRootCerts: parameters.devicecertParams.caCerts,
+		TLSConfig:       &tls.Config{RootCAs: rootCAs, MinVersion: tls.VersionTLS13},
+		UIEndpoint:      uiEndpoint,
+		Cookies: &operation.CookieConfig{
+			AuthKey: key,
+			EncKey:  key,
+		},
 	})
 	if err != nil {
 		return err
@@ -461,7 +473,7 @@ func getOIDCParams(cmd *cobra.Command) (*oidcParams, error) {
 
 	var err error
 
-	params.baseCallbackURL, err = cmdutils.GetUserSetVarFromString(cmd,
+	params.callbackURL, err = cmdutils.GetUserSetVarFromString(cmd,
 		oidcCallbackURLFlagName, oidcCallbackURLEnvKey, false)
 	if err != nil {
 		return nil, err

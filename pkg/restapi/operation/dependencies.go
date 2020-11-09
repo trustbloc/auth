@@ -54,7 +54,8 @@ type oauth2Config interface {
 }
 
 type oauth2ConfigImpl struct {
-	oc *oauth2.Config
+	oc     *oauth2.Config
+	client *http.Client
 }
 
 func (o *oauth2ConfigImpl) AuthCodeURL(state string, options ...oauth2.AuthCodeOption) string {
@@ -63,7 +64,11 @@ func (o *oauth2ConfigImpl) AuthCodeURL(state string, options ...oauth2.AuthCodeO
 
 func (o *oauth2ConfigImpl) Exchange(
 	ctx context.Context, code string, options ...oauth2.AuthCodeOption) (oauth2Token, error) {
-	return o.oc.Exchange(ctx, code, options...)
+	return o.oc.Exchange(
+		context.WithValue(ctx, oauth2.HTTPClient, o.client),
+		code,
+		options...,
+	)
 }
 
 type oauth2Token interface {

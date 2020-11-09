@@ -16,6 +16,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"time"
 
 	"github.com/ory/hydra-client-go/models"
 
@@ -37,8 +38,8 @@ import (
 const (
 	hydraLoginPath          = "/hydra/login"
 	hydraConsentPath        = "/hydra/consent"
-	oidcLoginPath           = "/oauth2/request"
-	oauth2CallbackPath      = "/oauth2/callback"
+	oidcLoginPath           = "/oauth2/login"
+	oidcCallbackPath        = "/oauth2/callback"
 	bootstrapGetRequestPath = "/bootstrap"
 	deviceCertPath          = "/device"
 	// api path params
@@ -88,6 +89,13 @@ type Config struct {
 	Hydra                  Hydra
 	DeviceRootCerts        []string
 	DeviceCertSystemPool   bool
+	Cookies                *CookieConfig
+}
+
+// CookieConfig holds cookie configuration.
+type CookieConfig struct {
+	AuthKey []byte
+	EncKey  []byte
 }
 
 // BootstrapConfig holds user bootstrap-related config.
@@ -107,7 +115,7 @@ func New(config *Config) (*Operation, error) {
 		bootstrapConfig:  config.BootstrapConfig,
 		hydra:            config.Hydra,
 		uiEndpoint:       config.UIEndpoint,
-		cookies:          cookie.NewStore(nil, nil), // TODO configure cookie auth and enc keys
+		cookies:          cookie.NewStore(config.Cookies.AuthKey, config.Cookies.EncKey),
 	}
 
 	// TODO implement retries: https://github.com/trustbloc/hub-auth/issues/45
@@ -132,19 +140,18 @@ func New(config *Config) (*Operation, error) {
 	}
 
 	svc.oauth2ConfigFunc = func(scopes ...string) oauth2Config {
-		config := &oauth2.Config{
+		oauth2Config := &oauth2.Config{
 			ClientID:     svc.oidcClientID,
 			ClientSecret: svc.oidcClientSecret,
 			Endpoint:     svc.oidcProvider.Endpoint(),
-			RedirectURL:  fmt.Sprintf("%s%s", svc.oidcCallbackURL, oauth2CallbackPath),
+			RedirectURL:  svc.oidcCallbackURL,
 			Scopes:       append([]string{oidc.ScopeOpenID}, scopes...),
 		}
 
-		if len(scopes) > 0 {
-			config.Scopes = append(config.Scopes, scopes...)
+		return &oauth2ConfigImpl{
+			oc:     oauth2Config,
+			client: &http.Client{Transport: &http.Transport{TLSClientConfig: config.TLSConfig}},
 		}
-
-		return &oauth2ConfigImpl{oc: config}
 	}
 
 	svc.bootstrapStore, err = openBootstrapStore(config.StoreProvider)
@@ -165,7 +172,7 @@ func (o *Operation) GetRESTHandlers() []common.Handler {
 	return []common.Handler{
 		support.NewHTTPHandler(hydraLoginPath, http.MethodGet, o.hydraLoginHandler),
 		support.NewHTTPHandler(oidcLoginPath, http.MethodGet, o.oidcLoginHandler),
-		support.NewHTTPHandler(oauth2CallbackPath, http.MethodGet, o.oidcCallbackHandler),
+		support.NewHTTPHandler(oidcCallbackPath, http.MethodGet, o.oidcCallbackHandler),
 		support.NewHTTPHandler(hydraConsentPath, http.MethodGet, o.hydraConsentHandler),
 		support.NewHTTPHandler(bootstrapGetRequestPath, http.MethodGet, o.handleBootstrapDataRequest),
 		support.NewHTTPHandler(deviceCertPath, http.MethodPost, o.deviceCertHandler),
@@ -177,7 +184,7 @@ func (o *Operation) hydraLoginHandler(w http.ResponseWriter, r *http.Request) {
 
 	challenge := r.URL.Query().Get("login_challenge")
 	if challenge == "" {
-		common.WriteErrorResponsef(w, logger, http.StatusBadRequest, "missing challenge on login request")
+		o.writeErrorResponse(w, http.StatusBadRequest, "missing challenge on login request")
 
 		return
 	}
@@ -189,7 +196,7 @@ func (o *Operation) hydraLoginHandler(w http.ResponseWriter, r *http.Request) {
 	// ensure login request is valid
 	_, err := o.hydra.GetLoginRequest(req) // nolint:errcheck // don't know why errcheck is complaining
 	if err != nil {
-		common.WriteErrorResponsef(w, logger,
+		o.writeErrorResponse(w,
 			http.StatusBadGateway, "failed to fetch login request from hydra: %s", err.Error())
 
 		return
@@ -411,9 +418,17 @@ func (o *Operation) hydraConsentHandler(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	params := admin.NewAcceptConsentRequestParamsWithContext(r.Context())
+	params := admin.NewAcceptConsentRequestParams()
 
-	params.SetConsentChallenge(*consent.Payload.Challenge)
+	params.SetContext(r.Context())
+	params.SetConsentChallenge(challenge)
+	params.SetBody(&models.AcceptConsentRequest{
+		GrantAccessTokenAudience: consent.Payload.RequestedAccessTokenAudience,
+		GrantScope:               consent.Payload.RequestedScope,
+		HandledAt:                models.NullTime(time.Now()),
+		Remember:                 true,
+		Session:                  nil,
+	})
 
 	accepted, err := o.hydra.AcceptConsentRequest(params)
 	if err != nil {
@@ -586,7 +601,8 @@ func (o *Operation) handleAuthResult(w http.ResponseWriter, r *http.Request, pro
 
 // writeResponse writes interface value to response.
 func (o *Operation) writeErrorResponse(rw http.ResponseWriter, status int, msg string, args ...interface{}) {
-	logger.Errorf(msg, args...)
+	msg = fmt.Sprintf(msg, args...)
+	logger.Errorf(msg)
 
 	rw.WriteHeader(status)
 

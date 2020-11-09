@@ -7,6 +7,8 @@ SPDX-License-Identifier: Apache-2.0
 package restapi
 
 import (
+	"crypto/aes"
+	"crypto/rand"
 	"testing"
 
 	"github.com/trustbloc/hub-auth/pkg/internal/common/mockoidc"
@@ -53,5 +55,18 @@ func config(t *testing.T) *operation.Config {
 		OIDCProviderURL:        path,
 		TransientStoreProvider: memstore.NewProvider(),
 		StoreProvider:          memstore.NewProvider(),
+		Cookies: &operation.CookieConfig{
+			AuthKey: cookieKey(t),
+			EncKey:  cookieKey(t),
+		},
 	}
+}
+
+func cookieKey(t *testing.T) []byte {
+	key := make([]byte, aes.BlockSize)
+
+	_, err := rand.Read(key)
+	require.NoError(t, err)
+
+	return key
 }
