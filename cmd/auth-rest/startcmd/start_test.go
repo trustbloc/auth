@@ -465,11 +465,13 @@ func Test_createProvider(t *testing.T) {
 	})
 	t.Run("Empty CouchDB URL", func(t *testing.T) {
 		provider, err := createProvider(&authRestParameters{
-			databaseType: databaseTypeCouchDBOption,
-			databaseURL:  "",
+			databaseType:   databaseTypeCouchDBOption,
+			databaseURL:    "",
+			startupTimeout: 1,
 		})
 
-		require.EqualError(t, err, "hostURL for new CouchDB provider can't be blank")
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "hostURL for new CouchDB provider can't be blank")
 		require.Nil(t, provider)
 	})
 }

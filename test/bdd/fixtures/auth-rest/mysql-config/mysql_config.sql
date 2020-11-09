@@ -7,6 +7,12 @@ SPDX-License-Identifier: Apache-2.0
 \! echo "Configuring MySQL users...";
 
 /*
+auth rest
+*/
+CREATE USER 'authrest'@'%' IDENTIFIED BY 'authrest-secret-pw';
+GRANT ALL PRIVILEGES ON `authrest\_%` . * TO 'authrest'@'%';
+
+/*
 auth rest hydra
 */
 CREATE USER 'authresthydra'@'%' IDENTIFIED BY 'authresthydra-secret-pw';

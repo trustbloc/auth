@@ -16,7 +16,9 @@ services:
       - AUTH_REST_TLS_SYSTEMCERTPOOL=true
       - AUTH_REST_TLS_SERVE_CERT=/etc/tls/ec-pubCert.pem
       - AUTH_REST_TLS_SERVE_KEY=/etc/tls/ec-key.pem
-      - AUTH_REST_DATABASE_TYPE=mem
+      - AUTH_REST_DATABASE_TYPE=mysql
+      - AUTH_REST_DATABASE_URL=authrest:authrest-secret-pw@tcp(mysql:3306)/
+      - AUTH_REST_DATABASE_PREFIX=authrest
       - AUTH_REST_OIDC_CALLBACK=https://localhost:8070/oauth2/callback   # https://github.com/trustbloc/hub-auth/issues/13
       - AUTH_REST_GOOGLE_URL=https://third.party.oidc.provider.example.com:5555/
       - AUTH_REST_GOOGLE_CLIENTID=hub-auth # https://github.com/trustbloc/hub-auth/issues/9
@@ -34,6 +36,7 @@ services:
     depends_on:
       - auth.rest.hydra.example.com
       - third.party.oidc.provider.example.com
+      - mysql
     networks:
       - bdd_test
 
@@ -100,8 +103,8 @@ services:
     command: --default-authentication-plugin=mysql_native_password
     environment:
       MYSQL_ROOT_PASSWORD: secret
-#    logging:
-#      driver: "none"
+    logging:
+      driver: "none"
     volumes:
       - ./mysql-config:/docker-entrypoint-initdb.d
     networks:

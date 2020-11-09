@@ -24,9 +24,6 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/trustbloc/edge-core/pkg/log"
 	"github.com/trustbloc/edge-core/pkg/restapi/logspec"
-	"github.com/trustbloc/edge-core/pkg/storage"
-	couchdbstore "github.com/trustbloc/edge-core/pkg/storage/couchdb"
-	"github.com/trustbloc/edge-core/pkg/storage/memstore"
 	cmdutils "github.com/trustbloc/edge-core/pkg/utils/cmd"
 	tlsutils "github.com/trustbloc/edge-core/pkg/utils/tls"
 
@@ -38,6 +35,7 @@ import (
 const (
 	databaseTypeMemOption     = "mem"
 	databaseTypeCouchDBOption = "couchdb"
+	databaseTypeMySQLOption   = "mysql"
 
 	hostURLFlagName      = "host-url"
 	hostURLFlagShorthand = "u"
@@ -75,7 +73,7 @@ const (
 	databaseTypeFlagName      = "database-type"
 	databaseTypeEnvKey        = "AUTH_REST_DATABASE_TYPE"
 	databaseTypeFlagShorthand = "d"
-	databaseTypeFlagUsage     = "The type of database to use for storage. Supported options: mem, couchdb. " +
+	databaseTypeFlagUsage     = "The type of database to use for storage. Supported options: mem, couchdb, mysql. " +
 		" Alternatively, this can be set with the following environment variable: " + databaseTypeEnvKey
 
 	databaseURLFlagName      = "database-url"
@@ -171,6 +169,7 @@ type authRestParameters struct {
 	databaseType     string
 	databaseURL      string
 	databasePrefix   string
+	startupTimeout   uint64
 	tlsParams        *tlsParams
 	oidcParams       *oidcParams
 	bootstrapParams  *bootstrapParams
@@ -306,6 +305,8 @@ func getAuthRestParameters(cmd *cobra.Command) (*authRestParameters, error) { //
 		return nil, err
 	}
 
+	const timeout = 120
+
 	return &authRestParameters{
 		hostURL:          hostURL,
 		tlsParams:        tlsParams,
@@ -317,6 +318,7 @@ func getAuthRestParameters(cmd *cobra.Command) (*authRestParameters, error) { //
 		bootstrapParams:  bootstrapParams,
 		staticFiles:      staticFiles,
 		devicecertParams: deviceCertParams,
+		startupTimeout:   timeout,
 	}, nil
 }
 
@@ -410,7 +412,7 @@ func startAuthService(parameters *authRestParameters, srv server) error {
 	}
 
 	svc, err := restapi.New(&operation.Config{
-		TransientStoreProvider: memstore.NewProvider(),
+		TransientStoreProvider: provider,
 		StoreProvider:          provider,
 		OIDCCallbackURL:        parameters.oidcParams.callbackURL,
 		OIDCProviderURL:        parameters.oidcParams.google.providerURL,
@@ -575,26 +577,6 @@ func setDefaultLogLevel(userLogLevel string) {
 	}
 
 	log.SetLevel("", logLevel)
-}
-
-func createProvider(parameters *authRestParameters) (storage.Provider, error) {
-	var provider storage.Provider
-
-	switch {
-	case strings.EqualFold(parameters.databaseType, databaseTypeMemOption):
-		provider = memstore.NewProvider()
-	case strings.EqualFold(parameters.databaseType, databaseTypeCouchDBOption):
-		couchDBProvider, err := couchdbstore.NewProvider(parameters.databaseURL)
-		if err != nil {
-			return nil, err
-		}
-
-		provider = couchDBProvider
-	default:
-		return nil, fmt.Errorf(invalidDatabaseTypeErrMsg, parameters.databaseType)
-	}
-
-	return provider, nil
 }
 
 func constructCORSHandler(handler http.Handler) http.Handler {

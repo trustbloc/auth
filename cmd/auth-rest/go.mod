@@ -7,6 +7,7 @@ module github.com/trustbloc/hub-auth/cmd/auth-rest
 go 1.14
 
 require (
+	github.com/cenkalti/backoff v2.2.1+incompatible
 	github.com/google/uuid v1.1.1
 	github.com/gorilla/mux v1.7.4
 	github.com/ory/hydra-client-go v1.7.4
