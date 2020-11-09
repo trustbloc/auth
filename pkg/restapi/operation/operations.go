@@ -47,8 +47,8 @@ const (
 	stateCookie               = "oauth2_state"
 	hydraLoginChallengeCookie = "hydra_login_challenge"
 
-	transientStoreName = "hub-auth-rest-transient"
-	bootstrapStoreName = "bootstrap-data"
+	transientStoreName = "transient"
+	bootstrapStoreName = "bootstrapdata"
 
 	// redirect url parameter
 	userProfileQueryParam = "up"
