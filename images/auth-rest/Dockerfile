@@ -25,6 +25,8 @@ RUN make auth-rest
 
 FROM alpine:${ALPINE_VER} as base
 COPY --from=hub-auth /go/src/github.com/trustbloc/hub-auth/.build/bin/auth-rest /usr/local/bin
+COPY ./.build/bin/auth-vue /usr/local/static/auth-vue
+ENV AUTH_REST_STATIC_FILES=/usr/local/static/auth-vue
 
 # set up nsswitch.conf for Go's "netgo" implementation
 # - https://github.com/golang/go/blob/go1.9.1/src/net/conf.go#L194-L275
