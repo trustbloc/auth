@@ -18,13 +18,11 @@ import (
 	"net/url"
 	"time"
 
-	"github.com/ory/hydra-client-go/models"
-
-	"github.com/trustbloc/hub-auth/pkg/restapi/common/store/cookie"
-
+	"github.com/cenkalti/backoff"
 	"github.com/coreos/go-oidc"
 	"github.com/google/uuid"
 	"github.com/ory/hydra-client-go/client/admin"
+	"github.com/ory/hydra-client-go/models"
 	"github.com/trustbloc/edge-core/pkg/log"
 	"github.com/trustbloc/edge-core/pkg/storage"
 	tlsutils "github.com/trustbloc/edge-core/pkg/utils/tls"
@@ -33,6 +31,7 @@ import (
 	"github.com/trustbloc/hub-auth/pkg/bootstrap/user"
 	"github.com/trustbloc/hub-auth/pkg/internal/common/support"
 	"github.com/trustbloc/hub-auth/pkg/restapi/common"
+	"github.com/trustbloc/hub-auth/pkg/restapi/common/store/cookie"
 )
 
 const (
@@ -90,6 +89,7 @@ type Config struct {
 	DeviceRootCerts        []string
 	DeviceCertSystemPool   bool
 	Cookies                *CookieConfig
+	StartupTimeout         uint64
 }
 
 // CookieConfig holds cookie configuration.
@@ -118,16 +118,7 @@ func New(config *Config) (*Operation, error) {
 		cookies:          cookie.NewStore(config.Cookies.AuthKey, config.Cookies.EncKey),
 	}
 
-	// TODO implement retries: https://github.com/trustbloc/hub-auth/issues/45
-	idp, err := oidc.NewProvider(
-		oidc.ClientContext(
-			context.Background(),
-			&http.Client{
-				Transport: &http.Transport{TLSClientConfig: config.TLSConfig},
-			},
-		),
-		config.OIDCProviderURL,
-	)
+	idp, err := initOIDCProvider(config)
 	if err != nil {
 		return nil, fmt.Errorf("failed to init oidc provider with url [%s]: %w", config.OIDCProviderURL, err)
 	}
@@ -637,4 +628,37 @@ func openBootstrapStore(provider storage.Provider) (storage.Store, error) {
 	}
 
 	return provider.OpenStore(bootstrapStoreName)
+}
+
+func initOIDCProvider(config *Config) (*oidc.Provider, error) {
+	var idp *oidc.Provider
+
+	err := backoff.RetryNotify(
+		func() error {
+			var idpErr error
+
+			idp, idpErr = oidc.NewProvider(
+				oidc.ClientContext(
+					context.Background(),
+					&http.Client{
+						Transport: &http.Transport{TLSClientConfig: config.TLSConfig},
+					},
+				),
+				config.OIDCProviderURL,
+			)
+
+			return idpErr
+		},
+		backoff.WithMaxRetries(backoff.NewConstantBackOff(time.Second), config.StartupTimeout),
+		func(retryErr error, t time.Duration) {
+			logger.Warnf(
+				"failed to connect to the OIDC provider, will sleep for %s before trying again : %s",
+				t, retryErr)
+		},
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to init oidc provider with url [%s]: %w", config.OIDCProviderURL, err)
+	}
+
+	return idp, nil
 }

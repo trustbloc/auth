@@ -1098,6 +1098,7 @@ func config(t *testing.T) *Config {
 			AuthKey: cookieKey(t),
 			EncKey:  cookieKey(t),
 		},
+		StartupTimeout: 1,
 	}
 }
 

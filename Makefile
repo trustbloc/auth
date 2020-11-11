@@ -36,8 +36,16 @@ auth-rest:
 	@mkdir -p ./.build/bin
 	@cd ${AUTH_REST_PATH} && go build -o ../../.build/bin/auth-rest main.go
 
+.PHONY: auth-vue
+auth-vue:
+	@echo "building auth vue frontend"
+	@mkdir -p ./.build/bin/auth-vue
+	@npm --prefix cmd/auth-vue install
+	@npm --prefix cmd/auth-vue run build
+	@cp -rp cmd/auth-vue/dist/* ./.build/bin/auth-vue
+
 .PHONY: auth-rest-docker
-auth-rest-docker:
+auth-rest-docker: auth-vue
 	@echo "Building auth rest docker image"
 	@docker build -f ./images/auth-rest/Dockerfile --no-cache -t $(DOCKER_OUTPUT_NS)/$(AUTH_REST_IMAGE_NAME):latest \
 	--build-arg GO_VER=$(GO_VER) \

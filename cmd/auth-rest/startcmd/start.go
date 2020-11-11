@@ -430,6 +430,7 @@ func startAuthService(parameters *authRestParameters, srv server) error {
 			AuthKey: key,
 			EncKey:  key,
 		},
+		StartupTimeout: parameters.startupTimeout,
 	})
 	if err != nil {
 		return err
