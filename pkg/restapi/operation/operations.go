@@ -250,7 +250,7 @@ func (o *Operation) oidcLoginHandler(w http.ResponseWriter, r *http.Request) {
 	// TODO hard-coding google's scope values (that are actually part of the standard):
 	//  https://developers.google.com/identity/protocols/oauth2/openid-connect#scope-param
 	//  need to support multiple OIDC providers - see https://github.com/trustbloc/hub-auth/issues/61.
-	redirectURL := o.oauth2Config("profile email").AuthCodeURL(state, oauth2.AccessTypeOnline)
+	redirectURL := o.oauth2Config("profile", "email").AuthCodeURL(state, oauth2.AccessTypeOnline)
 
 	http.Redirect(w, r, redirectURL, http.StatusFound)
 
