@@ -24,16 +24,17 @@ import (
 )
 
 type mockWallet struct {
-	oidcProvider *oidc.Provider
-	httpClient   *http.Client
-	clientID     string
-	clientSecret string
-	scope        []string
-	server       *httptest.Server
-	oauth2Config oauth2.Config
+	oidcProvider     *oidc.Provider
+	httpClient       *http.Client
+	clientID         string
+	clientSecret     string
+	scope            []string
+	server           *httptest.Server
+	oauth2Config     oauth2.Config
 	receivedCallback bool
-	userData     *UserClaims
-	callbackErr  error
+	userData         *UserClaims
+	callbackErr      error
+	accessToken      string
 }
 
 func (m *mockWallet) requestUserAuthentication() (*http.Response, error) {
@@ -104,6 +105,9 @@ func (m *mockWallet) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 		return
 	}
+
+	// store access token
+	m.accessToken = token.AccessToken
 }
 
 func newMockWallet(clientRegistrationURL, oidcProviderURL string, httpClient *http.Client) (*mockWallet, error) {
