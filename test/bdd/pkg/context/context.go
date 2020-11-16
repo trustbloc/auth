@@ -13,7 +13,8 @@ import (
 
 // BDDContext is a global context shared between different test suites in bddtests.
 type BDDContext struct {
-	tlsConfig *tls.Config
+	tlsConfig   *tls.Config
+	accessToken string
 }
 
 // NewBDDContext create new BDDContext.
@@ -29,4 +30,14 @@ func NewBDDContext(caCertPath string) (*BDDContext, error) {
 // TLSConfig return tls config.
 func (b *BDDContext) TLSConfig() *tls.Config {
 	return b.tlsConfig
+}
+
+// SetAccessToken set access token
+func (b *BDDContext) SetAccessToken(accessToken string) {
+	b.accessToken = accessToken
+}
+
+// AccessToken get access token
+func (b *BDDContext) AccessToken() string {
+	return b.accessToken
 }

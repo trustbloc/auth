@@ -10,13 +10,13 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"github.com/google/uuid"
 	"io/ioutil"
 	"net/http"
 	"net/http/cookiejar"
 	"strings"
 
 	"github.com/cucumber/godog"
+	"github.com/google/uuid"
 
 	bddctx "github.com/trustbloc/hub-auth/test/bdd/pkg/context"
 )
@@ -130,7 +130,7 @@ func (s *Steps) userAuthenticatesAtThirdPartyProvider() error {
 	}
 
 	authn, err := json.Marshal(&userAuthenticationConfig{
-		Sub:  s.expectedUserData.Sub,
+		Sub: s.expectedUserData.Sub,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to marshal user authn config: %w", err)
@@ -194,6 +194,8 @@ func (s *Steps) userHasAuthenticatedToTheWallet() error {
 			s.expectedUserData.Sub, s.wallet.userData.Sub,
 		)
 	}
+
+	s.ctx.SetAccessToken(s.wallet.accessToken)
 
 	return nil
 }
