@@ -23,8 +23,8 @@ services:
       - AUTH_REST_GOOGLE_URL=https://third.party.oidc.provider.example.com:5555/
       - AUTH_REST_GOOGLE_CLIENTID=hub-auth # https://github.com/trustbloc/hub-auth/issues/9
       - AUTH_REST_GOOGLE_CLIENTSECRET=hub-auth-secret
-      - AUTH_REST_SDS_URL=TODO        # onboard user: https://github.com/trustbloc/hub-auth/issues/38
-      - AUTH_REST_KEYSERVER_URL=TODO  # onboard user: https://github.com/trustbloc/hub-auth/issues/38
+      - AUTH_REST_SDS_URL=https://TODO.sds.org/              # onboard user: https://github.com/trustbloc/hub-auth/issues/38
+      - AUTH_REST_KEYSERVER_URL=https://TODO.keyserver.org/  # onboard user: https://github.com/trustbloc/hub-auth/issues/38
       - AUTH_REST_HYDRA_URL=https://auth.rest.hydra.example.com:4445
       - AUTH_REST_LOG_LEVEL=DEBUG
     ports:

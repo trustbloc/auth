@@ -85,4 +85,5 @@ type Hydra interface {
 	AcceptLoginRequest(*admin.AcceptLoginRequestParams) (*admin.AcceptLoginRequestOK, error)
 	GetConsentRequest(*admin.GetConsentRequestParams) (*admin.GetConsentRequestOK, error)
 	AcceptConsentRequest(*admin.AcceptConsentRequestParams) (*admin.AcceptConsentRequestOK, error)
+	IntrospectOAuth2Token(params *admin.IntrospectOAuth2TokenParams) (*admin.IntrospectOAuth2TokenOK, error)
 }

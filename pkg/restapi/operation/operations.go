@@ -10,12 +10,14 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/base64"
 	"encoding/json"
 	"encoding/pem"
 	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 
 	"github.com/cenkalti/backoff"
@@ -35,12 +37,12 @@ import (
 )
 
 const (
-	hydraLoginPath          = "/hydra/login"
-	hydraConsentPath        = "/hydra/consent"
-	oidcLoginPath           = "/oauth2/login"
-	oidcCallbackPath        = "/oauth2/callback"
-	bootstrapGetRequestPath = "/bootstrap"
-	deviceCertPath          = "/device"
+	hydraLoginPath   = "/hydra/login"
+	hydraConsentPath = "/hydra/consent"
+	oidcLoginPath    = "/oauth2/login"
+	oidcCallbackPath = "/oauth2/callback"
+	bootstrapPath    = "/bootstrap"
+	deviceCertPath   = "/device"
 	// api path params
 	providerQueryParam        = "provider"
 	stateCookie               = "oauth2_state"
@@ -165,7 +167,8 @@ func (o *Operation) GetRESTHandlers() []common.Handler {
 		support.NewHTTPHandler(oidcLoginPath, http.MethodGet, o.oidcLoginHandler),
 		support.NewHTTPHandler(oidcCallbackPath, http.MethodGet, o.oidcCallbackHandler),
 		support.NewHTTPHandler(hydraConsentPath, http.MethodGet, o.hydraConsentHandler),
-		support.NewHTTPHandler(bootstrapGetRequestPath, http.MethodGet, o.handleBootstrapDataRequest),
+		support.NewHTTPHandler(bootstrapPath, http.MethodGet, o.getBootstrapDataHandler),
+		support.NewHTTPHandler(bootstrapPath, http.MethodPost, o.postBootstrapDataHandler),
 		support.NewHTTPHandler(deviceCertPath, http.MethodPost, o.deviceCertHandler),
 	}
 }
@@ -435,9 +438,9 @@ func (o *Operation) hydraConsentHandler(w http.ResponseWriter, r *http.Request) 
 }
 
 // TODO onboard user at key server and SDS: https://github.com/trustbloc/hub-auth/issues/38
-func (o *Operation) onboardUser(id string) (*user.Profile, error) {
+func (o *Operation) onboardUser(sub string) (*user.Profile, error) {
 	userProfile := &user.Profile{
-		ID: id,
+		ID: sub,
 	}
 
 	err := user.NewStore(o.bootstrapStore).Save(userProfile)
@@ -448,15 +451,15 @@ func (o *Operation) onboardUser(id string) (*user.Profile, error) {
 	return userProfile, nil
 }
 
-func (o *Operation) handleBootstrapDataRequest(w http.ResponseWriter, r *http.Request) {
-	handle := r.URL.Query().Get(userProfileQueryParam)
-	if handle == "" {
-		o.writeErrorResponse(w, http.StatusBadRequest, "missing handle")
+func (o *Operation) getBootstrapDataHandler(w http.ResponseWriter, r *http.Request) {
+	logger.Debugf("handling request")
 
+	subject, proceed := o.subject(w, r)
+	if !proceed {
 		return
 	}
 
-	profile, err := user.NewStore(o.transientStore).Get(handle)
+	profile, err := user.NewStore(o.bootstrapStore).Get(subject)
 	if errors.Is(err, storage.ErrValueNotFound) {
 		o.writeErrorResponse(w, http.StatusBadRequest, "invalid handle")
 
@@ -465,12 +468,12 @@ func (o *Operation) handleBootstrapDataRequest(w http.ResponseWriter, r *http.Re
 
 	if err != nil {
 		o.writeErrorResponse(w, http.StatusInternalServerError,
-			fmt.Sprintf("failed to query transient store for handle: %s", err))
+			fmt.Sprintf("failed to query bootstrap store for handle: %s", err))
 
 		return
 	}
 
-	response, err := json.Marshal(&bootstrapData{
+	response, err := json.Marshal(&BootstrapData{
 		SDSURL:            o.bootstrapConfig.SDSURL,
 		SDSPrimaryVaultID: profile.SDSPrimaryVaultID,
 		KeyServerURL:      o.bootstrapConfig.KeyServerURL,
@@ -488,6 +491,48 @@ func (o *Operation) handleBootstrapDataRequest(w http.ResponseWriter, r *http.Re
 	if err != nil {
 		logger.Errorf("failed to write bootstrap data to output: %s", err)
 	}
+
+	logger.Debugf("finished handling request")
+}
+
+func (o *Operation) postBootstrapDataHandler(w http.ResponseWriter, r *http.Request) {
+	logger.Debugf("handling request")
+
+	subject, proceed := o.subject(w, r)
+	if !proceed {
+		return
+	}
+
+	update := &UpdateBootstrapDataRequest{}
+
+	err := json.NewDecoder(r.Body).Decode(update)
+	if err != nil {
+		o.writeErrorResponse(w, http.StatusBadRequest, "failed to decode request: %s", err.Error())
+
+		return
+	}
+
+	existing, err := user.NewStore(o.bootstrapStore).Get(subject)
+	if errors.Is(err, storage.ErrValueNotFound) {
+		o.writeErrorResponse(w, http.StatusConflict, "associated bootstrap data not found")
+
+		return
+	}
+
+	if err != nil {
+		o.writeErrorResponse(w, http.StatusInternalServerError, "failed to query storage: %s", err.Error())
+
+		return
+	}
+
+	err = user.NewStore(o.bootstrapStore).Save(merge(existing, update))
+	if err != nil {
+		o.writeErrorResponse(w, http.StatusInternalServerError, "failed to update storage: %s", err.Error())
+
+		return
+	}
+
+	logger.Debugf("finished handling request")
 }
 
 type certHolder struct {
@@ -606,6 +651,46 @@ func (o *Operation) oauth2Config(scopes ...string) oauth2Config {
 	return o.oauth2ConfigFunc(scopes...)
 }
 
+func (o *Operation) subject(w http.ResponseWriter, r *http.Request) (string, bool) {
+	const scheme = "Bearer "
+
+	// https://tools.ietf.org/html/rfc6750#section-2.1
+	authHeader := strings.TrimSpace(r.Header.Get("authorization"))
+	if authHeader == "" {
+		o.writeErrorResponse(w, http.StatusForbidden, "no credentials")
+
+		return "", false
+	}
+
+	if !strings.HasPrefix(authHeader, scheme) {
+		o.writeErrorResponse(w, http.StatusBadRequest, "invalid authorization scheme")
+
+		return "", false
+	}
+
+	encoded := authHeader[len(scheme):]
+
+	token, err := base64.StdEncoding.DecodeString(encoded)
+	if err != nil {
+		o.writeErrorResponse(w, http.StatusBadRequest, "failed to decode token: %s", err.Error())
+
+		return "", false
+	}
+
+	request := admin.NewIntrospectOAuth2TokenParams()
+	request.SetContext(r.Context())
+	request.SetToken(string(token))
+
+	introspection, err := o.hydra.IntrospectOAuth2Token(request)
+	if err != nil {
+		o.writeErrorResponse(w, http.StatusBadGateway, "failed to introspect token: %s", err.Error())
+
+		return "", false
+	}
+
+	return introspection.Payload.Sub, true
+}
+
 func createStore(p storage.Provider) (storage.Store, error) {
 	err := p.CreateStore(transientStoreName)
 	if err != nil && !errors.Is(err, storage.ErrDuplicateStore) {
@@ -661,4 +746,23 @@ func initOIDCProvider(config *Config) (*oidc.Provider, error) {
 	}
 
 	return idp, nil
+}
+
+func merge(existing *user.Profile, update *UpdateBootstrapDataRequest) *user.Profile {
+	merged := &user.Profile{
+		ID:                existing.ID,
+		AAGUID:            existing.AAGUID,
+		SDSPrimaryVaultID: existing.SDSPrimaryVaultID,
+		KeyStoreIDs:       existing.KeyStoreIDs,
+	}
+
+	if update.SDSPrimaryVaultID != "" {
+		merged.SDSPrimaryVaultID = update.SDSPrimaryVaultID
+	}
+
+	if len(update.KeyStoreIDs) > 0 {
+		merged.KeyStoreIDs = update.KeyStoreIDs
+	}
+
+	return merged
 }

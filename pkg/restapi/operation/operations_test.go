@@ -14,6 +14,7 @@ import (
 	"crypto/rand"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/base64"
 	"encoding/json"
 	"encoding/pem"
 	"errors"
@@ -590,9 +591,15 @@ func TestOperations_HydraConsentHandler(t *testing.T) {
 	})
 }
 
-func TestHandleBootstrapDataRequest(t *testing.T) {
+func TestGetBootstrapDataHandler(t *testing.T) {
 	t.Run("returns bootstrap data", func(t *testing.T) {
+		userSub := uuid.New().String()
 		config := config(t)
+		config.Hydra = &mockHydra{
+			introspectValue: &admin.IntrospectOAuth2TokenOK{Payload: &models.OAuth2TokenIntrospection{
+				Sub: userSub,
+			}},
+		}
 		svc, err := New(config)
 		require.NoError(t, err)
 		expected := &user.Profile{
@@ -600,16 +607,13 @@ func TestHandleBootstrapDataRequest(t *testing.T) {
 			KeyStoreIDs:       []string{uuid.New().String()},
 		}
 
-		handle := uuid.New().String()
-
-		// put in transient store by onboardUser()
-		err = svc.transientStore.Put(handle, marshal(t, expected))
+		err = svc.bootstrapStore.Put(userSub, marshal(t, expected))
 		require.NoError(t, err)
 
 		w := httptest.NewRecorder()
-		svc.handleBootstrapDataRequest(w, newBootstrapDataRequest(handle))
+		svc.getBootstrapDataHandler(w, newGetBootstrapDataRequest())
 		require.Equal(t, http.StatusOK, w.Code)
-		result := &bootstrapData{}
+		result := &BootstrapData{}
 		err = json.NewDecoder(w.Body).Decode(result)
 		require.NoError(t, err)
 		require.Equal(t, expected.SDSPrimaryVaultID, result.SDSPrimaryVaultID)
@@ -618,29 +622,65 @@ func TestHandleBootstrapDataRequest(t *testing.T) {
 		require.Equal(t, config.BootstrapConfig.SDSURL, result.SDSURL)
 	})
 
-	t.Run("bad request if handle is missing", func(t *testing.T) {
+	t.Run("forbidden if auth header is missing", func(t *testing.T) {
 		svc, err := New(config(t))
 		require.NoError(t, err)
 		w := httptest.NewRecorder()
-		svc.handleBootstrapDataRequest(w, httptest.NewRequest(http.MethodGet, "http://examepl.com/bootstrap", nil))
-		require.Equal(t, http.StatusBadRequest, w.Code)
+		svc.getBootstrapDataHandler(w, httptest.NewRequest(http.MethodGet, "http://examepl.com/bootstrap", nil))
+		require.Equal(t, http.StatusForbidden, w.Code)
+		require.Contains(t, w.Body.String(), "no credentials")
 	})
 
-	t.Run("bad request if handle is invalid", func(t *testing.T) {
+	t.Run("bad request if auth scheme is invalid", func(t *testing.T) {
+		request := newGetBootstrapDataRequest()
+		request.Header.Set("authorization", "invalid 123")
 		svc, err := New(config(t))
 		require.NoError(t, err)
 		w := httptest.NewRecorder()
-		svc.handleBootstrapDataRequest(w, newBootstrapDataRequest("INVALID"))
+		svc.getBootstrapDataHandler(w, request)
 		require.Equal(t, http.StatusBadRequest, w.Code)
+		require.Contains(t, w.Body.String(), "invalid authorization scheme")
 	})
 
-	t.Run("internal server error if transient store FETCH fails generically", func(t *testing.T) {
+	t.Run("badrequest if token is not base64 encoded", func(t *testing.T) {
+		request := newGetBootstrapDataRequest()
+		request.Header.Set("authorization", "Bearer 123")
+		svc, err := New(config(t))
+		require.NoError(t, err)
+		w := httptest.NewRecorder()
+		svc.getBootstrapDataHandler(w, request)
+		require.Equal(t, http.StatusBadRequest, w.Code)
+		require.Contains(t, w.Body.String(), "failed to decode token")
+	})
+
+	t.Run("bad request if user does not have bootstrap data", func(t *testing.T) {
+		userSub := uuid.New().String()
 		config := config(t)
-		handle := uuid.New().String()
-		config.TransientStoreProvider = &mockstorage.Provider{
+		config.Hydra = &mockHydra{
+			introspectValue: &admin.IntrospectOAuth2TokenOK{Payload: &models.OAuth2TokenIntrospection{
+				Sub: userSub,
+			}},
+		}
+		svc, err := New(config)
+		require.NoError(t, err)
+		w := httptest.NewRecorder()
+		svc.getBootstrapDataHandler(w, newGetBootstrapDataRequest())
+		require.Equal(t, http.StatusBadRequest, w.Code)
+		require.Contains(t, w.Body.String(), "invalid handle")
+	})
+
+	t.Run("internal server error if bootstrap store FETCH fails generically", func(t *testing.T) {
+		userSub := uuid.New().String()
+		config := config(t)
+		config.Hydra = &mockHydra{
+			introspectValue: &admin.IntrospectOAuth2TokenOK{Payload: &models.OAuth2TokenIntrospection{
+				Sub: userSub,
+			}},
+		}
+		config.StoreProvider = &mockstorage.Provider{
 			Store: &mockstorage.MockStore{
 				Store: map[string][]byte{
-					handle: marshal(t, &user.Profile{}),
+					userSub: marshal(t, &user.Profile{}),
 				},
 				ErrGet: errors.New("generic"),
 			},
@@ -648,8 +688,130 @@ func TestHandleBootstrapDataRequest(t *testing.T) {
 		svc, err := New(config)
 		require.NoError(t, err)
 		w := httptest.NewRecorder()
-		svc.handleBootstrapDataRequest(w, newBootstrapDataRequest(handle))
+		svc.getBootstrapDataHandler(w, newGetBootstrapDataRequest())
 		require.Equal(t, http.StatusInternalServerError, w.Code)
+		require.Contains(t, w.Body.String(), "failed to query bootstrap store for handle")
+	})
+}
+
+func TestPostBootstrapDataHandler(t *testing.T) {
+	t.Run("updates bootstrap data", func(t *testing.T) {
+		expected := &user.Profile{
+			ID:                uuid.New().String(),
+			AAGUID:            uuid.New().String(),
+			SDSPrimaryVaultID: "https://example.org/edvs/123",
+			KeyStoreIDs:       []string{"https://example.org/kms/123", "https://example.org/kms/456"},
+		}
+		config := config(t)
+		config.Hydra = &mockHydra{
+			introspectValue: &admin.IntrospectOAuth2TokenOK{Payload: &models.OAuth2TokenIntrospection{
+				Sub: expected.ID,
+			}},
+		}
+		config.StoreProvider = &mockstorage.Provider{
+			Store: &mockstorage.MockStore{
+				Store: map[string][]byte{
+					expected.ID: marshal(t, &user.Profile{
+						ID:     expected.ID,
+						AAGUID: expected.AAGUID,
+					}),
+				},
+			},
+		}
+		svc, err := New(config)
+		require.NoError(t, err)
+		result := httptest.NewRecorder()
+		svc.postBootstrapDataHandler(result, newPostBootstrapDataRequest(t, &UpdateBootstrapDataRequest{
+			SDSPrimaryVaultID: expected.SDSPrimaryVaultID,
+			KeyStoreIDs:       expected.KeyStoreIDs,
+		}))
+		require.Equal(t, http.StatusOK, result.Code)
+		raw, err := svc.bootstrapStore.Get(expected.ID)
+		require.NoError(t, err)
+		update := &user.Profile{}
+		err = json.NewDecoder(bytes.NewReader(raw)).Decode(update)
+		require.NoError(t, err)
+		require.Equal(t, expected, update)
+	})
+
+	t.Run("error badrequest if payload is not json", func(t *testing.T) {
+		config := config(t)
+		config.Hydra = &mockHydra{
+			introspectValue: &admin.IntrospectOAuth2TokenOK{Payload: &models.OAuth2TokenIntrospection{
+				Sub: uuid.New().String(),
+			}},
+		}
+		svc, err := New(config)
+		require.NoError(t, err)
+		request := httptest.NewRequest(http.MethodPost, "https://example.org/bootstrap", bytes.NewReader([]byte("}")))
+		request.Header.Set("authorization", "Bearer "+base64.StdEncoding.EncodeToString([]byte("test")))
+		result := httptest.NewRecorder()
+		svc.postBootstrapDataHandler(result, request)
+		require.Equal(t, http.StatusBadRequest, result.Code)
+		require.Contains(t, result.Body.String(), "failed to decode request")
+	})
+
+	t.Run("error conflict if user does not exist", func(t *testing.T) {
+		config := config(t)
+		config.Hydra = &mockHydra{
+			introspectValue: &admin.IntrospectOAuth2TokenOK{Payload: &models.OAuth2TokenIntrospection{
+				Sub: uuid.New().String(),
+			}},
+		}
+		svc, err := New(config)
+		require.NoError(t, err)
+		result := httptest.NewRecorder()
+		svc.postBootstrapDataHandler(result, newPostBootstrapDataRequest(t, &UpdateBootstrapDataRequest{}))
+		require.Equal(t, http.StatusConflict, result.Code)
+		require.Contains(t, result.Body.String(), "associated bootstrap data not found")
+	})
+
+	t.Run("internal server error on generic FETCH bootstrap store error", func(t *testing.T) {
+		userSub := uuid.New().String()
+		config := config(t)
+		config.StoreProvider = &mockstorage.Provider{
+			Store: &mockstorage.MockStore{
+				Store: map[string][]byte{
+					userSub: nil,
+				},
+				ErrGet: errors.New("generic"),
+			},
+		}
+		config.Hydra = &mockHydra{
+			introspectValue: &admin.IntrospectOAuth2TokenOK{Payload: &models.OAuth2TokenIntrospection{
+				Sub: userSub,
+			}},
+		}
+		svc, err := New(config)
+		require.NoError(t, err)
+		result := httptest.NewRecorder()
+		svc.postBootstrapDataHandler(result, newPostBootstrapDataRequest(t, &UpdateBootstrapDataRequest{}))
+		require.Equal(t, http.StatusInternalServerError, result.Code)
+		require.Contains(t, result.Body.String(), "failed to query storage")
+	})
+
+	t.Run("internal server error if cannot persist update to bootstrap store", func(t *testing.T) {
+		userSub := uuid.New().String()
+		config := config(t)
+		config.StoreProvider = &mockstorage.Provider{
+			Store: &mockstorage.MockStore{
+				Store: map[string][]byte{
+					userSub: marshal(t, &user.Profile{}),
+				},
+				ErrPut: errors.New("generic"),
+			},
+		}
+		config.Hydra = &mockHydra{
+			introspectValue: &admin.IntrospectOAuth2TokenOK{Payload: &models.OAuth2TokenIntrospection{
+				Sub: userSub,
+			}},
+		}
+		svc, err := New(config)
+		require.NoError(t, err)
+		result := httptest.NewRecorder()
+		svc.postBootstrapDataHandler(result, newPostBootstrapDataRequest(t, &UpdateBootstrapDataRequest{}))
+		require.Equal(t, http.StatusInternalServerError, result.Code)
+		require.Contains(t, result.Body.String(), "failed to update storage")
 	})
 }
 
@@ -1042,9 +1204,23 @@ func newOIDCCallback(state, code string) *http.Request {
 		fmt.Sprintf("http://example.com/oauth2/callback?state=%s&code=%s", state, code), nil)
 }
 
-func newBootstrapDataRequest(handle string) *http.Request {
-	return httptest.NewRequest(http.MethodGet,
-		fmt.Sprintf("http://example.com/bootstrap?%s=%s", userProfileQueryParam, handle), nil)
+func newGetBootstrapDataRequest() *http.Request {
+	r := httptest.NewRequest(http.MethodGet, "http://example.com/bootstrap", nil)
+	r.Header.Set("Authorization", fmt.Sprintf("Bearer %s", base64.StdEncoding.EncodeToString([]byte("1234567random"))))
+
+	return r
+}
+
+func newPostBootstrapDataRequest(t *testing.T, params *UpdateBootstrapDataRequest) *http.Request {
+	t.Helper()
+
+	bits, err := json.Marshal(params)
+	require.NoError(t, err)
+
+	r := httptest.NewRequest(http.MethodPost, "http://example.com/bootstrap", bytes.NewReader(bits))
+	r.Header.Set("Authorization", fmt.Sprintf("Bearer %s", base64.StdEncoding.EncodeToString([]byte("1234567random"))))
+
+	return r
 }
 
 func newDeviceCertRequest(t *testing.T, data *certHolder) *http.Request {
@@ -1164,6 +1340,8 @@ type mockHydra struct {
 	getConsentRequestErr      error
 	acceptConsentRequestValue *admin.AcceptConsentRequestOK
 	acceptConsentRequestErr   error
+	introspectValue           *admin.IntrospectOAuth2TokenOK
+	introspectErr             error
 }
 
 func (m *mockHydra) GetLoginRequest(_ *admin.GetLoginRequestParams) (*admin.GetLoginRequestOK, error) {
@@ -1180,6 +1358,11 @@ func (m *mockHydra) GetConsentRequest(_ *admin.GetConsentRequestParams) (*admin.
 
 func (m *mockHydra) AcceptConsentRequest(_ *admin.AcceptConsentRequestParams) (*admin.AcceptConsentRequestOK, error) {
 	return m.acceptConsentRequestValue, m.acceptConsentRequestErr
+}
+
+func (m *mockHydra) IntrospectOAuth2Token(
+	params *admin.IntrospectOAuth2TokenParams) (*admin.IntrospectOAuth2TokenOK, error) {
+	return m.introspectValue, m.introspectErr
 }
 
 // makeSelfSignedCert returns a PEM-encoded self-signed certificate.

@@ -8,6 +8,7 @@ package bdd
 import (
 	"flag"
 	"fmt"
+	"github.com/trustbloc/hub-auth/test/bdd/pkg/bootstrap"
 	"github.com/trustbloc/hub-auth/test/bdd/pkg/login"
 	"os"
 	"strconv"
@@ -127,4 +128,5 @@ func FeatureContext(s *godog.Suite) {
 
 	common.NewSteps(bddContext).RegisterSteps(s)
 	login.NewSteps(bddContext).RegisterSteps(s)
+	bootstrap.NewSteps(bddContext).RegisterSteps(s)
 }
