@@ -16,6 +16,10 @@ require (
 	github.com/pquerna/cachecontrol v0.0.0-20200921180117-858c6e7e6b7e // indirect
 	github.com/tidwall/gjson v1.6.0
 	github.com/trustbloc/edge-core v0.1.5-0.20200916124536-c32454a16108
-	golang.org/x/oauth2 v0.0.0-20180821212333-d2e6202438be
-	gopkg.in/square/go-jose.v2 v2.5.1 // indirect
+	github.com/trustbloc/hub-auth v0.0.0-20201116135852-764f60b8417b
+	golang.org/x/oauth2 v0.0.0-20200107190931-bf48bf16ab8d
+)
+
+replace (
+	github.com/trustbloc/hub-auth => ../..
 )

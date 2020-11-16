@@ -17,12 +17,13 @@ import (
 )
 
 // Hydra is the client used to interface with the Hydra service.
-type hydra interface {
+type hydra interface { // nolint:dupl // ignore complaint about dupl lines with stubHydra lines in tests
 	GetLoginRequest(*admin.GetLoginRequestParams) (*admin.GetLoginRequestOK, error)
 	AcceptLoginRequest(*admin.AcceptLoginRequestParams) (*admin.AcceptLoginRequestOK, error)
 	GetConsentRequest(*admin.GetConsentRequestParams) (*admin.GetConsentRequestOK, error)
 	AcceptConsentRequest(*admin.AcceptConsentRequestParams) (*admin.AcceptConsentRequestOK, error)
 	CreateOAuth2Client(*admin.CreateOAuth2ClientParams) (*admin.CreateOAuth2ClientCreated, error)
+	IntrospectOAuth2Token(params *admin.IntrospectOAuth2TokenParams) (*admin.IntrospectOAuth2TokenOK, error)
 }
 
 // Client decorates the default hydra admin client with TLS configuration.
@@ -77,4 +78,11 @@ func (c *Client) AcceptConsentRequest(params *admin.AcceptConsentRequestParams) 
 func (c *Client) CreateOAuth2Client(params *admin.CreateOAuth2ClientParams) (*admin.CreateOAuth2ClientCreated, error) {
 	params.SetHTTPClient(c.httpClient)
 	return c.hydraClient.CreateOAuth2Client(params)
+}
+
+// IntrospectOAuth2Token and return the introspection.
+func (c *Client) IntrospectOAuth2Token(
+	params *admin.IntrospectOAuth2TokenParams) (*admin.IntrospectOAuth2TokenOK, error) {
+	params.SetHTTPClient(c.httpClient)
+	return c.hydraClient.IntrospectOAuth2Token(params)
 }

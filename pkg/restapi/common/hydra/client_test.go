@@ -81,6 +81,16 @@ func Test_SetsHTTPClient(t *testing.T) {
 		_, err := c.CreateOAuth2Client(admin.NewCreateOAuth2ClientParams()) //nolint:errcheck
 		require.NoError(t, err)
 	})
+
+	t.Run("introspect oauth token", func(t *testing.T) {
+		c := NewClient(testURL(t), x509.NewCertPool())
+		c.hydraClient = &stubHydra{
+			introspectFunc: func(params *admin.IntrospectOAuth2TokenParams) (*admin.IntrospectOAuth2TokenOK, error) {
+				check(params.HTTPClient)
+				return nil, nil
+			},
+		}
+	})
 }
 
 type stubHydra struct {
@@ -89,6 +99,7 @@ type stubHydra struct {
 	getConsentFunc    func(*admin.GetConsentRequestParams) (*admin.GetConsentRequestOK, error)
 	acceptConsentFunc func(*admin.AcceptConsentRequestParams) (*admin.AcceptConsentRequestOK, error)
 	createClientFunc  func(*admin.CreateOAuth2ClientParams) (*admin.CreateOAuth2ClientCreated, error)
+	introspectFunc    func(params *admin.IntrospectOAuth2TokenParams) (*admin.IntrospectOAuth2TokenOK, error)
 }
 
 func (s *stubHydra) GetLoginRequest(params *admin.GetLoginRequestParams) (*admin.GetLoginRequestOK, error) {
@@ -111,6 +122,11 @@ func (s *stubHydra) AcceptConsentRequest(
 func (s *stubHydra) CreateOAuth2Client(
 	params *admin.CreateOAuth2ClientParams) (*admin.CreateOAuth2ClientCreated, error) {
 	return s.createClientFunc(params)
+}
+
+func (s *stubHydra) IntrospectOAuth2Token(
+	params *admin.IntrospectOAuth2TokenParams) (*admin.IntrospectOAuth2TokenOK, error) {
+	return s.introspectFunc(params)
 }
 
 func testURL(t *testing.T) *url.URL {

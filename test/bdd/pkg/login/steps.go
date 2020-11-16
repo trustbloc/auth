@@ -22,10 +22,11 @@ import (
 )
 
 const (
+	HUB_AUTH_HOST                   = "https://localhost:8070"
 	hubAuthHydraAdminURL            = "https://localhost:4445"
 	hubAuthOIDCProviderURL          = "https://localhost:4444/"
-	hubAuthOIDCProviderSelectionURL = "https://localhost:8070/ui"
-	hubAuthSelectOIDCProviderURL    = "https://localhost:8070/oauth2/login"
+	hubAuthOIDCProviderSelectionURL = HUB_AUTH_HOST + "/ui"
+	hubAuthSelectOIDCProviderURL    = HUB_AUTH_HOST + "/oauth2/login"
 	mockLoginURL                    = "https://localhost:8099/mock/login"
 	mockAuthenticationURL           = "https://localhost:8099/mock/authn"
 	mockConsentURL                  = "https://localhost:8099/mock/consent"
@@ -59,7 +60,7 @@ func NewSteps(ctx *bddctx.BDDContext) *Steps {
 type Steps struct {
 	browser          *http.Client
 	ctx              *bddctx.BDDContext
-	wallet           *mockWallet
+	wallet           *MockWallet
 	expectedUserData *UserClaims
 }
 
@@ -72,13 +73,43 @@ func (s *Steps) RegisterSteps(gs *godog.Suite) {
 	gs.Step("the user has authenticated to the wallet", s.userHasAuthenticatedToTheWallet)
 }
 
+// NewWalletLogin returns a new common.MockWallet that is logged in.
+func (s *Steps) NewWalletLogin() (*MockWallet, error) {
+	err := s.registerWallet()
+	if err != nil {
+		return nil, err
+	}
+
+	err = s.walletRedirectsUserToAuthenticate()
+	if err != nil {
+		return nil, err
+	}
+
+	err = s.userSelectsThirdPartyOIDCProvider()
+	if err != nil {
+		return nil, err
+	}
+
+	err = s.userAuthenticatesAtThirdPartyProvider()
+	if err != nil {
+		return nil, err
+	}
+
+	err = s.userRedirectedBackToWallet()
+	if err != nil {
+		return nil, err
+	}
+
+	return s.wallet, s.userHasAuthenticatedToTheWallet()
+}
+
 func (s *Steps) registerWallet() error {
 	err := s.initBrowser()
 	if err != nil {
 		return fmt.Errorf("failed to register wallet: %w", err)
 	}
 
-	s.wallet, err = newMockWallet(hubAuthHydraAdminURL, hubAuthOIDCProviderURL, s.browser)
+	s.wallet, err = NewMockWallet(hubAuthHydraAdminURL, hubAuthOIDCProviderURL, s.browser)
 	if err != nil {
 		return fmt.Errorf("failed to register mock wallet: %w", err)
 	}
@@ -87,7 +118,7 @@ func (s *Steps) registerWallet() error {
 }
 
 func (s *Steps) walletRedirectsUserToAuthenticate() error {
-	result, err := s.wallet.requestUserAuthentication()
+	result, err := s.wallet.RequestUserAuthentication()
 	if err != nil {
 		return fmt.Errorf("mock wallet failed to redirect user for authentication: %w", err)
 	}
@@ -176,7 +207,7 @@ func (s *Steps) userAuthenticatesAtThirdPartyProvider() error {
 }
 
 func (s *Steps) userRedirectedBackToWallet() error {
-	if !s.wallet.receivedCallback {
+	if !s.wallet.ReceivedCallback {
 		return fmt.Errorf("the wallet has not received a callback")
 	}
 
@@ -184,14 +215,14 @@ func (s *Steps) userRedirectedBackToWallet() error {
 }
 
 func (s *Steps) userHasAuthenticatedToTheWallet() error {
-	if s.wallet.callbackErr != nil {
-		return fmt.Errorf("wallet failed to execute callback successfully: %w", s.wallet.callbackErr)
+	if s.wallet.CallbackErr != nil {
+		return fmt.Errorf("wallet failed to execute callback successfully: %w", s.wallet.CallbackErr)
 	}
 
-	if s.wallet.userData.Sub != s.expectedUserData.Sub {
+	if s.wallet.UserData.Sub != s.expectedUserData.Sub {
 		return fmt.Errorf(
 			"wallet received a different user idenfitier than expected; expected %s got %s",
-			s.expectedUserData.Sub, s.wallet.userData.Sub,
+			s.expectedUserData.Sub, s.wallet.UserData.Sub,
 		)
 	}
 
