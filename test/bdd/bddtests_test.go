@@ -8,8 +8,6 @@ package bdd
 import (
 	"flag"
 	"fmt"
-	"github.com/trustbloc/hub-auth/test/bdd/pkg/bootstrap"
-	"github.com/trustbloc/hub-auth/test/bdd/pkg/login"
 	"os"
 	"strconv"
 	"strings"
@@ -19,8 +17,11 @@ import (
 	"github.com/cucumber/godog"
 
 	"github.com/trustbloc/hub-auth/test/bdd/dockerutil"
+	"github.com/trustbloc/hub-auth/test/bdd/pkg/bootstrap"
 	"github.com/trustbloc/hub-auth/test/bdd/pkg/common"
 	bddctx "github.com/trustbloc/hub-auth/test/bdd/pkg/context"
+	"github.com/trustbloc/hub-auth/test/bdd/pkg/login"
+	"github.com/trustbloc/hub-auth/test/bdd/pkg/secrets"
 )
 
 func TestMain(m *testing.M) {
@@ -129,4 +130,5 @@ func FeatureContext(s *godog.Suite) {
 	common.NewSteps(bddContext).RegisterSteps(s)
 	login.NewSteps(bddContext).RegisterSteps(s)
 	bootstrap.NewSteps(bddContext).RegisterSteps(s)
+	secrets.NewSteps(bddContext).RegisterSteps(s)
 }

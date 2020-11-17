@@ -27,8 +27,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/trustbloc/hub-auth/pkg/restapi/common/store/cookie"
-
 	"github.com/coreos/go-oidc"
 	"github.com/google/uuid"
 	"github.com/ory/hydra-client-go/client/admin"
@@ -42,6 +40,7 @@ import (
 	"github.com/trustbloc/hub-auth/pkg/bootstrap/user"
 	"github.com/trustbloc/hub-auth/pkg/internal/common/mockoidc"
 	"github.com/trustbloc/hub-auth/pkg/internal/common/mockstorage"
+	"github.com/trustbloc/hub-auth/pkg/restapi/common/store/cookie"
 )
 
 func TestNew(t *testing.T) {
@@ -98,6 +97,17 @@ func TestNew(t *testing.T) {
 
 		_, err := New(config)
 		require.Error(t, err)
+	})
+
+	t.Run("error if cannot open secrets store", func(t *testing.T) {
+		config := config(t)
+		config.StoreProvider = &mockstorage.Provider{
+			FailNameSpace: secretsStoreName,
+			Store:         &mockstorage.MockStore{},
+		}
+		_, err := New(config)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "failed to open store for name space secrets")
 	})
 }
 
@@ -813,6 +823,19 @@ func TestPostBootstrapDataHandler(t *testing.T) {
 		require.Equal(t, http.StatusInternalServerError, result.Code)
 		require.Contains(t, result.Body.String(), "failed to update storage")
 	})
+
+	t.Run("err badgateway if cannot introspect token at hydra", func(t *testing.T) {
+		config := config(t)
+		config.Hydra = &mockHydra{
+			introspectErr: errors.New("test"),
+		}
+		o, err := New(config)
+		require.NoError(t, err)
+		result := httptest.NewRecorder()
+		o.postBootstrapDataHandler(result, newPostBootstrapDataRequest(t, &UpdateBootstrapDataRequest{}))
+		require.Equal(t, http.StatusBadGateway, result.Code)
+		require.Contains(t, result.Body.String(), "failed to introspect token")
+	})
 }
 
 func TestOperation_DeviceCertHandler(t *testing.T) {
@@ -1185,6 +1208,249 @@ func TestOperation_HydraLoginHandler(t *testing.T) {
 	})
 }
 
+func TestPostSecretHandler(t *testing.T) {
+	t.Run("saves secret", func(t *testing.T) {
+		secret := secret(t)
+		secrets := make(map[string][]byte)
+		userSub := uuid.New().String()
+		config := config(t)
+		config.StoreProvider = &mockstorage.Provider{
+			Stores: map[string]storage.Store{
+				bootstrapStoreName: &mockstorage.MockStore{
+					Store: map[string][]byte{
+						userSub: marshal(t, &user.Profile{}),
+					},
+				},
+				secretsStoreName: &mockstorage.MockStore{Store: secrets},
+			},
+		}
+		config.Hydra = &mockHydra{
+			introspectValue: &admin.IntrospectOAuth2TokenOK{Payload: &models.OAuth2TokenIntrospection{
+				Sub: userSub,
+			}},
+		}
+		o, err := New(config)
+		require.NoError(t, err)
+		result := httptest.NewRecorder()
+		o.postSecretHandler(result, newPostSecretRequest(t, secret))
+		require.Equal(t, http.StatusOK, result.Code)
+		require.Contains(t, secrets, userSub)
+		require.Equal(t, secret, secrets[userSub])
+	})
+
+	t.Run("error forbidden if request is not authenticated", func(t *testing.T) {
+		o, err := New(config(t))
+		require.NoError(t, err)
+		result := httptest.NewRecorder()
+		o.postSecretHandler(result, httptest.NewRequest(http.MethodPost, "http://example.org/", nil))
+		require.Equal(t, http.StatusForbidden, result.Code)
+		require.Contains(t, result.Body.String(), "no credentials")
+	})
+
+	t.Run("error statusconflict if user does not exist", func(t *testing.T) {
+		config := config(t)
+		config.Hydra = &mockHydra{
+			introspectValue: &admin.IntrospectOAuth2TokenOK{Payload: &models.OAuth2TokenIntrospection{
+				Sub: uuid.New().String(),
+			}},
+		}
+		o, err := New(config)
+		require.NoError(t, err)
+		result := httptest.NewRecorder()
+		o.postSecretHandler(result, newPostSecretRequest(t, nil))
+		require.Equal(t, http.StatusConflict, result.Code)
+		require.Contains(t, result.Body.String(), "no such user")
+	})
+
+	t.Run("internal server error on generic bootstrap store FETCH error", func(t *testing.T) {
+		userSub := uuid.New().String()
+		config := config(t)
+		config.Hydra = &mockHydra{
+			introspectValue: &admin.IntrospectOAuth2TokenOK{Payload: &models.OAuth2TokenIntrospection{
+				Sub: userSub,
+			}},
+		}
+		config.StoreProvider = &mockstorage.Provider{
+			Store: &mockstorage.MockStore{
+				Store:  map[string][]byte{userSub: marshal(t, &user.Profile{})},
+				ErrGet: errors.New("test"),
+			},
+		}
+		o, err := New(config)
+		require.NoError(t, err)
+		result := httptest.NewRecorder()
+		o.postSecretHandler(result, newPostSecretRequest(t, nil))
+		require.Equal(t, http.StatusInternalServerError, result.Code)
+		require.Contains(t, result.Body.String(), "failed to query bootstrap store")
+	})
+
+	t.Run("error statusconflict if secret is already set for the user", func(t *testing.T) {
+		userSub := uuid.New().String()
+		config := config(t)
+		config.Hydra = &mockHydra{
+			introspectValue: &admin.IntrospectOAuth2TokenOK{Payload: &models.OAuth2TokenIntrospection{
+				Sub: userSub,
+			}},
+		}
+		config.StoreProvider = &mockstorage.Provider{
+			Stores: map[string]storage.Store{
+				bootstrapStoreName: &mockstorage.MockStore{Store: map[string][]byte{
+					userSub: marshal(t, &user.Profile{}),
+				}},
+				secretsStoreName: &mockstorage.MockStore{Store: map[string][]byte{
+					userSub: []byte("existing"),
+				}},
+			},
+		}
+		o, err := New(config)
+		require.NoError(t, err)
+		result := httptest.NewRecorder()
+		o.postSecretHandler(result, newPostSecretRequest(t, nil))
+		require.Equal(t, http.StatusConflict, result.Code)
+		require.Contains(t, result.Body.String(), "secret already set")
+	})
+
+	t.Run("error internalservererror if cannot query secrets store", func(t *testing.T) {
+		userSub := uuid.New().String()
+		config := config(t)
+		config.Hydra = &mockHydra{
+			introspectValue: &admin.IntrospectOAuth2TokenOK{Payload: &models.OAuth2TokenIntrospection{
+				Sub: userSub,
+			}},
+		}
+		config.StoreProvider = &mockstorage.Provider{
+			Stores: map[string]storage.Store{
+				bootstrapStoreName: &mockstorage.MockStore{Store: map[string][]byte{
+					userSub: marshal(t, &user.Profile{}),
+				}},
+				secretsStoreName: &mockstorage.MockStore{
+					Store:  map[string][]byte{userSub: marshal(t, &user.Profile{})},
+					ErrGet: errors.New("test"),
+				},
+			},
+		}
+		o, err := New(config)
+		require.NoError(t, err)
+		result := httptest.NewRecorder()
+		o.postSecretHandler(result, newPostSecretRequest(t, nil))
+		require.Equal(t, http.StatusInternalServerError, result.Code)
+		require.Contains(t, result.Body.String(), "failed to query secrets store")
+	})
+
+	t.Run("error internalservererror if cannot save to secrets store", func(t *testing.T) {
+		userSub := uuid.New().String()
+		config := config(t)
+		config.Hydra = &mockHydra{
+			introspectValue: &admin.IntrospectOAuth2TokenOK{Payload: &models.OAuth2TokenIntrospection{
+				Sub: userSub,
+			}},
+		}
+		config.StoreProvider = &mockstorage.Provider{
+			Stores: map[string]storage.Store{
+				bootstrapStoreName: &mockstorage.MockStore{Store: map[string][]byte{
+					userSub: marshal(t, &user.Profile{}),
+				}},
+				secretsStoreName: &mockstorage.MockStore{
+					Store:  make(map[string][]byte),
+					ErrPut: errors.New("test"),
+				},
+			},
+		}
+		o, err := New(config)
+		require.NoError(t, err)
+		result := httptest.NewRecorder()
+		o.postSecretHandler(result, newPostSecretRequest(t, nil))
+		require.Equal(t, http.StatusInternalServerError, result.Code)
+		require.Contains(t, result.Body.String(), "failed to save to secrets store")
+	})
+}
+
+func TestGetSecretHandler(t *testing.T) {
+	t.Run("returns secret", func(t *testing.T) {
+		expected := uuid.New().String()
+		userSub := uuid.New().String()
+		config := config(t)
+		config.StoreProvider = &mockstorage.Provider{
+			Store: &mockstorage.MockStore{
+				Store: map[string][]byte{
+					userSub: []byte(expected),
+				},
+			},
+		}
+		o, err := New(config)
+		require.NoError(t, err)
+		result := httptest.NewRecorder()
+		o.getSecretHandler(result, newGetSecretRequest(t, userSub, config.SecretsToken))
+		require.Equal(t, http.StatusOK, result.Code)
+		payload := &GetSecretResponse{}
+		err = json.NewDecoder(result.Body).Decode(payload)
+		require.NoError(t, err)
+		decoded, err := base64.StdEncoding.DecodeString(payload.Secret)
+		require.NoError(t, err)
+		require.Equal(t, expected, string(decoded))
+	})
+
+	t.Run("status forbidden if missing bearer token", func(t *testing.T) {
+		o, err := New(config(t))
+		require.NoError(t, err)
+		result := httptest.NewRecorder()
+		o.getSecretHandler(result, httptest.NewRequest(http.MethodGet, "http://example.org/secrets/123", nil))
+		require.Equal(t, http.StatusForbidden, result.Code)
+		require.Contains(t, result.Body.String(), "no credentials")
+	})
+
+	t.Run("status unauthorized if token is invalid", func(t *testing.T) {
+		o, err := New(config(t))
+		require.NoError(t, err)
+		request := httptest.NewRequest(http.MethodGet, "http://example.org/secrets/123", nil)
+		request.Header.Set("authorization", "Bearer "+base64.StdEncoding.EncodeToString([]byte("INVALID")))
+		result := httptest.NewRecorder()
+		o.getSecretHandler(result, request)
+		require.Equal(t, http.StatusForbidden, result.Code)
+		require.Contains(t, result.Body.String(), "unauthorized")
+	})
+
+	t.Run("status badrequest if query parameter is missing", func(t *testing.T) {
+		config := config(t)
+		o, err := New(config)
+		require.NoError(t, err)
+		request := httptest.NewRequest(http.MethodGet, "http://example.org/secrets?sub=", nil)
+		request.Header.Set("authorization", "Bearer "+base64.StdEncoding.EncodeToString([]byte(config.SecretsToken)))
+		result := httptest.NewRecorder()
+		o.getSecretHandler(result, request)
+		require.Equal(t, http.StatusBadRequest, result.Code)
+		require.Contains(t, result.Body.String(), "missing parameter")
+	})
+
+	t.Run("error badrequest if user does not exist", func(t *testing.T) {
+		userSub := uuid.New().String()
+		config := config(t)
+		o, err := New(config)
+		require.NoError(t, err)
+		result := httptest.NewRecorder()
+		o.getSecretHandler(result, newGetSecretRequest(t, userSub, config.SecretsToken))
+		require.Equal(t, http.StatusBadRequest, result.Code)
+		require.Contains(t, result.Body.String(), "non-existent user")
+	})
+
+	t.Run("internal server error on generic secrets store FETCH error", func(t *testing.T) {
+		userSub := uuid.New().String()
+		config := config(t)
+		config.StoreProvider = &mockstorage.Provider{
+			Store: &mockstorage.MockStore{
+				Store:  map[string][]byte{userSub: marshal(t, &user.Profile{})},
+				ErrGet: errors.New("generic"),
+			},
+		}
+		o, err := New(config)
+		require.NoError(t, err)
+		result := httptest.NewRecorder()
+		o.getSecretHandler(result, newGetSecretRequest(t, userSub, config.SecretsToken))
+		require.Equal(t, http.StatusInternalServerError, result.Code)
+		require.Contains(t, result.Body.String(), "failed to query secrets store")
+	})
+}
+
 func newHydraLoginHTTPRequest(challenge string) *http.Request {
 	return httptest.NewRequest(http.MethodGet,
 		fmt.Sprintf("http://hub-auth.com/hydra/login?login_challenge=%s", challenge), nil)
@@ -1219,6 +1485,34 @@ func newPostBootstrapDataRequest(t *testing.T, params *UpdateBootstrapDataReques
 
 	r := httptest.NewRequest(http.MethodPost, "http://example.com/bootstrap", bytes.NewReader(bits))
 	r.Header.Set("Authorization", fmt.Sprintf("Bearer %s", base64.StdEncoding.EncodeToString([]byte("1234567random"))))
+
+	return r
+}
+
+func newPostSecretRequest(t *testing.T, secret []byte) *http.Request {
+	t.Helper()
+
+	payload, err := json.Marshal(&SetSecretRequest{Secret: secret})
+	require.NoError(t, err)
+
+	request := httptest.NewRequest(http.MethodPost, "http://example.com/secret", bytes.NewReader(payload))
+	request.Header.Set(
+		"Authorization",
+		fmt.Sprintf("Bearer %s", base64.StdEncoding.EncodeToString([]byte("1234567random"))),
+	)
+
+	return request
+}
+
+func newGetSecretRequest(t *testing.T, sub, token string) *http.Request {
+	t.Helper()
+
+	r := httptest.NewRequest(http.MethodGet, fmt.Sprintf("http://www.example.org/secrets?sub=%s", sub), nil)
+
+	r.Header.Set(
+		"authorization",
+		fmt.Sprintf("Bearer %s", base64.StdEncoding.EncodeToString([]byte(token))),
+	)
 
 	return r
 }
@@ -1275,6 +1569,7 @@ func config(t *testing.T) *Config {
 			EncKey:  cookieKey(t),
 		},
 		StartupTimeout: 1,
+		SecretsToken:   uuid.New().String(),
 	}
 }
 
@@ -1492,4 +1787,15 @@ func mockCookies(c ...cookieOpt) *cookie.MockStore {
 			Cookies: cookies,
 		},
 	}
+}
+
+func secret(t *testing.T) []byte {
+	t.Helper()
+
+	s := make([]byte, 256)
+
+	_, err := rand.Reader.Read(s)
+	require.NoError(t, err)
+
+	return s
 }

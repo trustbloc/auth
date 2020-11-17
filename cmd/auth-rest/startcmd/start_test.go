@@ -185,6 +185,30 @@ func TestStartCmdWithMissingArg(t *testing.T) {
 		require.Contains(t, err.Error(), keyServerURLFlagName)
 		require.Contains(t, err.Error(), keyServerURLEnvKey)
 	})
+
+	t.Run("missing secrets token", func(t *testing.T) {
+		oidcURL := mockOIDCProvider(t)
+		startCmd := GetStartCmd(&mockServer{})
+
+		args := []string{
+			"--" + hostURLFlagName, "localhost:8080",
+			"--" + logLevelFlagName, log.ParseString(log.DEBUG),
+			"--" + databaseTypeFlagName, "mem",
+			"--" + oidcCallbackURLFlagName, "http://example.com/oauth2/callback",
+			"--" + googleProviderFlagName, oidcURL,
+			"--" + googleClientIDFlagName, uuid.New().String(),
+			"--" + googleClientSecretFlagName, uuid.New().String(),
+			"--" + sdsURLFlagName, "http://sds.example.com",
+			"--" + keyServerURLFlagName, "http://keyserver.example.com",
+			"--" + hydraURLFlagName, "http://hydra.example.com",
+		}
+		startCmd.SetArgs(args)
+
+		err := startCmd.Execute()
+
+		require.Error(t, err)
+		require.EqualError(t, err, "Neither secrets-api-token (command line flag) nor AUTH_REST_API_TOKEN (environment variable) have been set.") // nolint:lll
+	})
 }
 
 func TestStartCmdWithBlankEnvVar(t *testing.T) {
@@ -236,6 +260,7 @@ func TestStartCmdValidArgs(t *testing.T) {
 			"--" + sdsURLFlagName, "http://sds.example.com",
 			"--" + keyServerURLFlagName, "http://keyserver.example.com",
 			"--" + hydraURLFlagName, "http://hydra.example.com",
+			"--" + secretsAPITokenFlagName, uuid.New().String(),
 		}
 		startCmd.SetArgs(args)
 
@@ -260,6 +285,7 @@ func TestStartCmdValidArgs(t *testing.T) {
 			"--" + sdsURLFlagName, "http://sds.example.com",
 			"--" + keyServerURLFlagName, "http://keyserver.example.com",
 			"--" + hydraURLFlagName, "http://hydra.example.com",
+			"--" + secretsAPITokenFlagName, uuid.New().String(),
 		}
 		startCmd.SetArgs(args)
 
@@ -285,6 +311,7 @@ func TestStartCmdValidArgs(t *testing.T) {
 			"--" + sdsURLFlagName, "http://sds.example.com",
 			"--" + keyServerURLFlagName, "http://keyserver.example.com",
 			"--" + hydraURLFlagName, "http://hydra.example.com",
+			"--" + secretsAPITokenFlagName, uuid.New().String(),
 		}
 		startCmd.SetArgs(args)
 
@@ -385,6 +412,7 @@ func TestStartCmdFailToCreateController(t *testing.T) {
 			"--" + sdsURLFlagName, "http://sds.example.com",
 			"--" + keyServerURLFlagName, "http://keyserver.example.com",
 			"--" + hydraURLFlagName, "http://hydra.example.com",
+			"--" + secretsAPITokenFlagName, uuid.New().String(),
 		}
 		startCmd.SetArgs(args)
 
@@ -414,6 +442,7 @@ func TestStartCmdInvalidDatabaseType(t *testing.T) {
 		"--" + sdsURLFlagName, "http://sds.example.com",
 		"--" + keyServerURLFlagName, "http://keyserver.example.com",
 		"--" + hydraURLFlagName, "http://hydra.example.com",
+		"--" + secretsAPITokenFlagName, uuid.New().String(),
 	}
 	startCmd.SetArgs(args)
 
@@ -496,6 +525,8 @@ func setEnvVars(t *testing.T) {
 	err = os.Setenv(keyServerURLEnvKey, "http://keyserver.examepl.com")
 	require.NoError(t, err)
 	err = os.Setenv(hydraURLEnvKey, "http://hydra.example.com")
+	require.NoError(t, err)
+	err = os.Setenv(secretsAPITokenEnvKey, uuid.New().String())
 	require.NoError(t, err)
 }
 

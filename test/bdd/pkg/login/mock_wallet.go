@@ -44,6 +44,7 @@ type MockWallet struct {
 	ReceivedCallback bool
 	UserData         *UserClaims
 	CallbackErr      error
+	Secret           string
 }
 
 func (m *MockWallet) RequestUserAuthentication() (*http.Response, error) {
@@ -71,10 +72,7 @@ func (m *MockWallet) FetchBootstrapData(endpoint string) (*operation.BootstrapDa
 		return nil, fmt.Errorf("failed to construct http request: %w", err)
 	}
 
-	request.Header.Set(
-		"authorization",
-		fmt.Sprintf("Bearer %s", base64.StdEncoding.EncodeToString([]byte(m.accessToken))),
-	)
+	m.addAccessToken(request)
 
 	response, err := m.httpClient.Do(request)
 	if err != nil {
@@ -115,10 +113,7 @@ func (m *MockWallet) UpdateBootstrapData(endpoint string, update *operation.Upda
 		return fmt.Errorf("failed to create http request: %w", err)
 	}
 
-	request.Header.Set(
-		"authorization",
-		fmt.Sprintf("Bearer %s", base64.StdEncoding.EncodeToString([]byte(m.accessToken))),
-	)
+	m.addAccessToken(request)
 
 	response, err := m.httpClient.Do(request)
 	if err != nil {
@@ -129,6 +124,49 @@ func (m *MockWallet) UpdateBootstrapData(endpoint string, update *operation.Upda
 		closeErr := response.Body.Close()
 		if closeErr != nil {
 			fmt.Printf("WARNING - failed to close http response body: %s\n", closeErr.Error())
+		}
+	}()
+
+	if response.StatusCode != http.StatusOK {
+		msg, err := ioutil.ReadAll(response.Body)
+		if err != nil {
+			fmt.Printf("WARNING - failed to read response body: %s\n", err.Error())
+		}
+
+		return fmt.Errorf(
+			"unexpected response: code=%d msg=%s", response.StatusCode, msg,
+		)
+	}
+
+	return nil
+}
+
+func (m *MockWallet) CreateAndPushSecretToHubAuth(endpoint string) error {
+	m.Secret = uuid.New().String()
+
+	payload, err := json.Marshal(&operation.SetSecretRequest{
+		Secret: []byte(m.Secret),
+	})
+	if err != nil {
+		return fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	request, err := http.NewRequest(http.MethodPost, endpoint, bytes.NewReader(payload))
+	if err != nil {
+		return fmt.Errorf("failed to create http request: %w", err)
+	}
+
+	m.addAccessToken(request)
+
+	response, err := m.httpClient.Do(request)
+	if err != nil {
+		return fmt.Errorf("failed to push secret to hub-auth: %w", err)
+	}
+
+	defer func() {
+		closeErr := response.Body.Close()
+		if closeErr != nil {
+			fmt.Printf("WARNING - failed to close response body: %s\n", closeErr.Error())
 		}
 	}()
 
@@ -200,6 +238,13 @@ func (m *MockWallet) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	// store access token
 	m.accessToken = token.AccessToken
+}
+
+func (m *MockWallet) addAccessToken(r *http.Request) {
+	r.Header.Set(
+		"authorization",
+		fmt.Sprintf("Bearer %s", base64.StdEncoding.EncodeToString([]byte(m.accessToken))),
+	)
 }
 
 func NewMockWallet(clientRegistrationURL, oidcProviderURL string, httpClient *http.Client) (*MockWallet, error) {
