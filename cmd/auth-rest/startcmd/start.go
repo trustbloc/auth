@@ -156,6 +156,14 @@ const (
 )
 
 const (
+	// TODO temporary
+	secretsAPITokenFlagName  = "secrets-api-token"
+	secretsAPITokenFlagUsage = "Static token used to protect the GET /secrets API." +
+		" Alternatively, this can be set with the following environment variable: " + secretsAPITokenEnvKey
+	secretsAPITokenEnvKey = "AUTH_REST_API_TOKEN" // nolint:gosec // this is not a hard-coded secret
+)
+
+const (
 	// api
 	uiEndpoint          = "/ui"
 	healthCheckEndpoint = "/healthcheck"
@@ -175,6 +183,7 @@ type authRestParameters struct {
 	bootstrapParams  *bootstrapParams
 	devicecertParams *deviceCertParams
 	staticFiles      string
+	secretsAPIToken  string
 }
 
 type tlsParams struct {
@@ -305,6 +314,11 @@ func getAuthRestParameters(cmd *cobra.Command) (*authRestParameters, error) { //
 		return nil, err
 	}
 
+	secretsToken, err := cmdutils.GetUserSetVarFromString(cmd, secretsAPITokenFlagName, secretsAPITokenEnvKey, false)
+	if err != nil {
+		return nil, err
+	}
+
 	const timeout = 120
 
 	return &authRestParameters{
@@ -319,6 +333,7 @@ func getAuthRestParameters(cmd *cobra.Command) (*authRestParameters, error) { //
 		staticFiles:      staticFiles,
 		devicecertParams: deviceCertParams,
 		startupTimeout:   timeout,
+		secretsAPIToken:  secretsToken,
 	}, nil
 }
 
@@ -377,6 +392,7 @@ func createFlags(startCmd *cobra.Command) {
 	startCmd.Flags().StringP(keyServerURLFlagName, "", "", keyServerURLFlagUsage)
 	startCmd.Flags().StringP(deviceSystemCertPoolFlagName, "", "", deviceSystemCertPoolFlagUsage)
 	startCmd.Flags().StringArrayP(deviceCACertsFlagName, "", []string{}, deviceCACertsFlagUsage)
+	startCmd.Flags().StringP(secretsAPITokenFlagName, "", "", secretsAPITokenFlagUsage)
 }
 
 // nolint:funlen
@@ -431,6 +447,7 @@ func startAuthService(parameters *authRestParameters, srv server) error {
 			EncKey:  key,
 		},
 		StartupTimeout: parameters.startupTimeout,
+		SecretsToken:   parameters.secretsAPIToken,
 	})
 	if err != nil {
 		return err

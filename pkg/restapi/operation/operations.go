@@ -42,6 +42,7 @@ const (
 	oidcLoginPath    = "/oauth2/login"
 	oidcCallbackPath = "/oauth2/callback"
 	bootstrapPath    = "/bootstrap"
+	secretsPath      = "/secret"
 	deviceCertPath   = "/device"
 	// api path params
 	providerQueryParam        = "provider"
@@ -50,6 +51,7 @@ const (
 
 	transientStoreName = "transient"
 	bootstrapStoreName = "bootstrapdata"
+	secretsStoreName   = "secrets"
 
 	// redirect url parameter
 	userProfileQueryParam = "up"
@@ -69,10 +71,12 @@ type Operation struct {
 	uiEndpoint       string
 	oauth2ConfigFunc func(...string) oauth2Config
 	bootstrapStore   storage.Store
+	secretsStore     storage.Store
 	bootstrapConfig  *BootstrapConfig
 	hydra            Hydra
 	deviceRootCerts  *x509.CertPool
 	cookies          cookie.Store
+	secretsToken     string
 }
 
 // Config defines configuration for rp operations.
@@ -92,6 +96,7 @@ type Config struct {
 	DeviceCertSystemPool   bool
 	Cookies                *CookieConfig
 	StartupTimeout         uint64
+	SecretsToken           string
 }
 
 // CookieConfig holds cookie configuration.
@@ -118,6 +123,7 @@ func New(config *Config) (*Operation, error) {
 		hydra:            config.Hydra,
 		uiEndpoint:       config.UIEndpoint,
 		cookies:          cookie.NewStore(config.Cookies.AuthKey, config.Cookies.EncKey),
+		secretsToken:     config.SecretsToken,
 	}
 
 	idp, err := initOIDCProvider(config)
@@ -147,12 +153,17 @@ func New(config *Config) (*Operation, error) {
 		}
 	}
 
-	svc.bootstrapStore, err = openBootstrapStore(config.StoreProvider)
+	svc.bootstrapStore, err = openStore(config.StoreProvider, bootstrapStoreName)
 	if err != nil {
 		return nil, err
 	}
 
 	svc.deviceRootCerts, err = tlsutils.GetCertPool(config.DeviceCertSystemPool, config.DeviceRootCerts)
+	if err != nil {
+		return nil, err
+	}
+
+	svc.secretsStore, err = openStore(config.StoreProvider, secretsStoreName)
 	if err != nil {
 		return nil, err
 	}
@@ -169,6 +180,8 @@ func (o *Operation) GetRESTHandlers() []common.Handler {
 		support.NewHTTPHandler(hydraConsentPath, http.MethodGet, o.hydraConsentHandler),
 		support.NewHTTPHandler(bootstrapPath, http.MethodGet, o.getBootstrapDataHandler),
 		support.NewHTTPHandler(bootstrapPath, http.MethodPost, o.postBootstrapDataHandler),
+		support.NewHTTPHandler(secretsPath, http.MethodPost, o.postSecretHandler),
+		support.NewHTTPHandler(secretsPath, http.MethodGet, o.getSecretHandler),
 		support.NewHTTPHandler(deviceCertPath, http.MethodPost, o.deviceCertHandler),
 	}
 }
@@ -535,6 +548,114 @@ func (o *Operation) postBootstrapDataHandler(w http.ResponseWriter, r *http.Requ
 	logger.Debugf("finished handling request")
 }
 
+func (o *Operation) postSecretHandler(w http.ResponseWriter, r *http.Request) {
+	logger.Debugf("handling request")
+
+	subject, proceed := o.subject(w, r)
+	if !proceed {
+		return
+	}
+
+	// ensure user exists
+	_, err := user.NewStore(o.bootstrapStore).Get(subject)
+	if errors.Is(err, storage.ErrValueNotFound) {
+		o.writeErrorResponse(w, http.StatusConflict, "no such user")
+
+		return
+	}
+
+	if err != nil {
+		o.writeErrorResponse(w, http.StatusInternalServerError, "failed to query bootstrap store: %s", err.Error())
+
+		return
+	}
+
+	// ensure secret is not set already
+	_, err = o.secretsStore.Get(subject)
+	if err == nil {
+		o.writeErrorResponse(w, http.StatusConflict, "secret already set")
+
+		return
+	}
+
+	if !errors.Is(err, storage.ErrValueNotFound) {
+		o.writeErrorResponse(w, http.StatusInternalServerError, "failed to query secrets store: %s", err.Error())
+
+		return
+	}
+
+	payload := &SetSecretRequest{}
+
+	err = json.NewDecoder(r.Body).Decode(payload)
+	if err != nil {
+		o.writeErrorResponse(w, http.StatusBadRequest, "failed to decode payload: %s", err.Error())
+
+		return
+	}
+
+	err = o.secretsStore.Put(subject, payload.Secret)
+	if err != nil {
+		o.writeErrorResponse(w, http.StatusInternalServerError, "failed to save to secrets store: %s", err.Error())
+
+		return
+	}
+
+	logger.Debugf("finished handling request")
+}
+
+func (o *Operation) getSecretHandler(w http.ResponseWriter, r *http.Request) {
+	logger.Debugf("handling request")
+
+	token, proceed := o.bearerToken(w, r)
+	if !proceed {
+		return
+	}
+
+	if token != o.secretsToken {
+		o.writeErrorResponse(w, http.StatusForbidden, "unauthorized")
+
+		return
+	}
+
+	sub := r.URL.Query().Get("sub")
+	if sub == "" {
+		o.writeErrorResponse(w, http.StatusBadRequest, "missing parameter")
+
+		return
+	}
+
+	secret, err := o.secretsStore.Get(sub)
+	if errors.Is(err, storage.ErrValueNotFound) {
+		o.writeErrorResponse(w, http.StatusBadRequest, "non-existent user")
+
+		return
+	}
+
+	if err != nil {
+		o.writeErrorResponse(w, http.StatusInternalServerError, "failed to query secrets store: %s", err.Error())
+
+		return
+	}
+
+	response, err := json.Marshal(&GetSecretResponse{
+		Secret: base64.StdEncoding.EncodeToString(secret),
+	})
+	if err != nil {
+		o.writeErrorResponse(w, http.StatusInternalServerError, "failed to encode response: %s", err.Error())
+
+		return
+	}
+
+	_, err = w.Write(response)
+	if err != nil {
+		logger.Errorf("failed to write response: %s", err.Error())
+
+		return
+	}
+
+	logger.Debugf("finished handling request")
+}
+
 type certHolder struct {
 	X5C    []string `json:"x5c"`
 	Sub    string   `json:"sub"`
@@ -652,6 +773,26 @@ func (o *Operation) oauth2Config(scopes ...string) oauth2Config {
 }
 
 func (o *Operation) subject(w http.ResponseWriter, r *http.Request) (string, bool) {
+	token, proceed := o.bearerToken(w, r)
+	if !proceed {
+		return "", false
+	}
+
+	request := admin.NewIntrospectOAuth2TokenParams()
+	request.SetContext(r.Context())
+	request.SetToken(token)
+
+	introspection, err := o.hydra.IntrospectOAuth2Token(request)
+	if err != nil {
+		o.writeErrorResponse(w, http.StatusBadGateway, "failed to introspect token: %s", err.Error())
+
+		return "", false
+	}
+
+	return introspection.Payload.Sub, true
+}
+
+func (o *Operation) bearerToken(w http.ResponseWriter, r *http.Request) (string, bool) {
 	const scheme = "Bearer "
 
 	// https://tools.ietf.org/html/rfc6750#section-2.1
@@ -677,18 +818,7 @@ func (o *Operation) subject(w http.ResponseWriter, r *http.Request) (string, boo
 		return "", false
 	}
 
-	request := admin.NewIntrospectOAuth2TokenParams()
-	request.SetContext(r.Context())
-	request.SetToken(string(token))
-
-	introspection, err := o.hydra.IntrospectOAuth2Token(request)
-	if err != nil {
-		o.writeErrorResponse(w, http.StatusBadGateway, "failed to introspect token: %s", err.Error())
-
-		return "", false
-	}
-
-	return introspection.Payload.Sub, true
+	return string(token), true
 }
 
 func createStore(p storage.Provider) (storage.Store, error) {
@@ -700,19 +830,19 @@ func createStore(p storage.Provider) (storage.Store, error) {
 	return p.OpenStore(transientStoreName)
 }
 
-func openBootstrapStore(provider storage.Provider) (storage.Store, error) {
-	err := provider.CreateStore(bootstrapStoreName)
+func openStore(provider storage.Provider, name string) (storage.Store, error) {
+	err := provider.CreateStore(name)
 	if err == nil {
-		logger.Infof(fmt.Sprintf("Created %s store.", bootstrapStoreName))
+		logger.Infof(fmt.Sprintf("Created %s store.", name))
 	} else {
 		if !errors.Is(err, storage.ErrDuplicateStore) {
 			return nil, err
 		}
 
-		logger.Infof(fmt.Sprintf("%s store already exists. Skipping creation.", bootstrapStoreName))
+		logger.Infof(fmt.Sprintf("%s store already exists. Skipping creation.", name))
 	}
 
-	return provider.OpenStore(bootstrapStoreName)
+	return provider.OpenStore(name)
 }
 
 func initOIDCProvider(config *Config) (*oidc.Provider, error) {
