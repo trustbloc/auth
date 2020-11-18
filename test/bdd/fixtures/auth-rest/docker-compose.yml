@@ -12,10 +12,10 @@ services:
     image: ${AUTH_REST_IMAGE}:latest
     environment:
       - AUTH_REST_HOST_URL=0.0.0.0:8070
-      - AUTH_REST_TLS_CACERTS=/etc/tls/ec-cacert.pem
+      - AUTH_REST_TLS_CACERTS=/etc/keys/tls/ec-cacert.pem
       - AUTH_REST_TLS_SYSTEMCERTPOOL=true
-      - AUTH_REST_TLS_SERVE_CERT=/etc/tls/ec-pubCert.pem
-      - AUTH_REST_TLS_SERVE_KEY=/etc/tls/ec-key.pem
+      - AUTH_REST_TLS_SERVE_CERT=/etc/keys/tls/ec-pubCert.pem
+      - AUTH_REST_TLS_SERVE_KEY=/etc/keys/tls/ec-key.pem
       - AUTH_REST_DATABASE_TYPE=mysql
       - AUTH_REST_DATABASE_URL=authrest:authrest-secret-pw@tcp(mysql:3306)/
       - AUTH_REST_DATABASE_PREFIX=authrest
@@ -30,12 +30,14 @@ services:
       - AUTH_REST_HYDRA_URL=https://auth.rest.hydra.example.com:4445
       - AUTH_REST_LOG_LEVEL=DEBUG
       - AUTH_REST_API_TOKEN=test_token
+      - AUTH_REST_COOKIE_AUTH_KEY=/etc/keys/session_cookies/auth.key
+      - AUTH_REST_COOKIE_ENC_KEY=/etc/keys/session_cookies/enc.key
     ports:
       - 8070:8070
     entrypoint: ""
     command:  /bin/sh -c "sleep 30 && auth-rest start"
     volumes:
-      - ../keys/tls:/etc/tls
+      - ../keys:/etc/keys
     depends_on:
       - auth.rest.hydra.example.com
       - third.party.oidc.provider.example.com

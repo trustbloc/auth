@@ -6,18 +6,16 @@ SPDX-License-Identifier: Apache-2.0
 package startcmd
 
 import (
-	"crypto/aes"
-	"crypto/rand"
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"net/http"
 	"net/url"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
-
-	"github.com/trustbloc/hub-auth/pkg/restapi/common/hydra"
 
 	"github.com/gorilla/mux"
 	"github.com/rs/cors"
@@ -28,6 +26,7 @@ import (
 	tlsutils "github.com/trustbloc/edge-core/pkg/utils/tls"
 
 	"github.com/trustbloc/hub-auth/pkg/restapi"
+	"github.com/trustbloc/hub-auth/pkg/restapi/common/hydra"
 	"github.com/trustbloc/hub-auth/pkg/restapi/operation"
 )
 
@@ -180,6 +179,19 @@ const (
 	secretsAPITokenEnvKey = "AUTH_REST_API_TOKEN" // nolint:gosec // this is not a hard-coded secret
 )
 
+// Keys.
+const (
+	sessionCookieAuthKeyFlagName  = "cookie-auth-key"
+	sessionCookieAuthKeyFlagUsage = "Path to the pem-encoded 32-byte key to use to authenticate session cookies." +
+		" Alternatively, this can be set with the following environment variable: " + sessionCookieAuthKeyEnvKey
+	sessionCookieAuthKeyEnvKey = "AUTH_REST_COOKIE_AUTH_KEY"
+
+	sessionCookieEncKeyFlagName  = "cookie-enc-key"
+	sessionCookieEncKeyFlagUsage = "Path to the pem-encoded 32-byte key to use to encrypt session cookies." +
+		" Alternatively, this can be set with the following environment variable: " + sessionCookieEncKeyEnvKey
+	sessionCookieEncKeyEnvKey = "AUTH_REST_COOKIE_ENC_KEY"
+)
+
 const (
 	// api
 	uiEndpoint          = "/ui"
@@ -201,6 +213,7 @@ type authRestParameters struct {
 	devicecertParams *deviceCertParams
 	staticFiles      string
 	secretsAPIToken  string
+	keys             *keyParameters
 }
 
 type tlsParams struct {
@@ -232,6 +245,11 @@ type bootstrapParams struct {
 	keySDSVaultURL      string
 	authZKeyServerURL   string
 	opsKeyServerURL     string
+}
+
+type keyParameters struct {
+	sessionCookieAuthKey []byte
+	sessionCookieEncKey  []byte
 }
 
 type healthCheckResp struct {
@@ -343,6 +361,11 @@ func getAuthRestParameters(cmd *cobra.Command) (*authRestParameters, error) { //
 		return nil, err
 	}
 
+	keys, err := getKeyParams(cmd)
+	if err != nil {
+		return nil, err
+	}
+
 	return &authRestParameters{
 		hostURL:          hostURL,
 		tlsParams:        tlsParams,
@@ -356,6 +379,7 @@ func getAuthRestParameters(cmd *cobra.Command) (*authRestParameters, error) { //
 		devicecertParams: deviceCertParams,
 		startupTimeout:   timeout,
 		secretsAPIToken:  secretsToken,
+		keys:             keys,
 	}, nil
 }
 
@@ -431,6 +455,8 @@ func createFlags(startCmd *cobra.Command) {
 	startCmd.Flags().StringArrayP(deviceCACertsFlagName, "", []string{}, deviceCACertsFlagUsage)
 	startCmd.Flags().StringP(secretsAPITokenFlagName, "", "", secretsAPITokenFlagUsage)
 	startCmd.Flags().StringP(depTimeoutFlagName, "", "", depTimeoutFlagUsage)
+	startCmd.Flags().StringP(sessionCookieAuthKeyFlagName, "", "", sessionCookieAuthKeyFlagUsage)
+	startCmd.Flags().StringP(sessionCookieEncKeyFlagName, "", "", sessionCookieEncKeyFlagUsage)
 }
 
 // nolint:funlen
@@ -457,14 +483,6 @@ func startAuthService(parameters *authRestParameters, srv server) error {
 		router.HandleFunc(handler.Path(), handler.Handle()).Methods(handler.Method())
 	}
 
-	// TODO configure cookie auth and enc keys: https://github.com/trustbloc/hub-auth/issues/65
-	key := make([]byte, aes.BlockSize)
-
-	_, err = rand.Reader.Read(key)
-	if err != nil {
-		return fmt.Errorf("failed to read random key: %w", err)
-	}
-
 	svc, err := restapi.New(&operation.Config{
 		TransientStoreProvider: provider,
 		StoreProvider:          provider,
@@ -483,8 +501,8 @@ func startAuthService(parameters *authRestParameters, srv server) error {
 		TLSConfig:       &tls.Config{RootCAs: rootCAs, MinVersion: tls.VersionTLS13},
 		UIEndpoint:      uiEndpoint,
 		Cookies: &operation.CookieConfig{
-			AuthKey: key,
-			EncKey:  key,
+			AuthKey: parameters.keys.sessionCookieAuthKey,
+			EncKey:  parameters.keys.sessionCookieEncKey,
 		},
 		StartupTimeout: parameters.startupTimeout,
 		SecretsToken:   parameters.secretsAPIToken,
@@ -630,6 +648,52 @@ func getDeviceCertParams(cmd *cobra.Command) (*deviceCertParams, error) {
 	}
 
 	return params, err
+}
+
+func getKeyParams(cmd *cobra.Command) (*keyParameters, error) {
+	params := &keyParameters{}
+
+	sessionCookieAuthKeyPath, err := cmdutils.GetUserSetVarFromString(cmd,
+		sessionCookieAuthKeyFlagName, sessionCookieAuthKeyEnvKey, false)
+	if err != nil {
+		return nil, fmt.Errorf("failed to configure session cookie auth key: %w", err)
+	}
+
+	params.sessionCookieAuthKey, err = parseKey(sessionCookieAuthKeyPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to configure session cookie auth key: %w", err)
+	}
+
+	sessionCookieEncKeyPath, err := cmdutils.GetUserSetVarFromString(cmd,
+		sessionCookieEncKeyFlagName, sessionCookieEncKeyEnvKey, false)
+	if err != nil {
+		return nil, fmt.Errorf("failed to configure session cookie enc key: %w", err)
+	}
+
+	params.sessionCookieEncKey, err = parseKey(sessionCookieEncKeyPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to configure session cooie enc key: %w", err)
+	}
+
+	return params, nil
+}
+
+func parseKey(file string) ([]byte, error) {
+	const (
+		keyLen = 32
+		bitNum = 8
+	)
+
+	bits, err := ioutil.ReadFile(filepath.Clean(file))
+	if err != nil {
+		return nil, fmt.Errorf("failed to read file %s: %w", file, err)
+	}
+
+	if len(bits) != keyLen {
+		return nil, fmt.Errorf("%s: need key of %d bits but got %d", file, keyLen*bitNum, len(bits)*bitNum)
+	}
+
+	return bits, nil
 }
 
 func setDefaultLogLevel(userLogLevel string) {
