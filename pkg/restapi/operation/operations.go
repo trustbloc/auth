@@ -107,8 +107,10 @@ type CookieConfig struct {
 
 // BootstrapConfig holds user bootstrap-related config.
 type BootstrapConfig struct {
-	SDSURL       string
-	KeyServerURL string
+	DocumentSDSVaultURL string
+	KeySDSVaultURL      string
+	AuthZKeyServerURL   string
+	OpsKeyServerURL     string
 }
 
 // New returns rp operation instance.
@@ -453,7 +455,8 @@ func (o *Operation) hydraConsentHandler(w http.ResponseWriter, r *http.Request) 
 // TODO onboard user at key server and SDS: https://github.com/trustbloc/hub-auth/issues/38
 func (o *Operation) onboardUser(sub string) (*user.Profile, error) {
 	userProfile := &user.Profile{
-		ID: sub,
+		ID:   sub,
+		Data: make(map[string]string),
 	}
 
 	err := user.NewStore(o.bootstrapStore).Save(userProfile)
@@ -487,10 +490,11 @@ func (o *Operation) getBootstrapDataHandler(w http.ResponseWriter, r *http.Reque
 	}
 
 	response, err := json.Marshal(&BootstrapData{
-		SDSURL:            o.bootstrapConfig.SDSURL,
-		SDSPrimaryVaultID: profile.SDSPrimaryVaultID,
-		KeyServerURL:      o.bootstrapConfig.KeyServerURL,
-		KeyStoreIDs:       profile.KeyStoreIDs,
+		DocumentSDSVaultURL: o.bootstrapConfig.DocumentSDSVaultURL,
+		KeySDSVaultURL:      o.bootstrapConfig.KeySDSVaultURL,
+		AuthZKeyServerURL:   o.bootstrapConfig.AuthZKeyServerURL,
+		OpsKeyServerURL:     o.bootstrapConfig.OpsKeyServerURL,
+		Data:                profile.Data,
 	})
 	if err != nil {
 		o.writeErrorResponse(w, http.StatusInternalServerError, fmt.Sprintf("failed to marshal bootstrap data: %s", err))
@@ -880,18 +884,19 @@ func initOIDCProvider(config *Config) (*oidc.Provider, error) {
 
 func merge(existing *user.Profile, update *UpdateBootstrapDataRequest) *user.Profile {
 	merged := &user.Profile{
-		ID:                existing.ID,
-		AAGUID:            existing.AAGUID,
-		SDSPrimaryVaultID: existing.SDSPrimaryVaultID,
-		KeyStoreIDs:       existing.KeyStoreIDs,
+		ID:     existing.ID,
+		AAGUID: existing.AAGUID,
+		Data:   existing.Data,
 	}
 
-	if update.SDSPrimaryVaultID != "" {
-		merged.SDSPrimaryVaultID = update.SDSPrimaryVaultID
+	if merged.Data == nil {
+		merged.Data = make(map[string]string)
 	}
 
-	if len(update.KeyStoreIDs) > 0 {
-		merged.KeyStoreIDs = update.KeyStoreIDs
+	for k, v := range update.Data {
+		if _, found := merged.Data[k]; !found {
+			merged.Data[k] = v
+		}
 	}
 
 	return merged

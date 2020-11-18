@@ -96,6 +96,13 @@ const (
 		" Alternatively, this can be set with the following environment variable: " + databasePrefixEnvKey
 
 	invalidDatabaseTypeErrMsg = "%s is not a valid database type. Run start --help to see the available options"
+
+	defaultDepTimeout   = 120
+	depTimeoutFlagName  = "startup-timeout"
+	depTimeoutFlagUsage = "Optional. Number of seconds to wait for external dependencies to become available." +
+		" Only used at startup. Default value is 120s." +
+		" Alternatively, this can be set with the following environment variable: " + depTimeoutEnvKey
+	depTimeoutEnvKey = "AUTH_REST_DEP_TIMEOUT"
 )
 
 // OIDC parameters.
@@ -144,15 +151,25 @@ const (
 
 // Bootstrap parameters.
 const (
-	sdsURLFlagName  = "sds-url"
-	sdsURLFlagUsage = "URL for the Secure Data Storage service." +
-		" Alternatively, this can be set with the following environment variable: " + sdsURLEnvKey
-	sdsURLEnvKey = "AUTH_REST_SDS_URL"
+	docsSDSURLFlagName  = "sds-docs-url"
+	docsSDSURLFlagUsage = "URL for the Secure Data Storage service for end-user documents." +
+		" Alternatively, this can be set with the following environment variable: " + docsSDSURLEnvKey
+	docsSDSURLEnvKey = "AUTH_REST_SDS_DOCS_URL"
 
-	keyServerURLFlagName  = "ks-url"
-	keyServerURLFlagUsage = "URL for the Key Server." +
-		" Alternatively, this can be set with the following environment variable: " + keyServerURLEnvKey
-	keyServerURLEnvKey = "AUTH_REST_KEYSERVER_URL"
+	opsKeysSDSURLFlagName  = "sds-opskeys-url"
+	opsKeysSDSURLFlagUsage = "URL for the Secure Data Storage service for end-user operational keys." +
+		" Alternatively, this can be set with the following environment variable: " + opsKeysSDSURLEnvKey
+	opsKeysSDSURLEnvKey = "AUTH_REST_SDS_OPSKEYS_URL"
+
+	authKeyServerURLFlagName  = "ks-auth-url"
+	authKeyServerURLFlagUsage = "URL for the Auth Key Server." +
+		" Alternatively, this can be set with the following environment variable: " + authKeyServerURLEnvKey
+	authKeyServerURLEnvKey = "AUTH_REST_KEYSERVER_AUTH_URL"
+
+	opsKeyServerURLFlagName  = "ks-ops-url"
+	opsKeyServerURLFlagUsage = "URL for the Ops Key Server." +
+		" Alternatively, this can be set with the following environment variable: " + opsKeyServerURLEnvKey
+	opsKeyServerURLEnvKey = "AUTH_REST_KEYSERVER_OPS_URL"
 )
 
 const (
@@ -211,8 +228,10 @@ type oidcProviderParams struct {
 }
 
 type bootstrapParams struct {
-	sdsURL       string
-	keyServerURL string
+	documentSDSVaultURL string
+	keySDSVaultURL      string
+	authZKeyServerURL   string
+	opsKeyServerURL     string
 }
 
 type healthCheckResp struct {
@@ -319,7 +338,10 @@ func getAuthRestParameters(cmd *cobra.Command) (*authRestParameters, error) { //
 		return nil, err
 	}
 
-	const timeout = 120
+	timeout, err := getDepTimeout(cmd)
+	if err != nil {
+		return nil, err
+	}
 
 	return &authRestParameters{
 		hostURL:          hostURL,
@@ -335,6 +357,19 @@ func getAuthRestParameters(cmd *cobra.Command) (*authRestParameters, error) { //
 		startupTimeout:   timeout,
 		secretsAPIToken:  secretsToken,
 	}, nil
+}
+
+func getDepTimeout(cmd *cobra.Command) (uint64, error) {
+	timeout, err := cmdutils.GetUserSetVarFromString(cmd, depTimeoutFlagName, depTimeoutEnvKey, true)
+	if err != nil {
+		return 0, fmt.Errorf("failed to read depTimeout config: %w", err)
+	}
+
+	if timeout == "" {
+		return defaultDepTimeout, nil
+	}
+
+	return strconv.ParseUint(timeout, 10, 64)
 }
 
 func getTLS(cmd *cobra.Command) (*tlsParams, error) {
@@ -388,11 +423,14 @@ func createFlags(startCmd *cobra.Command) {
 	startCmd.Flags().StringP(googleProviderFlagName, "", "", googleProviderFlagUsage)
 	startCmd.Flags().StringP(googleClientIDFlagName, "", "", googleClientIDFlagUsage)
 	startCmd.Flags().StringP(googleClientSecretFlagName, "", "", googleClientSecretFlagUsage)
-	startCmd.Flags().StringP(sdsURLFlagName, "", "", sdsURLFlagUsage)
-	startCmd.Flags().StringP(keyServerURLFlagName, "", "", keyServerURLFlagUsage)
+	startCmd.Flags().StringP(docsSDSURLFlagName, "", "", docsSDSURLFlagUsage)
+	startCmd.Flags().StringP(opsKeysSDSURLFlagName, "", "", opsKeysSDSURLFlagUsage)
+	startCmd.Flags().StringP(authKeyServerURLFlagName, "", "", authKeyServerURLFlagUsage)
+	startCmd.Flags().StringP(opsKeyServerURLFlagName, "", "", opsKeyServerURLFlagUsage)
 	startCmd.Flags().StringP(deviceSystemCertPoolFlagName, "", "", deviceSystemCertPoolFlagUsage)
 	startCmd.Flags().StringArrayP(deviceCACertsFlagName, "", []string{}, deviceCACertsFlagUsage)
 	startCmd.Flags().StringP(secretsAPITokenFlagName, "", "", secretsAPITokenFlagUsage)
+	startCmd.Flags().StringP(depTimeoutFlagName, "", "", depTimeoutFlagUsage)
 }
 
 // nolint:funlen
@@ -436,8 +474,10 @@ func startAuthService(parameters *authRestParameters, srv server) error {
 		OIDCClientSecret:       parameters.oidcParams.google.clientSecret,
 		Hydra:                  hydra.NewClient(parameters.oidcParams.hydraURL, rootCAs),
 		BootstrapConfig: &operation.BootstrapConfig{
-			SDSURL:       parameters.bootstrapParams.sdsURL,
-			KeyServerURL: parameters.bootstrapParams.keyServerURL,
+			DocumentSDSVaultURL: parameters.bootstrapParams.documentSDSVaultURL,
+			KeySDSVaultURL:      parameters.bootstrapParams.keySDSVaultURL,
+			AuthZKeyServerURL:   parameters.bootstrapParams.authZKeyServerURL,
+			OpsKeyServerURL:     parameters.bootstrapParams.opsKeyServerURL,
 		},
 		DeviceRootCerts: parameters.devicecertParams.caCerts,
 		TLSConfig:       &tls.Config{RootCAs: rootCAs, MinVersion: tls.VersionTLS13},
@@ -543,12 +583,25 @@ func getBootstrapParams(cmd *cobra.Command) (*bootstrapParams, error) {
 
 	var err error
 
-	params.sdsURL, err = cmdutils.GetUserSetVarFromString(cmd, sdsURLFlagName, sdsURLEnvKey, false)
+	params.documentSDSVaultURL, err = cmdutils.GetUserSetVarFromString(cmd, docsSDSURLFlagName, docsSDSURLEnvKey, false)
 	if err != nil {
 		return nil, err
 	}
 
-	params.keyServerURL, err = cmdutils.GetUserSetVarFromString(cmd, keyServerURLFlagName, keyServerURLEnvKey, false)
+	params.keySDSVaultURL, err = cmdutils.GetUserSetVarFromString(cmd,
+		opsKeysSDSURLFlagName, opsKeysSDSURLEnvKey, false)
+	if err != nil {
+		return nil, err
+	}
+
+	params.authZKeyServerURL, err = cmdutils.GetUserSetVarFromString(cmd,
+		authKeyServerURLFlagName, authKeyServerURLEnvKey, false)
+	if err != nil {
+		return nil, err
+	}
+
+	params.opsKeyServerURL, err = cmdutils.GetUserSetVarFromString(cmd,
+		opsKeyServerURLFlagName, opsKeyServerURLEnvKey, false)
 
 	return params, err
 }

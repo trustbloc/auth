@@ -8,6 +8,7 @@ package secrets
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/cucumber/godog"
 	"github.com/trustbloc/hub-auth/test/bdd/pkg/login"
@@ -28,9 +29,10 @@ func NewSteps(ctx *bddctx.BDDContext) *Steps {
 }
 
 type Steps struct {
-	ctx       *bddctx.BDDContext
-	wallet    *login.MockWallet
-	keyServer *MockKeyServer
+	ctx             *bddctx.BDDContext
+	wallet          *login.MockWallet
+	keyServer       *MockKeyServer
+	updateSecretErr error
 }
 
 func (s *Steps) RegisterSteps(gs *godog.Suite) {
@@ -38,6 +40,8 @@ func (s *Steps) RegisterSteps(gs *godog.Suite) {
 	gs.Step("the wallet stores the secret in hub-auth", s.walletStoresSecretInHubAuth)
 	gs.Step("the key server queries hub-auth for the secret", s.keyServerFetchesSecret)
 	gs.Step("the key server receives the secret", s.keyServerReceivesTheSameSecret)
+	gs.Step("the wallet attempts to store the secret again", s.walletAttemptsStoringSecretAgain)
+	gs.Step("hub-auth returns an error", s.updateSecretResultsInError)
 }
 
 func (s *Steps) userLogin() error {
@@ -75,6 +79,23 @@ func (s *Steps) keyServerReceivesTheSameSecret() error {
 			"keyServer received an unexpected secret: expected %s got %s",
 			s.wallet.Secret, s.keyServer.UserSecret,
 		)
+	}
+
+	return nil
+}
+
+func (s *Steps) walletAttemptsStoringSecretAgain() error {
+	s.updateSecretErr = s.wallet.CreateAndPushSecretToHubAuth(secretsEndpoint)
+	if s.updateSecretErr == nil {
+		return fmt.Errorf("expected an error while pushing the secrets again but got nil")
+	}
+
+	return nil
+}
+
+func (s *Steps) updateSecretResultsInError() error {
+	if !strings.Contains(s.updateSecretErr.Error(), "secret already set") {
+		return fmt.Errorf("unexpected error message from hub-auth: %s", s.updateSecretErr.Error())
 	}
 
 	return nil

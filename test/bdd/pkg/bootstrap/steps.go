@@ -8,21 +8,23 @@ package bootstrap
 
 import (
 	"fmt"
-	"github.com/google/uuid"
 	"net/http"
-
-	"github.com/trustbloc/hub-auth/pkg/restapi/operation"
+	"reflect"
 
 	"github.com/cucumber/godog"
+	"github.com/google/uuid"
 
+	"github.com/trustbloc/hub-auth/pkg/restapi/operation"
 	bddctx "github.com/trustbloc/hub-auth/test/bdd/pkg/context"
 	"github.com/trustbloc/hub-auth/test/bdd/pkg/login"
 )
 
 const (
 	bootstrapDataPath = login.HUB_AUTH_HOST + "/bootstrap"
-	sdsURL            = "https://TODO.sds.org/"
-	keyServerURL      = "https://TODO.keyserver.org/"
+	docsSDSURL        = "https://TODO.docs.sds.org/"
+	keysSDSURL        = "https://TODO.keys.sds.org/"
+	authKeyServerURL  = "https://TODO.auth.keyserver.org/"
+	opsKeyServerURL   = "https://TODO.ops.keyserver.org/"
 )
 
 type Steps struct {
@@ -30,8 +32,7 @@ type Steps struct {
 	ctx                 *bddctx.BDDContext
 	wallet              *login.MockWallet
 	bootstrapDataResult *operation.BootstrapData
-	sdsVaultID   		string
-	keyStoreID          []string
+	data                map[string]string
 }
 
 func NewSteps(ctx *bddctx.BDDContext) *Steps {
@@ -69,15 +70,27 @@ func (s *Steps) walletFetchesBootstrapData() error {
 }
 
 func (s *Steps) hubAuthReturnsSDSAndKeyServerURLs() error {
-	if s.bootstrapDataResult.SDSURL != sdsURL {
+	if s.bootstrapDataResult.DocumentSDSVaultURL != docsSDSURL {
 		return fmt.Errorf(
-			"invalid SDS URL: expected %s got %s", sdsURL, s.bootstrapDataResult.SDSURL,
+			"invalid documents SDS URL: expected %s got %s", docsSDSURL, s.bootstrapDataResult.DocumentSDSVaultURL,
 		)
 	}
 
-	if s.bootstrapDataResult.KeyServerURL != keyServerURL {
+	if s.bootstrapDataResult.KeySDSVaultURL != keysSDSURL {
 		return fmt.Errorf(
-			"invalid keyServer URL: expected %s got %s", keyServerURL, s.bootstrapDataResult.KeyServerURL,
+			"invalid keys SDS URL: expected %s got %s", keysSDSURL, s.bootstrapDataResult.KeySDSVaultURL,
+		)
+	}
+
+	if s.bootstrapDataResult.AuthZKeyServerURL != authKeyServerURL {
+		return fmt.Errorf(
+			"invalid auth keyserver URL: expected %s got %s", authKeyServerURL, s.bootstrapDataResult.AuthZKeyServerURL,
+		)
+	}
+
+	if s.bootstrapDataResult.OpsKeyServerURL != opsKeyServerURL {
+		return fmt.Errorf(
+			"invalid keyServer URL: expected %s got %s", opsKeyServerURL, s.bootstrapDataResult.OpsKeyServerURL,
 		)
 	}
 
@@ -85,12 +98,15 @@ func (s *Steps) hubAuthReturnsSDSAndKeyServerURLs() error {
 }
 
 func (s *Steps) walletUpdatesBootstrapData() error {
-	s.sdsVaultID = fmt.Sprintf("%s/vault/%s", sdsURL, uuid.New().String())
-	s.keyStoreID = []string{fmt.Sprintf("%s/keystores/%s", keyServerURL, uuid.New().String())}
+	s.data = map[string]string{
+		"docs vault":    fmt.Sprintf("%s/vault/%s", docsSDSURL, uuid.New().String()),
+		"keys vault":    fmt.Sprintf("%s/vault/%s", keysSDSURL, uuid.New().String()),
+		"auth keystore": fmt.Sprintf("%s/vault/%s", authKeyServerURL, uuid.New().String()),
+		"ops keystore":  fmt.Sprintf("%s/vault/%s", opsKeyServerURL, uuid.New().String()),
+	}
 
 	err := s.wallet.UpdateBootstrapData(bootstrapDataPath, &operation.UpdateBootstrapDataRequest{
-		SDSPrimaryVaultID: s.sdsVaultID,
-		KeyStoreIDs:       s.keyStoreID,
+		Data: s.data,
 	})
 	if err != nil {
 		return fmt.Errorf("wallet failed to update bootstrap data: %w", err)
@@ -100,38 +116,22 @@ func (s *Steps) walletUpdatesBootstrapData() error {
 }
 
 func (s *Steps) hubAuthReturnsUpdatedBootstrapData() error {
-	err := s.hubAuthReturnsSDSAndKeyServerURLs()
+	err := s.walletFetchesBootstrapData()
 	if err != nil {
 		return err
 	}
 
-	if s.bootstrapDataResult.SDSPrimaryVaultID != s.sdsVaultID {
-		return fmt.Errorf(
-			"unexpected SDS primary vault ID: expected %s got %s",
-			s.sdsVaultID, s.bootstrapDataResult.SDSPrimaryVaultID,
-		)
+	err = s.hubAuthReturnsSDSAndKeyServerURLs()
+	if err != nil {
+		return err
 	}
 
-	if !equalStrings(s.keyStoreID, s.bootstrapDataResult.KeyStoreIDs) {
+	if !reflect.DeepEqual(s.bootstrapDataResult.Data, s.data) {
 		return fmt.Errorf(
-			"unexpected keystore IDs returned: expected %+v got %+v",
-			s.keyStoreID, s.bootstrapDataResult.KeyStoreIDs,
+			"unexpected bootstrap data received: expected %+v got %+v",
+			s.data, s.bootstrapDataResult.Data,
 		)
 	}
 
 	return nil
-}
-
-func equalStrings(a, b []string) bool {
-	if len(a) != len(b) {
-		return false
-	}
-
-	for i := range a {
-		if a[i] != b[i] {
-			return false
-		}
-	}
-
-	return true
 }

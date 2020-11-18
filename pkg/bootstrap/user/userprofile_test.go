@@ -24,9 +24,12 @@ func TestNewStore(t *testing.T) {
 func TestSave(t *testing.T) {
 	t.Run("saves profile", func(t *testing.T) {
 		expected := &Profile{
-			ID:                uuid.New().String(),
-			SDSPrimaryVaultID: uuid.New().String(),
-			KeyStoreIDs:       []string{uuid.New().String()},
+			ID:     uuid.New().String(),
+			AAGUID: uuid.New().String(),
+			Data: map[string]string{
+				"my vault": uuid.New().String(),
+				"keystore": uuid.New().String(),
+			},
 		}
 
 		store := &mockstore.MockStore{
@@ -55,9 +58,12 @@ func TestSave(t *testing.T) {
 func TestGet(t *testing.T) {
 	t.Run("fetches profile", func(t *testing.T) {
 		expected := &Profile{
-			ID:                uuid.New().String(),
-			SDSPrimaryVaultID: uuid.New().String(),
-			KeyStoreIDs:       []string{uuid.New().String()},
+			ID:     uuid.New().String(),
+			AAGUID: uuid.New().String(),
+			Data: map[string]string{
+				"my vault": uuid.New().String(),
+				"keystore": uuid.New().String(),
+			},
 		}
 		store := &mockstore.MockStore{
 			Store: map[string][]byte{

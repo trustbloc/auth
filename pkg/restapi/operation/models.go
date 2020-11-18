@@ -8,10 +8,11 @@ package operation
 
 // BootstrapData is the user's bootstrap data.
 type BootstrapData struct {
-	SDSURL            string   `json:"sdsURL"`
-	SDSPrimaryVaultID string   `json:"sdsPrimaryVaultID"`
-	KeyServerURL      string   `json:"keyServerURL"`
-	KeyStoreIDs       []string `json:"keyStoreIDs"`
+	DocumentSDSVaultURL string            `json:"documentSDSURL"`
+	KeySDSVaultURL      string            `json:"keySDSURL"`
+	AuthZKeyServerURL   string            `json:"authzKeyServerURL"`
+	OpsKeyServerURL     string            `json:"opsKeyServerURL"`
+	Data                map[string]string `json:"entries,omitempty"`
 }
 
 type oidcClaims struct {
@@ -20,8 +21,7 @@ type oidcClaims struct {
 
 // UpdateBootstrapDataRequest is a request to update bootstrap data.
 type UpdateBootstrapDataRequest struct {
-	SDSPrimaryVaultID string   `json:"sdsPrimaryVaultID,omitempty"`
-	KeyStoreIDs       []string `json:"keyStoreIDs,omitempty"`
+	Data map[string]string `json:"data"`
 }
 
 // SetSecretRequest is the payload of a request to set a secret.

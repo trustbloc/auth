@@ -15,10 +15,9 @@ import (
 
 // Profile is the user's bootstrap profile.
 type Profile struct {
-	ID                string
-	AAGUID            string // TODO: create user device store https://github.com/trustbloc/hub-auth/issues/58
-	SDSPrimaryVaultID string
-	KeyStoreIDs       []string
+	ID     string
+	AAGUID string // TODO: create user device store https://github.com/trustbloc/hub-auth/issues/58
+	Data   map[string]string
 }
 
 // ProfileStore is the user Profile CRUD API.

@@ -138,76 +138,97 @@ func TestStartCmdWithMissingArg(t *testing.T) {
 			err.Error())
 	})
 
-	t.Run("missing sds url arg", func(t *testing.T) {
+	t.Run("missing docs sds url arg", func(t *testing.T) {
 		oidcURL := mockOIDCProvider(t)
 		startCmd := GetStartCmd(&mockServer{})
 
-		args := []string{
-			"--" + hostURLFlagName, "localhost:8080",
-			"--" + logLevelFlagName, log.ParseString(log.DEBUG),
-			"--" + databaseTypeFlagName, "mem",
-			"--" + oidcCallbackURLFlagName, "http://example.com/oauth2/callback",
-			"--" + googleProviderFlagName, oidcURL,
-			"--" + googleClientIDFlagName, uuid.New().String(),
-			"--" + googleClientSecretFlagName, uuid.New().String(),
-			"--" + keyServerURLFlagName, "http://keyserver.example.com",
-			"--" + hydraURLFlagName, "http://hydra.example.com",
-		}
+		args := excludeArg(allArgs(oidcURL), docsSDSURLFlagName)
 		startCmd.SetArgs(args)
 
 		err := startCmd.Execute()
 
 		require.Error(t, err)
-		require.Contains(t, err.Error(), sdsURLFlagName)
-		require.Contains(t, err.Error(), sdsURLEnvKey)
+		require.EqualError(t, err,
+			"Neither sds-docs-url (command line flag) nor AUTH_REST_SDS_DOCS_URL (environment variable) have been set.")
 	})
 
-	t.Run("missing keyserver url arg", func(t *testing.T) {
+	t.Run("missing keys sds url arg", func(t *testing.T) {
 		oidcURL := mockOIDCProvider(t)
 		startCmd := GetStartCmd(&mockServer{})
 
-		args := []string{
-			"--" + hostURLFlagName, "localhost:8080",
-			"--" + logLevelFlagName, log.ParseString(log.DEBUG),
-			"--" + databaseTypeFlagName, "mem",
-			"--" + oidcCallbackURLFlagName, "http://example.com/oauth2/callback",
-			"--" + googleProviderFlagName, oidcURL,
-			"--" + googleClientIDFlagName, uuid.New().String(),
-			"--" + googleClientSecretFlagName, uuid.New().String(),
-			"--" + sdsURLFlagName, "http://sds.example.com",
-			"--" + hydraURLFlagName, "http://hydra.example.com",
-		}
+		args := excludeArg(allArgs(oidcURL), opsKeysSDSURLFlagName)
 		startCmd.SetArgs(args)
 
 		err := startCmd.Execute()
 
 		require.Error(t, err)
-		require.Contains(t, err.Error(), keyServerURLFlagName)
-		require.Contains(t, err.Error(), keyServerURLEnvKey)
+		require.EqualError(t, err,
+			"Neither sds-opskeys-url (command line flag) nor AUTH_REST_SDS_OPSKEYS_URL (environment variable) have been set.") // nolint:lll
+	})
+
+	t.Run("missing auth keyserver url arg", func(t *testing.T) {
+		oidcURL := mockOIDCProvider(t)
+		startCmd := GetStartCmd(&mockServer{})
+
+		args := excludeArg(allArgs(oidcURL), authKeyServerURLFlagName)
+		startCmd.SetArgs(args)
+
+		err := startCmd.Execute()
+
+		require.Error(t, err)
+		require.EqualError(t, err,
+			"Neither ks-auth-url (command line flag) nor AUTH_REST_KEYSERVER_AUTH_URL (environment variable) have been set.") // nolint:lll
+	})
+
+	t.Run("missing ops keyserver url arg", func(t *testing.T) {
+		oidcURL := mockOIDCProvider(t)
+		startCmd := GetStartCmd(&mockServer{})
+
+		args := excludeArg(allArgs(oidcURL), opsKeyServerURLFlagName)
+		startCmd.SetArgs(args)
+
+		err := startCmd.Execute()
+
+		require.Error(t, err)
+		require.EqualError(t, err,
+			"Neither ks-ops-url (command line flag) nor AUTH_REST_KEYSERVER_OPS_URL (environment variable) have been set.") // nolint:lll
 	})
 
 	t.Run("missing secrets token", func(t *testing.T) {
 		oidcURL := mockOIDCProvider(t)
 		startCmd := GetStartCmd(&mockServer{})
 
-		args := []string{
-			"--" + hostURLFlagName, "localhost:8080",
-			"--" + logLevelFlagName, log.ParseString(log.DEBUG),
-			"--" + databaseTypeFlagName, "mem",
-			"--" + oidcCallbackURLFlagName, "http://example.com/oauth2/callback",
-			"--" + googleProviderFlagName, oidcURL,
-			"--" + googleClientIDFlagName, uuid.New().String(),
-			"--" + googleClientSecretFlagName, uuid.New().String(),
-			"--" + sdsURLFlagName, "http://sds.example.com",
-			"--" + keyServerURLFlagName, "http://keyserver.example.com",
-			"--" + hydraURLFlagName, "http://hydra.example.com",
-		}
+		args := excludeArg(allArgs(oidcURL), secretsAPITokenFlagName)
 		startCmd.SetArgs(args)
 
 		err := startCmd.Execute()
 
 		require.Error(t, err)
 		require.EqualError(t, err, "Neither secrets-api-token (command line flag) nor AUTH_REST_API_TOKEN (environment variable) have been set.") // nolint:lll
+	})
+
+	t.Run("uses default depTimeout", func(t *testing.T) {
+		oidcURL := mockOIDCProvider(t)
+		startCmd := GetStartCmd(&mockServer{})
+
+		args := excludeArg(allArgs(oidcURL), depTimeoutFlagName)
+		startCmd.SetArgs(args)
+
+		err := startCmd.Execute()
+
+		require.NoError(t, err)
+	})
+
+	t.Run("malformed dep timeout value", func(t *testing.T) {
+		oidcURL := mockOIDCProvider(t)
+		startCmd := GetStartCmd(&mockServer{})
+
+		args := overrideArg(allArgs(oidcURL), depTimeoutFlagName, "INVALID")
+		startCmd.SetArgs(args)
+
+		err := startCmd.Execute()
+		require.Error(t, err)
+		require.EqualError(t, err, `strconv.ParseUint: parsing "INVALID": invalid syntax`)
 	})
 }
 
@@ -249,44 +270,19 @@ func TestStartCmdValidArgs(t *testing.T) {
 		oidcURL := mockOIDCProvider(t)
 		startCmd := GetStartCmd(&mockServer{})
 
-		args := []string{
-			"--" + hostURLFlagName, "localhost:8080",
-			"--" + logLevelFlagName, log.ParseString(log.DEBUG),
-			"--" + databaseTypeFlagName, "mem",
-			"--" + oidcCallbackURLFlagName, "http://example.com/oauth2/callback",
-			"--" + googleProviderFlagName, oidcURL,
-			"--" + googleClientIDFlagName, uuid.New().String(),
-			"--" + googleClientSecretFlagName, uuid.New().String(),
-			"--" + sdsURLFlagName, "http://sds.example.com",
-			"--" + keyServerURLFlagName, "http://keyserver.example.com",
-			"--" + hydraURLFlagName, "http://hydra.example.com",
-			"--" + secretsAPITokenFlagName, uuid.New().String(),
-		}
+		args := allArgs(oidcURL)
 		startCmd.SetArgs(args)
 
 		err := startCmd.Execute()
 
-		require.Nil(t, err)
+		require.NoError(t, err)
 		require.Equal(t, log.DEBUG, log.GetLevel(""))
 	})
 	t.Run("Invalid log level - default to info", func(t *testing.T) {
 		oidcURL := mockOIDCProvider(t)
 		startCmd := GetStartCmd(&mockServer{})
 
-		args := []string{
-			"--" + hostURLFlagName, "localhost:8080",
-			"--" + logLevelFlagName, log.ParseString(log.DEBUG),
-			"--" + databaseTypeFlagName, "mem",
-			"--" + oidcCallbackURLFlagName, "http://example.com/oauth2/callback",
-			"--" + googleProviderFlagName, oidcURL,
-			"--" + googleClientIDFlagName, uuid.New().String(),
-			"--" + googleClientSecretFlagName, uuid.New().String(),
-			"--" + logLevelFlagName, "INVALID",
-			"--" + sdsURLFlagName, "http://sds.example.com",
-			"--" + keyServerURLFlagName, "http://keyserver.example.com",
-			"--" + hydraURLFlagName, "http://hydra.example.com",
-			"--" + secretsAPITokenFlagName, uuid.New().String(),
-		}
+		args := overrideArg(allArgs(oidcURL), logLevelFlagName, "INVALID")
 		startCmd.SetArgs(args)
 
 		err := startCmd.Execute()
@@ -300,19 +296,7 @@ func TestStartCmdValidArgs(t *testing.T) {
 		oidcURL := mockOIDCProvider(t)
 		startCmd := GetStartCmd(&mockServer{err: expected})
 
-		args := []string{
-			"--" + hostURLFlagName, "localhost:8080",
-			"--" + logLevelFlagName, log.ParseString(log.DEBUG),
-			"--" + databaseTypeFlagName, "mem",
-			"--" + oidcCallbackURLFlagName, "http://example.com/oauth2/callback",
-			"--" + googleProviderFlagName, oidcURL,
-			"--" + googleClientIDFlagName, uuid.New().String(),
-			"--" + googleClientSecretFlagName, uuid.New().String(),
-			"--" + sdsURLFlagName, "http://sds.example.com",
-			"--" + keyServerURLFlagName, "http://keyserver.example.com",
-			"--" + hydraURLFlagName, "http://hydra.example.com",
-			"--" + secretsAPITokenFlagName, uuid.New().String(),
-		}
+		args := allArgs(oidcURL)
 		startCmd.SetArgs(args)
 
 		err := startCmd.Execute()
@@ -327,17 +311,7 @@ func TestInvalidArgs(t *testing.T) {
 		oidcURL := mockOIDCProvider(t)
 		startCmd := GetStartCmd(&mockServer{})
 
-		args := []string{
-			"--" + hostURLFlagName, "localhost:8080",
-			"--" + logLevelFlagName, log.ParseString(log.DEBUG),
-			"--" + databaseTypeFlagName, "mem",
-			"--" + oidcCallbackURLFlagName, "http://example.com/oauth2/callback",
-			"--" + googleProviderFlagName, oidcURL,
-			"--" + googleClientIDFlagName, uuid.New().String(),
-			"--" + googleClientSecretFlagName, uuid.New().String(),
-			"--" + sdsURLFlagName, "http://sds.example.com",
-			"--" + keyServerURLFlagName, "http://keyserver.example.com",
-		}
+		args := excludeArg(allArgs(oidcURL), hydraURLFlagName)
 		startCmd.SetArgs(args)
 
 		err := startCmd.Execute()
@@ -350,18 +324,8 @@ func TestInvalidArgs(t *testing.T) {
 		oidcURL := mockOIDCProvider(t)
 		startCmd := GetStartCmd(&mockServer{})
 
-		args := []string{
-			"--" + hostURLFlagName, "localhost:8080",
-			"--" + logLevelFlagName, log.ParseString(log.DEBUG),
-			"--" + databaseTypeFlagName, "mem",
-			"--" + oidcCallbackURLFlagName, "http://example.com/oauth2/callback",
-			"--" + googleProviderFlagName, oidcURL,
-			"--" + googleClientIDFlagName, uuid.New().String(),
-			"--" + googleClientSecretFlagName, uuid.New().String(),
-			"--" + sdsURLFlagName, "http://sds.example.com",
-			"--" + keyServerURLFlagName, "http://keyserver.example.com",
-			"--" + hydraURLFlagName, ":malformed_url",
-		}
+		args := overrideArg(allArgs(oidcURL), hydraURLFlagName, ":malformed_url")
+
 		startCmd.SetArgs(args)
 
 		err := startCmd.Execute()
@@ -373,19 +337,7 @@ func TestInvalidArgs(t *testing.T) {
 		oidcURL := mockOIDCProvider(t)
 		startCmd := GetStartCmd(&mockServer{})
 
-		args := []string{
-			"--" + hostURLFlagName, "localhost:8080",
-			"--" + logLevelFlagName, log.ParseString(log.DEBUG),
-			"--" + databaseTypeFlagName, "mem",
-			"--" + oidcCallbackURLFlagName, "http://example.com/oauth2/callback",
-			"--" + googleProviderFlagName, oidcURL,
-			"--" + googleClientIDFlagName, uuid.New().String(),
-			"--" + googleClientSecretFlagName, uuid.New().String(),
-			"--" + sdsURLFlagName, "http://sds.example.com",
-			"--" + keyServerURLFlagName, "http://keyserver.example.com",
-			"--" + hydraURLFlagName, "http://hydra.example.com",
-			"--" + deviceSystemCertPoolFlagName, "non-bool-value",
-		}
+		args := overrideArg(allArgs(oidcURL), deviceSystemCertPoolFlagName, "non-bool-value")
 		startCmd.SetArgs(args)
 
 		err := startCmd.Execute()
@@ -400,24 +352,11 @@ func TestStartCmdFailToCreateController(t *testing.T) {
 		oidcURL := mockOIDCProvider(t)
 		startCmd := GetStartCmd(&mockServer{})
 
-		args := []string{
-			"--" + hostURLFlagName, "localhost:8080",
-			"--" + logLevelFlagName, log.ParseString(log.DEBUG),
-			"--" + databaseTypeFlagName, "couchdb",
-			"--" + databaseURLFlagName, "INVALID",
-			"--" + oidcCallbackURLFlagName, "http://example.com/oauth2/callback",
-			"--" + googleProviderFlagName, oidcURL,
-			"--" + googleClientIDFlagName, uuid.New().String(),
-			"--" + googleClientSecretFlagName, uuid.New().String(),
-			"--" + sdsURLFlagName, "http://sds.example.com",
-			"--" + keyServerURLFlagName, "http://keyserver.example.com",
-			"--" + hydraURLFlagName, "http://hydra.example.com",
-			"--" + secretsAPITokenFlagName, uuid.New().String(),
-		}
+		args := overrideArg(allArgs(oidcURL), databaseURLFlagName, "INVALID")
+		args = overrideArg(args, databaseTypeFlagName, "couchdb")
 		startCmd.SetArgs(args)
 
 		err := startCmd.Execute()
-
 		require.Error(t, err)
 
 		containsLookupFailureErrMsg := strings.Contains(err.Error(), "Temporary failure in name resolution") ||
@@ -431,19 +370,8 @@ func TestStartCmdInvalidDatabaseType(t *testing.T) {
 	oidcURL := mockOIDCProvider(t)
 	startCmd := GetStartCmd(&mockServer{})
 
-	args := []string{
-		"--" + hostURLFlagName, "localhost:8080",
-		"--" + logLevelFlagName, log.ParseString(log.DEBUG),
-		"--" + databaseTypeFlagName, "ChesterfieldDB",
-		"--" + oidcCallbackURLFlagName, "http://example.com/oauth2/callback",
-		"--" + googleProviderFlagName, oidcURL,
-		"--" + googleClientIDFlagName, uuid.New().String(),
-		"--" + googleClientSecretFlagName, uuid.New().String(),
-		"--" + sdsURLFlagName, "http://sds.example.com",
-		"--" + keyServerURLFlagName, "http://keyserver.example.com",
-		"--" + hydraURLFlagName, "http://hydra.example.com",
-		"--" + secretsAPITokenFlagName, uuid.New().String(),
-	}
+	args := overrideArg(allArgs(oidcURL), databaseTypeFlagName, "ChesterfieldDB")
+
 	startCmd.SetArgs(args)
 
 	err := startCmd.Execute()
@@ -520,20 +448,35 @@ func setEnvVars(t *testing.T) {
 	require.NoError(t, err)
 	err = os.Setenv(googleClientSecretEnvKey, uuid.New().String())
 	require.NoError(t, err)
-	err = os.Setenv(sdsURLEnvKey, "http://sds.example.com")
+	err = os.Setenv(docsSDSURLEnvKey, "http://docs.sds.example.com")
 	require.NoError(t, err)
-	err = os.Setenv(keyServerURLEnvKey, "http://keyserver.examepl.com")
+	err = os.Setenv(opsKeysSDSURLEnvKey, "https://keys.sds.example.com")
+	require.NoError(t, err)
+	err = os.Setenv(authKeyServerURLEnvKey, "http://auth.keyserver.example.com")
+	require.NoError(t, err)
+	err = os.Setenv(opsKeyServerURLEnvKey, "http://ops.keyserver.example.com")
 	require.NoError(t, err)
 	err = os.Setenv(hydraURLEnvKey, "http://hydra.example.com")
 	require.NoError(t, err)
 	err = os.Setenv(secretsAPITokenEnvKey, uuid.New().String())
 	require.NoError(t, err)
+	err = os.Setenv(depTimeoutEnvKey, "1")
+	require.NoError(t, err)
 }
 
 func unsetEnvVars(t *testing.T) {
 	vars := []string{
-		hostURLEnvKey, databaseTypeEnvKey, oidcCallbackURLEnvKey, googleProviderEnvKey, googleClientIDEnvKey,
-		googleClientSecretEnvKey, sdsURLEnvKey, keyServerURLEnvKey, hydraURLEnvKey,
+		hostURLEnvKey,
+		databaseTypeEnvKey,
+		oidcCallbackURLEnvKey,
+		googleProviderEnvKey,
+		googleClientIDEnvKey,
+		googleClientSecretEnvKey,
+		docsSDSURLEnvKey,
+		opsKeysSDSURLEnvKey,
+		authKeyServerURLEnvKey,
+		opsKeyServerURLEnvKey,
+		hydraURLEnvKey,
 	}
 
 	for _, envVar := range vars {
@@ -595,4 +538,61 @@ func (t *testOIDCProvider) ServeHTTP(w http.ResponseWriter, _ *http.Request) {
 	if err != nil {
 		panic(err)
 	}
+}
+
+func allArgs(oidcURL string) []string {
+	return []string{
+		"--" + hostURLFlagName, "localhost:8080",
+		"--" + logLevelFlagName, log.ParseString(log.DEBUG),
+		"--" + databaseTypeFlagName, "mem",
+		"--" + databaseURLFlagName, "test",
+		"--" + oidcCallbackURLFlagName, "http://example.com/oauth2/callback",
+		"--" + googleProviderFlagName, oidcURL,
+		"--" + googleClientIDFlagName, uuid.New().String(),
+		"--" + googleClientSecretFlagName, uuid.New().String(),
+		"--" + docsSDSURLFlagName, "http://docs.sds.example.com",
+		"--" + opsKeysSDSURLFlagName, "https://keys.sds.example.com",
+		"--" + authKeyServerURLFlagName, "https://auth.keyserver.example.com",
+		"--" + opsKeyServerURLFlagName, "http://ops.keyserver.example.com",
+		"--" + hydraURLFlagName, "http://hydra.example.com",
+		"--" + secretsAPITokenFlagName, uuid.New().String(),
+		"--" + deviceSystemCertPoolFlagName, "true",
+		"--" + depTimeoutFlagName, "1",
+	}
+}
+
+func excludeArg(args []string, arg string) []string {
+	filtered := make([]string, 0)
+
+	i := 0
+
+	for i < len(args) {
+		if args[i] == "--"+arg {
+			i += 2
+
+			continue
+		}
+
+		filtered = append(filtered, args[i])
+		i++
+	}
+
+	return filtered
+}
+
+func overrideArg(args []string, name, value string) []string {
+	overridden := make([]string, len(args))
+
+	i := 0
+
+	for i < len(args) {
+		if args[i] == "--"+name {
+			args[i+1] = value
+		}
+
+		overridden[i] = args[i]
+		i++
+	}
+
+	return overridden
 }
