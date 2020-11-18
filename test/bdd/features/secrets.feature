@@ -6,7 +6,7 @@
 
 @all
 @secrets
-Feature: Bootstrap data
+Feature: Secrets
   Background: Wallet login
     Given a user logged in with their wallet
 
@@ -16,6 +16,6 @@ Feature: Bootstrap data
     Then the key server receives the secret
 
   Scenario: User attempts to store secret twice
-    When the wallet executes an HTTP POST on the bootstrap endpoint
-    And the wallet executes an HTTP GET on the bootstrap endpoint
-    Then hub-auth returns the updated bootstrap data
+    When the wallet stores the secret in hub-auth
+     And the wallet attempts to store the secret again
+    Then hub-auth returns an error

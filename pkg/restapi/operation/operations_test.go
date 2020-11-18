@@ -613,8 +613,12 @@ func TestGetBootstrapDataHandler(t *testing.T) {
 		svc, err := New(config)
 		require.NoError(t, err)
 		expected := &user.Profile{
-			SDSPrimaryVaultID: uuid.New().String(),
-			KeyStoreIDs:       []string{uuid.New().String()},
+			ID:     uuid.New().String(),
+			AAGUID: uuid.New().String(),
+			Data: map[string]string{
+				"primary vault": uuid.New().String(),
+				"backup vault":  uuid.New().String(),
+			},
 		}
 
 		err = svc.bootstrapStore.Put(userSub, marshal(t, expected))
@@ -626,10 +630,11 @@ func TestGetBootstrapDataHandler(t *testing.T) {
 		result := &BootstrapData{}
 		err = json.NewDecoder(w.Body).Decode(result)
 		require.NoError(t, err)
-		require.Equal(t, expected.SDSPrimaryVaultID, result.SDSPrimaryVaultID)
-		require.Equal(t, expected.KeyStoreIDs, result.KeyStoreIDs)
-		require.Equal(t, config.BootstrapConfig.KeyServerURL, result.KeyServerURL)
-		require.Equal(t, config.BootstrapConfig.SDSURL, result.SDSURL)
+		require.Equal(t, config.BootstrapConfig.DocumentSDSVaultURL, result.DocumentSDSVaultURL)
+		require.Equal(t, config.BootstrapConfig.KeySDSVaultURL, result.KeySDSVaultURL)
+		require.Equal(t, config.BootstrapConfig.AuthZKeyServerURL, result.AuthZKeyServerURL)
+		require.Equal(t, config.BootstrapConfig.OpsKeyServerURL, result.OpsKeyServerURL)
+		require.Equal(t, expected.Data, result.Data)
 	})
 
 	t.Run("forbidden if auth header is missing", func(t *testing.T) {
@@ -707,10 +712,14 @@ func TestGetBootstrapDataHandler(t *testing.T) {
 func TestPostBootstrapDataHandler(t *testing.T) {
 	t.Run("updates bootstrap data", func(t *testing.T) {
 		expected := &user.Profile{
-			ID:                uuid.New().String(),
-			AAGUID:            uuid.New().String(),
-			SDSPrimaryVaultID: "https://example.org/edvs/123",
-			KeyStoreIDs:       []string{"https://example.org/kms/123", "https://example.org/kms/456"},
+			ID:     uuid.New().String(),
+			AAGUID: uuid.New().String(),
+			Data: map[string]string{
+				"docsSDS":  "https://example.org/edvs/123",
+				"keysSDS":  "https://example.org/edvs/456",
+				"authkeys": "https://example.org/kms/123",
+				"opskeys":  "https://example.org/kms/456",
+			},
 		}
 		config := config(t)
 		config.Hydra = &mockHydra{
@@ -732,8 +741,7 @@ func TestPostBootstrapDataHandler(t *testing.T) {
 		require.NoError(t, err)
 		result := httptest.NewRecorder()
 		svc.postBootstrapDataHandler(result, newPostBootstrapDataRequest(t, &UpdateBootstrapDataRequest{
-			SDSPrimaryVaultID: expected.SDSPrimaryVaultID,
-			KeyStoreIDs:       expected.KeyStoreIDs,
+			Data: expected.Data,
 		}))
 		require.Equal(t, http.StatusOK, result.Code)
 		raw, err := svc.bootstrapStore.Get(expected.ID)
@@ -1560,8 +1568,10 @@ func config(t *testing.T) *Config {
 		TransientStoreProvider: memstore.NewProvider(),
 		StoreProvider:          memstore.NewProvider(),
 		BootstrapConfig: &BootstrapConfig{
-			SDSURL:       "http://sds.example.com",
-			KeyServerURL: "http://keyserver.example.com",
+			DocumentSDSVaultURL: "http://docs.sds.example.org/sds/vaults",
+			KeySDSVaultURL:      "http://keys.sds.example.org/sds/vaults/",
+			AuthZKeyServerURL:   "http://auth.kms.example.org/kms/keystores/",
+			OpsKeyServerURL:     "http://ops.kms.example.org/kms/keystores/",
 		},
 		Hydra: &mockHydra{},
 		Cookies: &CookieConfig{
