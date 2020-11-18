@@ -6,9 +6,11 @@ SPDX-License-Identifier: Apache-2.0
 package startcmd
 
 import (
+	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -142,7 +144,7 @@ func TestStartCmdWithMissingArg(t *testing.T) {
 		oidcURL := mockOIDCProvider(t)
 		startCmd := GetStartCmd(&mockServer{})
 
-		args := excludeArg(allArgs(oidcURL), docsSDSURLFlagName)
+		args := excludeArg(allArgs(t, oidcURL), docsSDSURLFlagName)
 		startCmd.SetArgs(args)
 
 		err := startCmd.Execute()
@@ -156,7 +158,7 @@ func TestStartCmdWithMissingArg(t *testing.T) {
 		oidcURL := mockOIDCProvider(t)
 		startCmd := GetStartCmd(&mockServer{})
 
-		args := excludeArg(allArgs(oidcURL), opsKeysSDSURLFlagName)
+		args := excludeArg(allArgs(t, oidcURL), opsKeysSDSURLFlagName)
 		startCmd.SetArgs(args)
 
 		err := startCmd.Execute()
@@ -170,7 +172,7 @@ func TestStartCmdWithMissingArg(t *testing.T) {
 		oidcURL := mockOIDCProvider(t)
 		startCmd := GetStartCmd(&mockServer{})
 
-		args := excludeArg(allArgs(oidcURL), authKeyServerURLFlagName)
+		args := excludeArg(allArgs(t, oidcURL), authKeyServerURLFlagName)
 		startCmd.SetArgs(args)
 
 		err := startCmd.Execute()
@@ -184,7 +186,7 @@ func TestStartCmdWithMissingArg(t *testing.T) {
 		oidcURL := mockOIDCProvider(t)
 		startCmd := GetStartCmd(&mockServer{})
 
-		args := excludeArg(allArgs(oidcURL), opsKeyServerURLFlagName)
+		args := excludeArg(allArgs(t, oidcURL), opsKeyServerURLFlagName)
 		startCmd.SetArgs(args)
 
 		err := startCmd.Execute()
@@ -198,7 +200,7 @@ func TestStartCmdWithMissingArg(t *testing.T) {
 		oidcURL := mockOIDCProvider(t)
 		startCmd := GetStartCmd(&mockServer{})
 
-		args := excludeArg(allArgs(oidcURL), secretsAPITokenFlagName)
+		args := excludeArg(allArgs(t, oidcURL), secretsAPITokenFlagName)
 		startCmd.SetArgs(args)
 
 		err := startCmd.Execute()
@@ -211,7 +213,7 @@ func TestStartCmdWithMissingArg(t *testing.T) {
 		oidcURL := mockOIDCProvider(t)
 		startCmd := GetStartCmd(&mockServer{})
 
-		args := excludeArg(allArgs(oidcURL), depTimeoutFlagName)
+		args := excludeArg(allArgs(t, oidcURL), depTimeoutFlagName)
 		startCmd.SetArgs(args)
 
 		err := startCmd.Execute()
@@ -223,7 +225,7 @@ func TestStartCmdWithMissingArg(t *testing.T) {
 		oidcURL := mockOIDCProvider(t)
 		startCmd := GetStartCmd(&mockServer{})
 
-		args := overrideArg(allArgs(oidcURL), depTimeoutFlagName, "INVALID")
+		args := overrideArg(allArgs(t, oidcURL), depTimeoutFlagName, "INVALID")
 		startCmd.SetArgs(args)
 
 		err := startCmd.Execute()
@@ -270,7 +272,7 @@ func TestStartCmdValidArgs(t *testing.T) {
 		oidcURL := mockOIDCProvider(t)
 		startCmd := GetStartCmd(&mockServer{})
 
-		args := allArgs(oidcURL)
+		args := allArgs(t, oidcURL)
 		startCmd.SetArgs(args)
 
 		err := startCmd.Execute()
@@ -282,7 +284,7 @@ func TestStartCmdValidArgs(t *testing.T) {
 		oidcURL := mockOIDCProvider(t)
 		startCmd := GetStartCmd(&mockServer{})
 
-		args := overrideArg(allArgs(oidcURL), logLevelFlagName, "INVALID")
+		args := overrideArg(allArgs(t, oidcURL), logLevelFlagName, "INVALID")
 		startCmd.SetArgs(args)
 
 		err := startCmd.Execute()
@@ -296,7 +298,7 @@ func TestStartCmdValidArgs(t *testing.T) {
 		oidcURL := mockOIDCProvider(t)
 		startCmd := GetStartCmd(&mockServer{err: expected})
 
-		args := allArgs(oidcURL)
+		args := allArgs(t, oidcURL)
 		startCmd.SetArgs(args)
 
 		err := startCmd.Execute()
@@ -311,7 +313,7 @@ func TestInvalidArgs(t *testing.T) {
 		oidcURL := mockOIDCProvider(t)
 		startCmd := GetStartCmd(&mockServer{})
 
-		args := excludeArg(allArgs(oidcURL), hydraURLFlagName)
+		args := excludeArg(allArgs(t, oidcURL), hydraURLFlagName)
 		startCmd.SetArgs(args)
 
 		err := startCmd.Execute()
@@ -324,7 +326,7 @@ func TestInvalidArgs(t *testing.T) {
 		oidcURL := mockOIDCProvider(t)
 		startCmd := GetStartCmd(&mockServer{})
 
-		args := overrideArg(allArgs(oidcURL), hydraURLFlagName, ":malformed_url")
+		args := overrideArg(allArgs(t, oidcURL), hydraURLFlagName, ":malformed_url")
 
 		startCmd.SetArgs(args)
 
@@ -337,13 +339,99 @@ func TestInvalidArgs(t *testing.T) {
 		oidcURL := mockOIDCProvider(t)
 		startCmd := GetStartCmd(&mockServer{})
 
-		args := overrideArg(allArgs(oidcURL), deviceSystemCertPoolFlagName, "non-bool-value")
+		args := overrideArg(allArgs(t, oidcURL), deviceSystemCertPoolFlagName, "non-bool-value")
 		startCmd.SetArgs(args)
 
 		err := startCmd.Execute()
 
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "invalid syntax")
+	})
+
+	t.Run("session cookie auth key", func(t *testing.T) {
+		t.Run("missing config", func(t *testing.T) {
+			oidcURL := mockOIDCProvider(t)
+			startCmd := GetStartCmd(&mockServer{})
+
+			args := excludeArg(allArgs(t, oidcURL), sessionCookieAuthKeyFlagName)
+			startCmd.SetArgs(args)
+
+			err := startCmd.Execute()
+
+			require.Error(t, err)
+			require.Contains(t, err.Error(),
+				"Neither cookie-auth-key (command line flag) nor AUTH_REST_COOKIE_AUTH_KEY (environment variable) have been set.") // nolint:lll
+		})
+
+		t.Run("non-existent file path", func(t *testing.T) {
+			oidcURL := mockOIDCProvider(t)
+			startCmd := GetStartCmd(&mockServer{})
+
+			args := overrideArg(allArgs(t, oidcURL), sessionCookieAuthKeyFlagName, "NON-EXISTENT")
+			startCmd.SetArgs(args)
+
+			err := startCmd.Execute()
+
+			require.Error(t, err)
+			require.Contains(t, err.Error(),
+				"failed to read file NON-EXISTENT: open NON-EXISTENT: no such file or directory")
+		})
+
+		t.Run("invalid key", func(t *testing.T) {
+			oidcURL := mockOIDCProvider(t)
+			startCmd := GetStartCmd(&mockServer{})
+
+			args := overrideArg(allArgs(t, oidcURL), sessionCookieAuthKeyFlagName, invalidKey(t))
+			startCmd.SetArgs(args)
+
+			err := startCmd.Execute()
+
+			require.Error(t, err)
+			require.Contains(t, err.Error(), "need key of 256 bits but got")
+		})
+	})
+
+	t.Run("session cookie enc key", func(t *testing.T) {
+		t.Run("missing config", func(t *testing.T) {
+			oidcURL := mockOIDCProvider(t)
+			startCmd := GetStartCmd(&mockServer{})
+
+			args := excludeArg(allArgs(t, oidcURL), sessionCookieEncKeyFlagName)
+			startCmd.SetArgs(args)
+
+			err := startCmd.Execute()
+
+			require.Error(t, err)
+			require.Contains(t, err.Error(),
+				"Neither cookie-enc-key (command line flag) nor AUTH_REST_COOKIE_ENC_KEY (environment variable) have been set.") // nolint:lll
+		})
+
+		t.Run("non-existent file path", func(t *testing.T) {
+			oidcURL := mockOIDCProvider(t)
+			startCmd := GetStartCmd(&mockServer{})
+
+			args := overrideArg(allArgs(t, oidcURL), sessionCookieEncKeyFlagName, "NON-EXISTENT")
+			startCmd.SetArgs(args)
+
+			err := startCmd.Execute()
+
+			require.Error(t, err)
+			require.Contains(t, err.Error(),
+				"failed to read file NON-EXISTENT: open NON-EXISTENT: no such file or directory")
+		})
+
+		t.Run("invalid key", func(t *testing.T) {
+			oidcURL := mockOIDCProvider(t)
+			startCmd := GetStartCmd(&mockServer{})
+
+			args := overrideArg(allArgs(t, oidcURL), sessionCookieEncKeyFlagName, invalidKey(t))
+			startCmd.SetArgs(args)
+
+			err := startCmd.Execute()
+
+			require.Error(t, err)
+			require.Contains(t, err.Error(), "need key of 256 bits but got")
+		})
 	})
 }
 
@@ -352,7 +440,7 @@ func TestStartCmdFailToCreateController(t *testing.T) {
 		oidcURL := mockOIDCProvider(t)
 		startCmd := GetStartCmd(&mockServer{})
 
-		args := overrideArg(allArgs(oidcURL), databaseURLFlagName, "INVALID")
+		args := overrideArg(allArgs(t, oidcURL), databaseURLFlagName, "INVALID")
 		args = overrideArg(args, databaseTypeFlagName, "couchdb")
 		startCmd.SetArgs(args)
 
@@ -370,7 +458,7 @@ func TestStartCmdInvalidDatabaseType(t *testing.T) {
 	oidcURL := mockOIDCProvider(t)
 	startCmd := GetStartCmd(&mockServer{})
 
-	args := overrideArg(allArgs(oidcURL), databaseTypeFlagName, "ChesterfieldDB")
+	args := overrideArg(allArgs(t, oidcURL), databaseTypeFlagName, "ChesterfieldDB")
 
 	startCmd.SetArgs(args)
 
@@ -462,6 +550,10 @@ func setEnvVars(t *testing.T) {
 	require.NoError(t, err)
 	err = os.Setenv(depTimeoutEnvKey, "1")
 	require.NoError(t, err)
+	err = os.Setenv(sessionCookieAuthKeyEnvKey, key(t))
+	require.NoError(t, err)
+	err = os.Setenv(sessionCookieEncKeyEnvKey, key(t))
+	require.NoError(t, err)
 }
 
 func unsetEnvVars(t *testing.T) {
@@ -540,7 +632,7 @@ func (t *testOIDCProvider) ServeHTTP(w http.ResponseWriter, _ *http.Request) {
 	}
 }
 
-func allArgs(oidcURL string) []string {
+func allArgs(t *testing.T, oidcURL string) []string {
 	return []string{
 		"--" + hostURLFlagName, "localhost:8080",
 		"--" + logLevelFlagName, log.ParseString(log.DEBUG),
@@ -558,6 +650,8 @@ func allArgs(oidcURL string) []string {
 		"--" + secretsAPITokenFlagName, uuid.New().String(),
 		"--" + deviceSystemCertPoolFlagName, "true",
 		"--" + depTimeoutFlagName, "1",
+		"--" + sessionCookieAuthKeyFlagName, key(t),
+		"--" + sessionCookieEncKeyFlagName, key(t),
 	}
 }
 
@@ -595,4 +689,50 @@ func overrideArg(args []string, name, value string) []string {
 	}
 
 	return overridden
+}
+
+func key(t *testing.T) string {
+	t.Helper()
+
+	key := make([]byte, 32)
+
+	n, err := rand.Reader.Read(key)
+	require.NoError(t, err)
+	require.Equal(t, 32, n)
+
+	file, err := ioutil.TempFile("", "test_*.key")
+	require.NoError(t, err)
+
+	t.Cleanup(func() {
+		delErr := os.Remove(file.Name())
+		require.NoError(t, delErr)
+	})
+
+	err = ioutil.WriteFile(file.Name(), key, os.ModeAppend)
+	require.NoError(t, err)
+
+	return file.Name()
+}
+
+func invalidKey(t *testing.T) string {
+	t.Helper()
+
+	key := make([]byte, 18)
+
+	n, err := rand.Reader.Read(key)
+	require.NoError(t, err)
+	require.Equal(t, 18, n)
+
+	file, err := ioutil.TempFile("", "test_*.key")
+	require.NoError(t, err)
+
+	t.Cleanup(func() {
+		delErr := os.Remove(file.Name())
+		require.NoError(t, delErr)
+	})
+
+	err = ioutil.WriteFile(file.Name(), key, os.ModeAppend)
+	require.NoError(t, err)
+
+	return file.Name()
 }
