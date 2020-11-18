@@ -34,74 +34,51 @@ func (s *mockServer) ListenAndServeTLS(host, certFile, keyFile string, handler h
 
 func TestOIDCParameters(t *testing.T) {
 	t.Run("error on missing callback URL", func(t *testing.T) {
-		oidcURL := mockOIDCProvider(t)
 		startCmd := GetStartCmd(&mockServer{})
 
-		args := []string{
-			"--" + hostURLFlagName, "localhost:8080",
-			"--" + logLevelFlagName, log.ParseString(log.DEBUG),
-			"--" + databaseTypeFlagName, "mem",
-			"--" + googleProviderFlagName, oidcURL,
-			"--" + googleClientIDFlagName, uuid.New().String(),
-			"--" + googleClientSecretFlagName, uuid.New().String(),
-		}
+		args := excludeArg(allArgs(t), oidcCallbackURLFlagName)
 		startCmd.SetArgs(args)
 
 		err := startCmd.Execute()
 		require.Error(t, err)
 	})
 
-	t.Run("error on missing google provider URL", func(t *testing.T) {
+	t.Run("error on missing oidc providers config file", func(t *testing.T) {
 		startCmd := GetStartCmd(&mockServer{})
 
-		args := []string{
-			"--" + hostURLFlagName, "localhost:8080",
-			"--" + logLevelFlagName, log.ParseString(log.DEBUG),
-			"--" + databaseTypeFlagName, "mem",
-			"--" + oidcCallbackURLFlagName, "http://example.com/oauth2/callback",
-			"--" + googleClientIDFlagName, uuid.New().String(),
-			"--" + googleClientSecretFlagName, uuid.New().String(),
-		}
+		args := excludeArg(allArgs(t), oidcProvidersConfigFileFlagName)
 		startCmd.SetArgs(args)
 
 		err := startCmd.Execute()
-		require.Error(t, err)
+		require.EqualError(t, err,
+			"Neither oidcProviderConfigFile (command line flag) nor AUTH_REST_OIDC_PROVIDERS_CONFIG (environment variable) have been set.") // nolint:lll
 	})
 
-	t.Run("error on missing google client ID", func(t *testing.T) {
-		oidcURL := mockOIDCProvider(t)
+	t.Run("error on invalid oidc providers config file name", func(t *testing.T) {
 		startCmd := GetStartCmd(&mockServer{})
 
-		args := []string{
-			"--" + hostURLFlagName, "localhost:8080",
-			"--" + logLevelFlagName, log.ParseString(log.DEBUG),
-			"--" + databaseTypeFlagName, "mem",
-			"--" + oidcCallbackURLFlagName, "http://example.com/oauth2/callback",
-			"--" + googleProviderFlagName, oidcURL,
-			"--" + googleClientSecretFlagName, uuid.New().String(),
-		}
+		args := overrideArg(allArgs(t), oidcProvidersConfigFileFlagName, "INVALID")
 		startCmd.SetArgs(args)
 
 		err := startCmd.Execute()
-		require.Error(t, err)
+		require.EqualError(t, err,
+			"failed to read oidc providers config file INVALID: open INVALID: no such file or directory")
 	})
 
-	t.Run("error on missing google client secret", func(t *testing.T) {
-		oidcURL := mockOIDCProvider(t)
+	t.Run("error on invalid oidc providers config file format", func(t *testing.T) {
+		file, err := ioutil.TempFile("", "")
+		require.NoError(t, err)
+		err = ioutil.WriteFile(file.Name(), []byte("}INVALID"), os.ModeAppend)
+		require.NoError(t, err)
+
 		startCmd := GetStartCmd(&mockServer{})
 
-		args := []string{
-			"--" + hostURLFlagName, "localhost:8080",
-			"--" + logLevelFlagName, log.ParseString(log.DEBUG),
-			"--" + databaseTypeFlagName, "mem",
-			"--" + oidcCallbackURLFlagName, "http://example.com/oauth2/callback",
-			"--" + googleProviderFlagName, oidcURL,
-			"--" + googleClientIDFlagName, uuid.New().String(),
-		}
+		args := overrideArg(allArgs(t), oidcProvidersConfigFileFlagName, file.Name())
 		startCmd.SetArgs(args)
 
-		err := startCmd.Execute()
+		err = startCmd.Execute()
 		require.Error(t, err)
+		require.Contains(t, err.Error(), "failed to parse contents")
 	})
 }
 
@@ -141,10 +118,9 @@ func TestStartCmdWithMissingArg(t *testing.T) {
 	})
 
 	t.Run("missing docs sds url arg", func(t *testing.T) {
-		oidcURL := mockOIDCProvider(t)
 		startCmd := GetStartCmd(&mockServer{})
 
-		args := excludeArg(allArgs(t, oidcURL), docsSDSURLFlagName)
+		args := excludeArg(allArgs(t), docsSDSURLFlagName)
 		startCmd.SetArgs(args)
 
 		err := startCmd.Execute()
@@ -155,10 +131,9 @@ func TestStartCmdWithMissingArg(t *testing.T) {
 	})
 
 	t.Run("missing keys sds url arg", func(t *testing.T) {
-		oidcURL := mockOIDCProvider(t)
 		startCmd := GetStartCmd(&mockServer{})
 
-		args := excludeArg(allArgs(t, oidcURL), opsKeysSDSURLFlagName)
+		args := excludeArg(allArgs(t), opsKeysSDSURLFlagName)
 		startCmd.SetArgs(args)
 
 		err := startCmd.Execute()
@@ -169,10 +144,9 @@ func TestStartCmdWithMissingArg(t *testing.T) {
 	})
 
 	t.Run("missing auth keyserver url arg", func(t *testing.T) {
-		oidcURL := mockOIDCProvider(t)
 		startCmd := GetStartCmd(&mockServer{})
 
-		args := excludeArg(allArgs(t, oidcURL), authKeyServerURLFlagName)
+		args := excludeArg(allArgs(t), authKeyServerURLFlagName)
 		startCmd.SetArgs(args)
 
 		err := startCmd.Execute()
@@ -183,10 +157,9 @@ func TestStartCmdWithMissingArg(t *testing.T) {
 	})
 
 	t.Run("missing ops keyserver url arg", func(t *testing.T) {
-		oidcURL := mockOIDCProvider(t)
 		startCmd := GetStartCmd(&mockServer{})
 
-		args := excludeArg(allArgs(t, oidcURL), opsKeyServerURLFlagName)
+		args := excludeArg(allArgs(t), opsKeyServerURLFlagName)
 		startCmd.SetArgs(args)
 
 		err := startCmd.Execute()
@@ -197,10 +170,9 @@ func TestStartCmdWithMissingArg(t *testing.T) {
 	})
 
 	t.Run("missing secrets token", func(t *testing.T) {
-		oidcURL := mockOIDCProvider(t)
 		startCmd := GetStartCmd(&mockServer{})
 
-		args := excludeArg(allArgs(t, oidcURL), secretsAPITokenFlagName)
+		args := excludeArg(allArgs(t), secretsAPITokenFlagName)
 		startCmd.SetArgs(args)
 
 		err := startCmd.Execute()
@@ -210,10 +182,9 @@ func TestStartCmdWithMissingArg(t *testing.T) {
 	})
 
 	t.Run("uses default depTimeout", func(t *testing.T) {
-		oidcURL := mockOIDCProvider(t)
 		startCmd := GetStartCmd(&mockServer{})
 
-		args := excludeArg(allArgs(t, oidcURL), depTimeoutFlagName)
+		args := excludeArg(allArgs(t), depTimeoutFlagName)
 		startCmd.SetArgs(args)
 
 		err := startCmd.Execute()
@@ -222,10 +193,9 @@ func TestStartCmdWithMissingArg(t *testing.T) {
 	})
 
 	t.Run("malformed dep timeout value", func(t *testing.T) {
-		oidcURL := mockOIDCProvider(t)
 		startCmd := GetStartCmd(&mockServer{})
 
-		args := overrideArg(allArgs(t, oidcURL), depTimeoutFlagName, "INVALID")
+		args := overrideArg(allArgs(t), depTimeoutFlagName, "INVALID")
 		startCmd.SetArgs(args)
 
 		err := startCmd.Execute()
@@ -269,10 +239,9 @@ func TestUIHandler(t *testing.T) {
 
 func TestStartCmdValidArgs(t *testing.T) {
 	t.Run("In-memory storage, valid log level", func(t *testing.T) {
-		oidcURL := mockOIDCProvider(t)
 		startCmd := GetStartCmd(&mockServer{})
 
-		args := allArgs(t, oidcURL)
+		args := allArgs(t)
 		startCmd.SetArgs(args)
 
 		err := startCmd.Execute()
@@ -281,10 +250,9 @@ func TestStartCmdValidArgs(t *testing.T) {
 		require.Equal(t, log.DEBUG, log.GetLevel(""))
 	})
 	t.Run("Invalid log level - default to info", func(t *testing.T) {
-		oidcURL := mockOIDCProvider(t)
 		startCmd := GetStartCmd(&mockServer{})
 
-		args := overrideArg(allArgs(t, oidcURL), logLevelFlagName, "INVALID")
+		args := overrideArg(allArgs(t), logLevelFlagName, "INVALID")
 		startCmd.SetArgs(args)
 
 		err := startCmd.Execute()
@@ -295,10 +263,9 @@ func TestStartCmdValidArgs(t *testing.T) {
 
 	t.Run("server failure", func(t *testing.T) {
 		expected := errors.New("test")
-		oidcURL := mockOIDCProvider(t)
 		startCmd := GetStartCmd(&mockServer{err: expected})
 
-		args := allArgs(t, oidcURL)
+		args := allArgs(t)
 		startCmd.SetArgs(args)
 
 		err := startCmd.Execute()
@@ -310,10 +277,9 @@ func TestStartCmdValidArgs(t *testing.T) {
 
 func TestInvalidArgs(t *testing.T) {
 	t.Run("missing hydra URL param", func(t *testing.T) {
-		oidcURL := mockOIDCProvider(t)
 		startCmd := GetStartCmd(&mockServer{})
 
-		args := excludeArg(allArgs(t, oidcURL), hydraURLFlagName)
+		args := excludeArg(allArgs(t), hydraURLFlagName)
 		startCmd.SetArgs(args)
 
 		err := startCmd.Execute()
@@ -323,10 +289,9 @@ func TestInvalidArgs(t *testing.T) {
 	})
 
 	t.Run("malformed hydra URL param", func(t *testing.T) {
-		oidcURL := mockOIDCProvider(t)
 		startCmd := GetStartCmd(&mockServer{})
 
-		args := overrideArg(allArgs(t, oidcURL), hydraURLFlagName, ":malformed_url")
+		args := overrideArg(allArgs(t), hydraURLFlagName, ":malformed_url")
 
 		startCmd.SetArgs(args)
 
@@ -336,10 +301,9 @@ func TestInvalidArgs(t *testing.T) {
 	})
 
 	t.Run("non-bool bool variable", func(t *testing.T) {
-		oidcURL := mockOIDCProvider(t)
 		startCmd := GetStartCmd(&mockServer{})
 
-		args := overrideArg(allArgs(t, oidcURL), deviceSystemCertPoolFlagName, "non-bool-value")
+		args := overrideArg(allArgs(t), deviceSystemCertPoolFlagName, "non-bool-value")
 		startCmd.SetArgs(args)
 
 		err := startCmd.Execute()
@@ -350,10 +314,9 @@ func TestInvalidArgs(t *testing.T) {
 
 	t.Run("session cookie auth key", func(t *testing.T) {
 		t.Run("missing config", func(t *testing.T) {
-			oidcURL := mockOIDCProvider(t)
 			startCmd := GetStartCmd(&mockServer{})
 
-			args := excludeArg(allArgs(t, oidcURL), sessionCookieAuthKeyFlagName)
+			args := excludeArg(allArgs(t), sessionCookieAuthKeyFlagName)
 			startCmd.SetArgs(args)
 
 			err := startCmd.Execute()
@@ -364,10 +327,9 @@ func TestInvalidArgs(t *testing.T) {
 		})
 
 		t.Run("non-existent file path", func(t *testing.T) {
-			oidcURL := mockOIDCProvider(t)
 			startCmd := GetStartCmd(&mockServer{})
 
-			args := overrideArg(allArgs(t, oidcURL), sessionCookieAuthKeyFlagName, "NON-EXISTENT")
+			args := overrideArg(allArgs(t), sessionCookieAuthKeyFlagName, "NON-EXISTENT")
 			startCmd.SetArgs(args)
 
 			err := startCmd.Execute()
@@ -378,10 +340,9 @@ func TestInvalidArgs(t *testing.T) {
 		})
 
 		t.Run("invalid key", func(t *testing.T) {
-			oidcURL := mockOIDCProvider(t)
 			startCmd := GetStartCmd(&mockServer{})
 
-			args := overrideArg(allArgs(t, oidcURL), sessionCookieAuthKeyFlagName, invalidKey(t))
+			args := overrideArg(allArgs(t), sessionCookieAuthKeyFlagName, invalidKey(t))
 			startCmd.SetArgs(args)
 
 			err := startCmd.Execute()
@@ -393,10 +354,9 @@ func TestInvalidArgs(t *testing.T) {
 
 	t.Run("session cookie enc key", func(t *testing.T) {
 		t.Run("missing config", func(t *testing.T) {
-			oidcURL := mockOIDCProvider(t)
 			startCmd := GetStartCmd(&mockServer{})
 
-			args := excludeArg(allArgs(t, oidcURL), sessionCookieEncKeyFlagName)
+			args := excludeArg(allArgs(t), sessionCookieEncKeyFlagName)
 			startCmd.SetArgs(args)
 
 			err := startCmd.Execute()
@@ -407,10 +367,9 @@ func TestInvalidArgs(t *testing.T) {
 		})
 
 		t.Run("non-existent file path", func(t *testing.T) {
-			oidcURL := mockOIDCProvider(t)
 			startCmd := GetStartCmd(&mockServer{})
 
-			args := overrideArg(allArgs(t, oidcURL), sessionCookieEncKeyFlagName, "NON-EXISTENT")
+			args := overrideArg(allArgs(t), sessionCookieEncKeyFlagName, "NON-EXISTENT")
 			startCmd.SetArgs(args)
 
 			err := startCmd.Execute()
@@ -421,10 +380,9 @@ func TestInvalidArgs(t *testing.T) {
 		})
 
 		t.Run("invalid key", func(t *testing.T) {
-			oidcURL := mockOIDCProvider(t)
 			startCmd := GetStartCmd(&mockServer{})
 
-			args := overrideArg(allArgs(t, oidcURL), sessionCookieEncKeyFlagName, invalidKey(t))
+			args := overrideArg(allArgs(t), sessionCookieEncKeyFlagName, invalidKey(t))
 			startCmd.SetArgs(args)
 
 			err := startCmd.Execute()
@@ -437,10 +395,9 @@ func TestInvalidArgs(t *testing.T) {
 
 func TestStartCmdFailToCreateController(t *testing.T) {
 	t.Run("CouchDB storage", func(t *testing.T) {
-		oidcURL := mockOIDCProvider(t)
 		startCmd := GetStartCmd(&mockServer{})
 
-		args := overrideArg(allArgs(t, oidcURL), databaseURLFlagName, "INVALID")
+		args := overrideArg(allArgs(t), databaseURLFlagName, "INVALID")
 		args = overrideArg(args, databaseTypeFlagName, "couchdb")
 		startCmd.SetArgs(args)
 
@@ -455,10 +412,9 @@ func TestStartCmdFailToCreateController(t *testing.T) {
 }
 
 func TestStartCmdInvalidDatabaseType(t *testing.T) {
-	oidcURL := mockOIDCProvider(t)
 	startCmd := GetStartCmd(&mockServer{})
 
-	args := overrideArg(allArgs(t, oidcURL), databaseTypeFlagName, "ChesterfieldDB")
+	args := overrideArg(allArgs(t), databaseTypeFlagName, "ChesterfieldDB")
 
 	startCmd.SetArgs(args)
 
@@ -522,19 +478,13 @@ func Test_createProvider(t *testing.T) {
 }
 
 func setEnvVars(t *testing.T) {
-	oidcURL := mockOIDCProvider(t)
-
 	err := os.Setenv(hostURLEnvKey, "localhost:8080")
 	require.NoError(t, err)
 	err = os.Setenv(databaseTypeEnvKey, "mem")
 	require.Nil(t, err)
 	err = os.Setenv(oidcCallbackURLEnvKey, "http://example.com/oauth2/callback")
 	require.NoError(t, err)
-	err = os.Setenv(googleProviderEnvKey, oidcURL)
-	require.NoError(t, err)
-	err = os.Setenv(googleClientIDEnvKey, uuid.New().String())
-	require.NoError(t, err)
-	err = os.Setenv(googleClientSecretEnvKey, uuid.New().String())
+	err = os.Setenv(oidcProvidersConfigFileEnvKey, oidcProvConfig(t))
 	require.NoError(t, err)
 	err = os.Setenv(docsSDSURLEnvKey, "http://docs.sds.example.com")
 	require.NoError(t, err)
@@ -561,9 +511,7 @@ func unsetEnvVars(t *testing.T) {
 		hostURLEnvKey,
 		databaseTypeEnvKey,
 		oidcCallbackURLEnvKey,
-		googleProviderEnvKey,
-		googleClientIDEnvKey,
-		googleClientSecretEnvKey,
+		oidcProvidersConfigFileEnvKey,
 		docsSDSURLEnvKey,
 		opsKeysSDSURLEnvKey,
 		authKeyServerURLEnvKey,
@@ -632,16 +580,14 @@ func (t *testOIDCProvider) ServeHTTP(w http.ResponseWriter, _ *http.Request) {
 	}
 }
 
-func allArgs(t *testing.T, oidcURL string) []string {
+func allArgs(t *testing.T) []string {
 	return []string{
 		"--" + hostURLFlagName, "localhost:8080",
 		"--" + logLevelFlagName, log.ParseString(log.DEBUG),
 		"--" + databaseTypeFlagName, "mem",
 		"--" + databaseURLFlagName, "test",
 		"--" + oidcCallbackURLFlagName, "http://example.com/oauth2/callback",
-		"--" + googleProviderFlagName, oidcURL,
-		"--" + googleClientIDFlagName, uuid.New().String(),
-		"--" + googleClientSecretFlagName, uuid.New().String(),
+		"--" + oidcProvidersConfigFileFlagName, oidcProvConfig(t),
 		"--" + docsSDSURLFlagName, "http://docs.sds.example.com",
 		"--" + opsKeysSDSURLFlagName, "https://keys.sds.example.com",
 		"--" + authKeyServerURLFlagName, "https://auth.keyserver.example.com",
@@ -653,6 +599,37 @@ func allArgs(t *testing.T, oidcURL string) []string {
 		"--" + sessionCookieAuthKeyFlagName, key(t),
 		"--" + sessionCookieEncKeyFlagName, key(t),
 	}
+}
+
+func oidcProvConfig(t *testing.T) string {
+	config, err := json.Marshal(&oidcProvidersConfig{
+		Providers: map[string]*oidcProviderConfig{
+			"provider1": {
+				URL:          mockOIDCProvider(t),
+				ClientID:     uuid.New().String(),
+				ClientSecret: uuid.New().String(),
+			},
+			"provider2": {
+				URL:          mockOIDCProvider(t),
+				ClientID:     uuid.New().String(),
+				ClientSecret: uuid.New().String(),
+			},
+		},
+	})
+	require.NoError(t, err)
+
+	file, err := ioutil.TempFile("", "*.yaml")
+	require.NoError(t, err)
+
+	t.Cleanup(func() {
+		closeErr := file.Close()
+		require.NoError(t, closeErr)
+	})
+
+	err = ioutil.WriteFile(file.Name(), config, os.ModeAppend)
+	require.NoError(t, err)
+
+	return file.Name()
 }
 
 func excludeArg(args []string, arg string) []string {

@@ -27,7 +27,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/coreos/go-oidc"
 	"github.com/google/uuid"
 	"github.com/ory/hydra-client-go/client/admin"
 	"github.com/ory/hydra-client-go/models"
@@ -68,7 +67,11 @@ func TestNew(t *testing.T) {
 
 	t.Run("error if oidc provider is invalid", func(t *testing.T) {
 		config := config(t)
-		config.OIDCProviderURL = "INVALID"
+		config.OIDC.Providers = map[string]OIDCProviderConfig{
+			"test": {
+				URL: "INVALID",
+			},
+		}
 		_, err := New(config)
 		require.Error(t, err)
 	})
@@ -113,13 +116,16 @@ func TestNew(t *testing.T) {
 
 func TestOIDCLoginHandler(t *testing.T) {
 	t.Run("returns oidc request", func(t *testing.T) {
+		provider := uuid.New().String()
 		config := config(t)
 		svc, err := New(config)
 		require.NoError(t, err)
 		svc.cookies = mockCookies()
-		svc.oidcProvider = &mockOIDCProvider{baseURL: "http://test.com"}
+		svc.oidcProviders = map[string]oidcProvider{
+			provider: &mockOIDCProvider{},
+		}
 		w := httptest.NewRecorder()
-		svc.oidcLoginHandler(w, newOIDCLoginRequest("google"))
+		svc.oidcLoginHandler(w, newOIDCLoginRequest(provider))
 		require.Equal(t, http.StatusFound, w.Code)
 		require.NotEmpty(t, w.Header().Get("location"))
 	})
@@ -131,23 +137,51 @@ func TestOIDCLoginHandler(t *testing.T) {
 			OpenErr: errors.New("test"),
 		}
 		w := httptest.NewRecorder()
-		svc.oidcLoginHandler(w, newOIDCLoginRequest("google"))
+		svc.oidcLoginHandler(w, newOIDCLoginRequest("mock1"))
 		require.Equal(t, http.StatusInternalServerError, w.Code)
 	})
 
-	t.Run("bad request if scope is missing", func(t *testing.T) {
+	t.Run("bad request if provider is missing", func(t *testing.T) {
 		config := config(t)
 		svc, err := New(config)
 		require.NoError(t, err)
-		svc.oidcProvider = &mockOIDCProvider{baseURL: "http://test.com"}
 		w := httptest.NewRecorder()
 		svc.oidcLoginHandler(w, newOIDCLoginRequest(""))
 		require.Equal(t, http.StatusBadRequest, w.Code)
 	})
+
+	t.Run("bad request if provider is not supported", func(t *testing.T) {
+		svc, err := New(config(t))
+		require.NoError(t, err)
+		result := httptest.NewRecorder()
+		svc.oidcLoginHandler(result, newOIDCLoginRequest("unsupported"))
+		require.Equal(t, http.StatusBadRequest, result.Code)
+		require.Contains(t, result.Body.String(), "unsupported provider")
+	})
+
+	t.Run("internal server error if cannot save cookies", func(t *testing.T) {
+		provider := uuid.New().String()
+		config := config(t)
+		svc, err := New(config)
+		require.NoError(t, err)
+		svc.cookies = &cookie.MockStore{
+			Jar: &cookie.MockJar{
+				SaveErr: errors.New("test"),
+			},
+		}
+		svc.oidcProviders = map[string]oidcProvider{
+			provider: &mockOIDCProvider{},
+		}
+		w := httptest.NewRecorder()
+		svc.oidcLoginHandler(w, newOIDCLoginRequest(provider))
+		require.Equal(t, http.StatusInternalServerError, w.Code)
+		require.Contains(t, w.Body.String(), "failed to persist session cookies")
+	})
 }
 
 func TestOIDCCallbackHandler(t *testing.T) {
-	t.Run("onboard user", func(t *testing.T) {
+	t.Run("setup user", func(t *testing.T) {
+		provider := uuid.New().String()
 		state := uuid.New().String()
 		code := uuid.New().String()
 		hydraChallenge := uuid.New().String()
@@ -164,16 +198,15 @@ func TestOIDCCallbackHandler(t *testing.T) {
 		o, err := New(config)
 		require.NoError(t, err)
 
-		o.cookies = mockCookies(withState(state), withHydraLoginChallenge(hydraChallenge))
-
-		o.oauth2ConfigFunc = func(...string) oauth2Config {
-			return &mockOAuth2Config{exchangeVal: &mockToken{
-				oauth2Claim: uuid.New().String(),
-			}}
-		}
-
-		o.oidcProvider = &mockOIDCProvider{
-			verifier: &mockVerifier{
+		o.cookies = mockCookies(withState(state), withHydraLoginChallenge(hydraChallenge), withProvider(provider))
+		o.oidcProviders = map[string]oidcProvider{
+			provider: &mockOIDCProvider{
+				name: provider,
+				oauth2Config: &mockOAuth2Config{
+					exchangeVal: &mockToken{
+						oauth2Claim: uuid.New().String(),
+					},
+				},
 				verifyVal: &mockToken{
 					oidcClaimsFunc: func(v interface{}) error {
 						c, ok := v.(*oidcClaims)
@@ -223,16 +256,59 @@ func TestOIDCCallbackHandler(t *testing.T) {
 		require.Equal(t, http.StatusBadRequest, result.Code)
 	})
 
-	t.Run("error invalid state parameter", func(t *testing.T) {
-		config := config(t)
-		svc, err := New(config)
+	t.Run("bad request if missing state cookie", func(t *testing.T) {
+		svc, err := New(config(t))
 		require.NoError(t, err)
 		result := httptest.NewRecorder()
 		svc.oidcCallbackHandler(result, newOIDCCallback("state", "code"))
 		require.Equal(t, http.StatusBadRequest, result.Code)
+		require.Contains(t, result.Body.String(), "missing state cookie")
+	})
+
+	t.Run("bad request if missing hydra login challenge cookie", func(t *testing.T) {
+		svc, err := New(config(t))
+		require.NoError(t, err)
+		svc.cookies = mockCookies(withState("state"), withProvider("provider"))
+		result := httptest.NewRecorder()
+		svc.oidcCallbackHandler(result, newOIDCCallback("state", "code"))
+		require.Equal(t, http.StatusBadRequest, result.Code)
+		require.Contains(t, result.Body.String(), "missing hydra login challenge cookie")
+	})
+
+	t.Run("bad request if missing provider cookie", func(t *testing.T) {
+		svc, err := New(config(t))
+		require.NoError(t, err)
+		svc.cookies = mockCookies(withState("state"))
+		result := httptest.NewRecorder()
+		svc.oidcCallbackHandler(result, newOIDCCallback("state", "code"))
+		require.Equal(t, http.StatusBadRequest, result.Code)
+		require.Contains(t, result.Body.String(), "missing provider cookie")
+	})
+
+	t.Run("bad request if oidc provider is not supported (should not happen)", func(t *testing.T) {
+		svc, err := New(config(t))
+		require.NoError(t, err)
+		svc.cookies = mockCookies(withState("state"), withHydraLoginChallenge("challenge"), withProvider("INVALID"))
+		result := httptest.NewRecorder()
+		svc.oidcCallbackHandler(result, newOIDCCallback("state", "code"))
+		require.Equal(t, http.StatusBadRequest, result.Code)
+		require.Contains(t, result.Body.String(), "provider not supported")
+	})
+
+	t.Run("internal server error if cannot open cookies", func(t *testing.T) {
+		svc, err := New(config(t))
+		require.NoError(t, err)
+		svc.cookies = &cookie.MockStore{
+			OpenErr: errors.New("test"),
+		}
+		result := httptest.NewRecorder()
+		svc.oidcCallbackHandler(result, newOIDCCallback("state", "code"))
+		require.Equal(t, http.StatusInternalServerError, result.Code)
+		require.Contains(t, result.Body.String(), "failed to get cookies")
 	})
 
 	t.Run("generic bootstrap store FETCH error", func(t *testing.T) {
+		provider := uuid.New().String()
 		id := uuid.New().String()
 		state := uuid.New().String()
 		config := config(t)
@@ -261,16 +337,15 @@ func TestOIDCCallbackHandler(t *testing.T) {
 		svc, err := New(config)
 		require.NoError(t, err)
 
-		svc.cookies = mockCookies(withState(state), withHydraLoginChallenge("challenge"))
-
-		svc.oauth2ConfigFunc = func(...string) oauth2Config {
-			return &mockOAuth2Config{exchangeVal: &mockToken{
-				oauth2Claim: uuid.New().String(),
-			}}
-		}
-
-		svc.oidcProvider = &mockOIDCProvider{
-			verifier: &mockVerifier{
+		svc.cookies = mockCookies(withState(state), withHydraLoginChallenge("challenge"), withProvider(provider))
+		svc.oidcProviders = map[string]oidcProvider{
+			provider: &mockOIDCProvider{
+				name: provider,
+				oauth2Config: &mockOAuth2Config{
+					exchangeVal: &mockToken{
+						oauth2Claim: uuid.New().String(),
+					},
+				},
 				verifyVal: &mockToken{
 					oidcClaimsFunc: func(v interface{}) error {
 						c, ok := v.(*oidcClaims)
@@ -289,6 +364,7 @@ func TestOIDCCallbackHandler(t *testing.T) {
 	})
 
 	t.Run("generic bootstrap store PUT error while onboarding user", func(t *testing.T) {
+		provider := uuid.New().String()
 		id := uuid.New().String()
 		state := uuid.New().String()
 		config := config(t)
@@ -318,16 +394,13 @@ func TestOIDCCallbackHandler(t *testing.T) {
 		svc, err := New(config)
 		require.NoError(t, err)
 
-		svc.cookies = mockCookies(withState(state), withHydraLoginChallenge("challenge"))
-
-		svc.oauth2ConfigFunc = func(...string) oauth2Config {
-			return &mockOAuth2Config{exchangeVal: &mockToken{
-				oauth2Claim: uuid.New().String(),
-			}}
-		}
-
-		svc.oidcProvider = &mockOIDCProvider{
-			verifier: &mockVerifier{
+		svc.cookies = mockCookies(withState(state), withHydraLoginChallenge("challenge"), withProvider(provider))
+		svc.oidcProviders = map[string]oidcProvider{
+			provider: &mockOIDCProvider{
+				name: provider,
+				oauth2Config: &mockOAuth2Config{exchangeVal: &mockToken{
+					oauth2Claim: uuid.New().String(),
+				}},
 				verifyVal: &mockToken{
 					oidcClaimsFunc: func(v interface{}) error {
 						c, ok := v.(*oidcClaims)
@@ -346,6 +419,7 @@ func TestOIDCCallbackHandler(t *testing.T) {
 	})
 
 	t.Run("error exchanging auth code", func(t *testing.T) {
+		provider := uuid.New().String()
 		state := uuid.New().String()
 		config := config(t)
 		config.TransientStoreProvider = &mockstore.Provider{Store: &mockstore.MockStore{
@@ -355,18 +429,22 @@ func TestOIDCCallbackHandler(t *testing.T) {
 		}}
 		svc, err := New(config)
 		require.NoError(t, err)
-		svc.cookies = mockCookies(withState(state), withHydraLoginChallenge("challenge"))
-		svc.oauth2ConfigFunc = func(...string) oauth2Config {
-			return &mockOAuth2Config{
-				exchangeErr: errors.New("test"),
-			}
+		svc.cookies = mockCookies(withState(state), withHydraLoginChallenge("challenge"), withProvider(provider))
+		svc.oidcProviders = map[string]oidcProvider{
+			provider: &mockOIDCProvider{
+				oauth2Config: &mockOAuth2Config{
+					exchangeErr: errors.New("test"),
+				},
+			},
 		}
 		result := httptest.NewRecorder()
 		svc.oidcCallbackHandler(result, newOIDCCallback(state, "code"))
 		require.Equal(t, http.StatusBadGateway, result.Code)
+		require.Contains(t, result.Body.String(), "failed to exchange oauth2 code for token")
 	})
 
 	t.Run("error missing id_token", func(t *testing.T) {
+		provider := uuid.New().String()
 		state := uuid.New().String()
 		config := config(t)
 		config.TransientStoreProvider = &mockstore.Provider{Store: &mockstore.MockStore{
@@ -376,12 +454,15 @@ func TestOIDCCallbackHandler(t *testing.T) {
 		}}
 		svc, err := New(config)
 		require.NoError(t, err)
-		svc.cookies = mockCookies(withState(state), withHydraLoginChallenge("challenge"))
-		svc.oauth2ConfigFunc = func(...string) oauth2Config {
-			return &mockOAuth2Config{exchangeVal: &mockToken{}}
-		}
-		svc.oidcProvider = &mockOIDCProvider{
-			verifier: &mockVerifier{verifyVal: &mockToken{}},
+		svc.cookies = mockCookies(withState(state), withHydraLoginChallenge("challenge"), withProvider(provider))
+		svc.oidcProviders = map[string]oidcProvider{
+			provider: &mockOIDCProvider{
+				name: provider,
+				oauth2Config: &mockOAuth2Config{
+					exchangeVal: &mockToken{},
+				},
+				verifyVal: &mockToken{},
+			},
 		}
 		result := httptest.NewRecorder()
 		svc.oidcCallbackHandler(result, newOIDCCallback(state, "code"))
@@ -389,6 +470,7 @@ func TestOIDCCallbackHandler(t *testing.T) {
 	})
 
 	t.Run("error id_token verification", func(t *testing.T) {
+		provider := uuid.New().String()
 		state := uuid.New().String()
 		config := config(t)
 		config.TransientStoreProvider = &mockstore.Provider{Store: &mockstore.MockStore{
@@ -398,12 +480,15 @@ func TestOIDCCallbackHandler(t *testing.T) {
 		}}
 		svc, err := New(config)
 		require.NoError(t, err)
-		svc.cookies = mockCookies(withState(state), withHydraLoginChallenge("challenge"))
-		svc.oauth2ConfigFunc = func(...string) oauth2Config {
-			return &mockOAuth2Config{exchangeVal: &mockToken{oauth2Claim: "id_token"}}
-		}
-		svc.oidcProvider = &mockOIDCProvider{
-			verifier: &mockVerifier{verifyErr: errors.New("test")},
+		svc.cookies = mockCookies(withState(state), withHydraLoginChallenge("challenge"), withProvider(provider))
+		svc.oidcProviders = map[string]oidcProvider{
+			provider: &mockOIDCProvider{
+				name: provider,
+				oauth2Config: &mockOAuth2Config{
+					exchangeVal: &mockToken{oauth2Claim: "id_token"},
+				},
+				verifyErr: errors.New("test"),
+			},
 		}
 		result := httptest.NewRecorder()
 		svc.oidcCallbackHandler(result, newOIDCCallback(state, "code"))
@@ -411,6 +496,7 @@ func TestOIDCCallbackHandler(t *testing.T) {
 	})
 
 	t.Run("error scanning id_token claims", func(t *testing.T) {
+		provider := uuid.New().String()
 		state := uuid.New().String()
 		config := config(t)
 		config.TransientStoreProvider = &mockstore.Provider{Store: &mockstore.MockStore{
@@ -420,12 +506,15 @@ func TestOIDCCallbackHandler(t *testing.T) {
 		}}
 		svc, err := New(config)
 		require.NoError(t, err)
-		svc.cookies = mockCookies(withState(state), withHydraLoginChallenge("challenge"))
-		svc.oauth2ConfigFunc = func(...string) oauth2Config {
-			return &mockOAuth2Config{exchangeVal: &mockToken{oauth2Claim: "id_token"}}
-		}
-		svc.oidcProvider = &mockOIDCProvider{
-			verifier: &mockVerifier{verifyVal: &mockToken{oidcClaimsErr: errors.New("test")}},
+		svc.cookies = mockCookies(withState(state), withHydraLoginChallenge("challenge"), withProvider(provider))
+		svc.oidcProviders = map[string]oidcProvider{
+			provider: &mockOIDCProvider{
+				name: provider,
+				oauth2Config: &mockOAuth2Config{
+					exchangeVal: &mockToken{oauth2Claim: "id_token"},
+				},
+				verifyVal: &mockToken{oidcClaimsErr: errors.New("test")},
+			},
 		}
 		result := httptest.NewRecorder()
 		svc.oidcCallbackHandler(result, newOIDCCallback(state, "code"))
@@ -457,6 +546,7 @@ func TestOIDCCallbackHandler(t *testing.T) {
 	})
 
 	t.Run("error bad gateway if hydra fails to accept login request", func(t *testing.T) {
+		provider := uuid.New().String()
 		state := uuid.New().String()
 		code := uuid.New().String()
 		hydraChallenge := uuid.New().String()
@@ -470,16 +560,13 @@ func TestOIDCCallbackHandler(t *testing.T) {
 		o, err := New(config)
 		require.NoError(t, err)
 
-		o.cookies = mockCookies(withState(state), withHydraLoginChallenge(hydraChallenge))
-
-		o.oauth2ConfigFunc = func(...string) oauth2Config {
-			return &mockOAuth2Config{exchangeVal: &mockToken{
-				oauth2Claim: uuid.New().String(),
-			}}
-		}
-
-		o.oidcProvider = &mockOIDCProvider{
-			verifier: &mockVerifier{
+		o.cookies = mockCookies(withState(state), withHydraLoginChallenge(hydraChallenge), withProvider(provider))
+		o.oidcProviders = map[string]oidcProvider{
+			provider: &mockOIDCProvider{
+				name: provider,
+				oauth2Config: &mockOAuth2Config{
+					exchangeVal: &mockToken{oauth2Claim: uuid.New().String()},
+				},
 				verifyVal: &mockToken{},
 			},
 		}
@@ -488,6 +575,34 @@ func TestOIDCCallbackHandler(t *testing.T) {
 		o.oidcCallbackHandler(result, newOIDCCallback(state, code))
 		require.Equal(t, http.StatusBadGateway, result.Code)
 		require.Contains(t, result.Body.String(), "hydra failed to accept login request")
+	})
+
+	t.Run("internal server error if cannot delete cookies", func(t *testing.T) {
+		provider := uuid.New().String()
+		svc, err := New(config(t))
+		require.NoError(t, err)
+		svc.cookies = &cookie.MockStore{
+			Jar: &cookie.MockJar{
+				Cookies: map[interface{}]interface{}{
+					stateCookie:               "state",
+					hydraLoginChallengeCookie: "challenge",
+					providerCookie:            provider,
+				},
+				SaveErr: errors.New("test"),
+			},
+		}
+		svc.oidcProviders = map[string]oidcProvider{
+			provider: &mockOIDCProvider{
+				oauth2Config: &mockOAuth2Config{
+					exchangeVal: &mockToken{oauth2Claim: uuid.New().String()},
+				},
+				verifyVal: &mockToken{},
+			},
+		}
+		result := httptest.NewRecorder()
+		svc.oidcCallbackHandler(result, newOIDCCallback("state", "code"))
+		require.Equal(t, http.StatusInternalServerError, result.Code)
+		require.Contains(t, result.Body.String(), "failed to delete cookies")
 	})
 }
 
@@ -1535,8 +1650,23 @@ func newDeviceCertRequest(t *testing.T, data *certHolder) *http.Request {
 }
 
 type mockOIDCProvider struct {
-	baseURL  string
-	verifier *mockVerifier
+	name         string
+	baseURL      string
+	oauth2Config oauth2Config
+	verifyVal    idToken
+	verifyErr    error
+}
+
+func (m *mockOIDCProvider) Name() string {
+	return m.name
+}
+
+func (m *mockOIDCProvider) OAuth2Config(...string) oauth2Config {
+	if m.oauth2Config != nil {
+		return m.oauth2Config
+	}
+
+	return &mockOAuth2Config{}
 }
 
 func (m *mockOIDCProvider) Endpoint() oauth2.Endpoint {
@@ -1546,25 +1676,27 @@ func (m *mockOIDCProvider) Endpoint() oauth2.Endpoint {
 	}
 }
 
-func (m *mockOIDCProvider) Verifier(*oidc.Config) verifier {
-	return m.verifier
-}
-
-type mockVerifier struct {
-	verifyVal idToken
-	verifyErr error
-}
-
-func (m *mockVerifier) Verify(ctx context.Context, token string) (idToken, error) {
+func (m *mockOIDCProvider) Verify(_ context.Context, _ string) (idToken, error) {
 	return m.verifyVal, m.verifyErr
 }
 
 func config(t *testing.T) *Config {
 	return &Config{
-		OIDCProviderURL:        mockoidc.StartProvider(t),
-		OIDCClientID:           uuid.New().String(),
-		OIDCClientSecret:       uuid.New().String(),
-		OIDCCallbackURL:        "http://test.com",
+		OIDC: &OIDCConfig{
+			CallbackURL: "http://test.com",
+			Providers: map[string]OIDCProviderConfig{
+				"mock1": {
+					URL:          mockoidc.StartProvider(t),
+					ClientID:     uuid.New().String(),
+					ClientSecret: uuid.New().String(),
+				},
+				"mock2": {
+					URL:          mockoidc.StartProvider(t),
+					ClientID:     uuid.New().String(),
+					ClientSecret: uuid.New().String(),
+				},
+			},
+		},
 		TransientStoreProvider: memstore.NewProvider(),
 		StoreProvider:          memstore.NewProvider(),
 		BootstrapConfig: &BootstrapConfig{
@@ -1600,13 +1732,18 @@ func marshal(t *testing.T, v interface{}) []byte {
 }
 
 type mockOAuth2Config struct {
+	authCodeVal  string
 	authCodeFunc func(string, ...oauth2.AuthCodeOption) string
 	exchangeVal  oauth2Token
 	exchangeErr  error
 }
 
 func (m *mockOAuth2Config) AuthCodeURL(state string, options ...oauth2.AuthCodeOption) string {
-	return m.authCodeFunc(state, options...)
+	if m.authCodeFunc != nil {
+		return m.authCodeFunc(state, options...)
+	}
+
+	return m.authCodeVal
 }
 
 func (m *mockOAuth2Config) Exchange(
@@ -1776,6 +1913,12 @@ func withState(state string) cookieOpt {
 func withHydraLoginChallenge(challenge string) cookieOpt {
 	return func(c map[string]string) {
 		c[hydraLoginChallengeCookie] = challenge
+	}
+}
+
+func withProvider(provider string) cookieOpt {
+	return func(c map[string]string) {
+		c[providerCookie] = provider
 	}
 }
 

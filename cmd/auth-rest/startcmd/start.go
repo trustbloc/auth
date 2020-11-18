@@ -24,6 +24,7 @@ import (
 	"github.com/trustbloc/edge-core/pkg/restapi/logspec"
 	cmdutils "github.com/trustbloc/edge-core/pkg/utils/cmd"
 	tlsutils "github.com/trustbloc/edge-core/pkg/utils/tls"
+	"gopkg.in/yaml.v2"
 
 	"github.com/trustbloc/hub-auth/pkg/restapi"
 	"github.com/trustbloc/hub-auth/pkg/restapi/common/hydra"
@@ -117,21 +118,10 @@ const (
 		" Alternatively, this can be set with the following environment variable: " + oidcCallbackURLEnvKey
 	oidcCallbackURLEnvKey = "AUTH_REST_OIDC_CALLBACK"
 
-	googleProviderFlagName  = "googleURL"
-	googleProviderFlagUsage = "URL for Google's OIDC provider (should be 'https://accounts.google.com')." +
-		" Alternatively, this can be set with the following environment variable: " + googleProviderEnvKey
-	googleProviderEnvKey = "AUTH_REST_GOOGLE_URL"
-
-	googleClientIDFlagName  = "googleClientID"
-	googleClientIDFlagUsage = "ClientID issued by Google for use with hub-auth." +
-		" For info on how to set it up: https://developers.google.com/identity/protocols/oauth2/openid-connect." +
-		" Alternatively, this can be set with the following environment variable: " + googleClientIDEnvKey
-	googleClientIDEnvKey = "AUTH_REST_GOOGLE_CLIENTID"
-
-	googleClientSecretFlagName  = "googleClientSecret"
-	googleClientSecretFlagUsage = "ClientSecret issued by Google for use with hub-auth." +
-		" Alternatively, this can be set with the following environment variable: " + googleClientSecretEnvKey
-	googleClientSecretEnvKey = "AUTH_REST_GOOGLE_CLIENTSECRET" // nolint:gosec
+	oidcProvidersConfigFileFlagName  = "oidcProviderConfigFile"
+	oidcProvidersConfigFileFlagUsage = "Path to the yaml file with the configured OIDC providers." +
+		" Alternatively, this can be set with the following environment variable: " + oidcProvidersConfigFileEnvKey
+	oidcProvidersConfigFileEnvKey = "AUTH_REST_OIDC_PROVIDERS_CONFIG"
 )
 
 // Device certificate validation parameters.
@@ -199,58 +189,6 @@ const (
 )
 
 var logger = log.New("auth-rest")
-
-type authRestParameters struct {
-	hostURL          string
-	logLevel         string
-	databaseType     string
-	databaseURL      string
-	databasePrefix   string
-	startupTimeout   uint64
-	tlsParams        *tlsParams
-	oidcParams       *oidcParams
-	bootstrapParams  *bootstrapParams
-	devicecertParams *deviceCertParams
-	staticFiles      string
-	secretsAPIToken  string
-	keys             *keyParameters
-}
-
-type tlsParams struct {
-	useSystemCertPool bool
-	caCerts           []string
-	serveCertPath     string
-	serveKeyPath      string
-}
-
-type deviceCertParams struct {
-	useSystemCertPool bool
-	caCerts           []string
-}
-
-type oidcParams struct {
-	hydraURL    *url.URL
-	callbackURL string
-	google      *oidcProviderParams
-}
-
-type oidcProviderParams struct {
-	providerURL  string
-	clientID     string
-	clientSecret string
-}
-
-type bootstrapParams struct {
-	documentSDSVaultURL string
-	keySDSVaultURL      string
-	authZKeyServerURL   string
-	opsKeyServerURL     string
-}
-
-type keyParameters struct {
-	sessionCookieAuthKey []byte
-	sessionCookieEncKey  []byte
-}
 
 type healthCheckResp struct {
 	Status      string    `json:"status"`
@@ -444,9 +382,7 @@ func createFlags(startCmd *cobra.Command) {
 	startCmd.Flags().StringP(databasePrefixFlagName, databasePrefixFlagShorthand, "", databasePrefixFlagUsage)
 	startCmd.Flags().StringP(hydraURLFlagName, "", "", hydraURLFlagUsage)
 	startCmd.Flags().StringP(oidcCallbackURLFlagName, "", "", oidcCallbackURLFlagUsage)
-	startCmd.Flags().StringP(googleProviderFlagName, "", "", googleProviderFlagUsage)
-	startCmd.Flags().StringP(googleClientIDFlagName, "", "", googleClientIDFlagUsage)
-	startCmd.Flags().StringP(googleClientSecretFlagName, "", "", googleClientSecretFlagUsage)
+	startCmd.Flags().StringP(oidcProvidersConfigFileFlagName, "", "", oidcProvidersConfigFileFlagUsage)
 	startCmd.Flags().StringP(docsSDSURLFlagName, "", "", docsSDSURLFlagUsage)
 	startCmd.Flags().StringP(opsKeysSDSURLFlagName, "", "", opsKeysSDSURLFlagUsage)
 	startCmd.Flags().StringP(authKeyServerURLFlagName, "", "", authKeyServerURLFlagUsage)
@@ -486,11 +422,11 @@ func startAuthService(parameters *authRestParameters, srv server) error {
 	svc, err := restapi.New(&operation.Config{
 		TransientStoreProvider: provider,
 		StoreProvider:          provider,
-		OIDCCallbackURL:        parameters.oidcParams.callbackURL,
-		OIDCProviderURL:        parameters.oidcParams.google.providerURL,
-		OIDCClientID:           parameters.oidcParams.google.clientID,
-		OIDCClientSecret:       parameters.oidcParams.google.clientSecret,
 		Hydra:                  hydra.NewClient(parameters.oidcParams.hydraURL, rootCAs),
+		OIDC: &operation.OIDCConfig{
+			CallbackURL: parameters.oidcParams.callbackURL,
+			Providers:   parameters.oidcParams.providers,
+		},
 		BootstrapConfig: &operation.BootstrapConfig{
 			DocumentSDSVaultURL: parameters.bootstrapParams.documentSDSVaultURL,
 			KeySDSVaultURL:      parameters.bootstrapParams.keySDSVaultURL,
@@ -557,11 +493,6 @@ func getOIDCParams(cmd *cobra.Command) (*oidcParams, error) {
 		return nil, err
 	}
 
-	params.google, err = getGoogleOIDCParams(cmd)
-	if err != nil {
-		return nil, fmt.Errorf("misconfigured Google OIDC params: %w", err)
-	}
-
 	hydraURLString, err := cmdutils.GetUserSetVarFromString(cmd, hydraURLFlagName, hydraURLEnvKey, false)
 	if err != nil {
 		return nil, err
@@ -572,28 +503,35 @@ func getOIDCParams(cmd *cobra.Command) (*oidcParams, error) {
 		return nil, fmt.Errorf("failed to parse hydra url: %w", err)
 	}
 
+	oidcProvFile, err := cmdutils.GetUserSetVarFromString(cmd,
+		oidcProvidersConfigFileFlagName, oidcProvidersConfigFileEnvKey, false)
+	if err != nil {
+		return nil, err
+	}
+
+	config, err := ioutil.ReadFile(filepath.Clean(oidcProvFile))
+	if err != nil {
+		return nil, fmt.Errorf("failed to read oidc providers config file %s: %w", oidcProvFile, err)
+	}
+
+	data := &oidcProvidersConfig{}
+
+	err = yaml.Unmarshal(config, data)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse contents of %s: %w", oidcProvFile, err)
+	}
+
+	params.providers = make(map[string]operation.OIDCProviderConfig, len(data.Providers))
+
+	for k, v := range data.Providers {
+		params.providers[k] = operation.OIDCProviderConfig{
+			URL:          v.URL,
+			ClientID:     v.ClientID,
+			ClientSecret: v.ClientSecret,
+		}
+	}
+
 	return params, nil
-}
-
-func getGoogleOIDCParams(cmd *cobra.Command) (*oidcProviderParams, error) {
-	params := &oidcProviderParams{}
-
-	var err error
-
-	params.providerURL, err = cmdutils.GetUserSetVarFromString(cmd, googleProviderFlagName, googleProviderEnvKey, false)
-	if err != nil {
-		return nil, err
-	}
-
-	params.clientID, err = cmdutils.GetUserSetVarFromString(cmd, googleClientIDFlagName, googleClientIDEnvKey, false)
-	if err != nil {
-		return nil, err
-	}
-
-	params.clientSecret, err = cmdutils.GetUserSetVarFromString(cmd,
-		googleClientSecretFlagName, googleClientSecretEnvKey, false)
-
-	return params, err
 }
 
 func getBootstrapParams(cmd *cobra.Command) (*bootstrapParams, error) {

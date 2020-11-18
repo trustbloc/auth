@@ -16,6 +16,7 @@ require (
 	github.com/stretchr/testify v1.6.1
 	github.com/trustbloc/edge-core v0.1.5-0.20200916124536-c32454a16108
 	github.com/trustbloc/hub-auth v0.0.0-00010101000000-000000000000
+	gopkg.in/yaml.v2 v2.3.0
 )
 
 replace github.com/trustbloc/hub-auth => ../..

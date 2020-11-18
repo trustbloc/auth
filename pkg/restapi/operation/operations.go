@@ -47,6 +47,7 @@ const (
 	// api path params
 	providerQueryParam        = "provider"
 	stateCookie               = "oauth2_state"
+	providerCookie            = "oauth2_provider"
 	hydraLoginChallengeCookie = "hydra_login_challenge"
 
 	transientStoreName = "transient"
@@ -61,32 +62,25 @@ var logger = log.New("hub-auth-restapi")
 
 // Operation defines handlers.
 type Operation struct {
-	client           httpClient
-	requestTokens    map[string]string
-	transientStore   storage.Store
-	oidcProvider     oidcProvider
-	oidcClientID     string
-	oidcClientSecret string
-	oidcCallbackURL  string
-	uiEndpoint       string
-	oauth2ConfigFunc func(...string) oauth2Config
-	bootstrapStore   storage.Store
-	secretsStore     storage.Store
-	bootstrapConfig  *BootstrapConfig
-	hydra            Hydra
-	deviceRootCerts  *x509.CertPool
-	cookies          cookie.Store
-	secretsToken     string
+	client          httpClient
+	requestTokens   map[string]string
+	transientStore  storage.Store
+	oidcProviders   map[string]oidcProvider
+	uiEndpoint      string
+	bootstrapStore  storage.Store
+	secretsStore    storage.Store
+	bootstrapConfig *BootstrapConfig
+	hydra           Hydra
+	deviceRootCerts *x509.CertPool
+	cookies         cookie.Store
+	secretsToken    string
 }
 
 // Config defines configuration for rp operations.
 type Config struct {
 	TLSConfig              *tls.Config
 	RequestTokens          map[string]string
-	OIDCProviderURL        string
-	OIDCClientID           string
-	OIDCClientSecret       string
-	OIDCCallbackURL        string
+	OIDC                   *OIDCConfig
 	UIEndpoint             string
 	TransientStoreProvider storage.Provider
 	StoreProvider          storage.Provider
@@ -97,6 +91,19 @@ type Config struct {
 	Cookies                *CookieConfig
 	StartupTimeout         uint64
 	SecretsToken           string
+}
+
+// OIDCConfig holds the OIDC configuration.
+type OIDCConfig struct {
+	CallbackURL string
+	Providers   map[string]OIDCProviderConfig
+}
+
+// OIDCProviderConfig holds the configuration for a single OIDC provider.
+type OIDCProviderConfig struct {
+	URL          string
+	ClientID     string
+	ClientSecret string
 }
 
 // CookieConfig holds cookie configuration.
@@ -116,43 +123,25 @@ type BootstrapConfig struct {
 // New returns rp operation instance.
 func New(config *Config) (*Operation, error) {
 	svc := &Operation{
-		client:           &http.Client{Transport: &http.Transport{TLSClientConfig: config.TLSConfig}},
-		requestTokens:    config.RequestTokens,
-		oidcClientID:     config.OIDCClientID,
-		oidcClientSecret: config.OIDCClientSecret,
-		oidcCallbackURL:  config.OIDCCallbackURL,
-		bootstrapConfig:  config.BootstrapConfig,
-		hydra:            config.Hydra,
-		uiEndpoint:       config.UIEndpoint,
-		cookies:          cookie.NewStore(config.Cookies.AuthKey, config.Cookies.EncKey),
-		secretsToken:     config.SecretsToken,
+		client:          &http.Client{Transport: &http.Transport{TLSClientConfig: config.TLSConfig}},
+		requestTokens:   config.RequestTokens,
+		bootstrapConfig: config.BootstrapConfig,
+		hydra:           config.Hydra,
+		uiEndpoint:      config.UIEndpoint,
+		cookies:         cookie.NewStore(config.Cookies.AuthKey, config.Cookies.EncKey),
+		secretsToken:    config.SecretsToken,
 	}
 
-	idp, err := initOIDCProvider(config)
+	var err error
+
+	svc.oidcProviders, err = initOIDCProviders(config)
 	if err != nil {
-		return nil, fmt.Errorf("failed to init oidc provider with url [%s]: %w", config.OIDCProviderURL, err)
+		return nil, fmt.Errorf("failed to init oidc providers: %w", err)
 	}
-
-	svc.oidcProvider = &oidcProviderImpl{op: idp}
 
 	svc.transientStore, err = createStore(config.TransientStoreProvider)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create store: %w", err)
-	}
-
-	svc.oauth2ConfigFunc = func(scopes ...string) oauth2Config {
-		oauth2Config := &oauth2.Config{
-			ClientID:     svc.oidcClientID,
-			ClientSecret: svc.oidcClientSecret,
-			Endpoint:     svc.oidcProvider.Endpoint(),
-			RedirectURL:  svc.oidcCallbackURL,
-			Scopes:       append([]string{oidc.ScopeOpenID}, scopes...),
-		}
-
-		return &oauth2ConfigImpl{
-			oc:     oauth2Config,
-			client: &http.Client{Transport: &http.Transport{TLSClientConfig: config.TLSConfig}},
-		}
 	}
 
 	svc.bootstrapStore, err = openStore(config.StoreProvider, bootstrapStoreName)
@@ -239,14 +228,20 @@ func (o *Operation) hydraLoginHandler(w http.ResponseWriter, r *http.Request) {
 func (o *Operation) oidcLoginHandler(w http.ResponseWriter, r *http.Request) {
 	logger.Debugf("handling request: %s", r.URL.String())
 
-	provider := r.URL.Query().Get(providerQueryParam)
-	if provider == "" {
+	providerID := r.URL.Query().Get(providerQueryParam)
+	if providerID == "" {
 		o.writeErrorResponse(w, http.StatusBadRequest, "missing provider")
 
 		return
 	}
 
-	// TODO support multiple OIDC providers: https://github.com/trustbloc/hub-auth/issues/61
+	provider, supported := o.oidcProviders[providerID]
+	if !supported {
+		o.writeErrorResponse(w, http.StatusBadRequest, "unsupported provider: %s", providerID)
+
+		return
+	}
+
 	state := uuid.New().String()
 
 	jar, err := o.cookies.Open(r)
@@ -257,6 +252,7 @@ func (o *Operation) oidcLoginHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	jar.Set(stateCookie, state)
+	jar.Set(providerCookie, provider.Name())
 
 	err = jar.Save(r, w)
 	if err != nil {
@@ -265,10 +261,11 @@ func (o *Operation) oidcLoginHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// TODO hard-coding google's scope values (that are actually part of the standard):
-	//  https://developers.google.com/identity/protocols/oauth2/openid-connect#scope-param
-	//  need to support multiple OIDC providers - see https://github.com/trustbloc/hub-auth/issues/61.
-	redirectURL := o.oauth2Config("profile", "email").AuthCodeURL(state, oauth2.AccessTypeOnline)
+	redirectURL := provider.OAuth2Config(
+		oidc.ScopeOpenID,
+		"profile",
+		"email",
+	).AuthCodeURL(state, oauth2.AccessTypeOnline)
 
 	http.Redirect(w, r, redirectURL, http.StatusFound)
 
@@ -310,6 +307,13 @@ func (o *Operation) oidcCallbackHandler(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	cookieProvider, found := jar.Get(providerCookie)
+	if !found {
+		o.writeErrorResponse(w, http.StatusBadRequest, "missing provider cookie")
+
+		return
+	}
+
 	hydraLoginChallenge, found := jar.Get(hydraLoginChallengeCookie)
 	if !found {
 		o.writeErrorResponse(w, http.StatusBadRequest, "missing hydra login challenge cookie")
@@ -317,13 +321,14 @@ func (o *Operation) oidcCallbackHandler(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	loginChallenge, ok := hydraLoginChallenge.(string)
-	if !ok {
-		o.writeErrorResponse(w, http.StatusInternalServerError,
-			"should not have happened: hydra login challenge is not a string")
+	provider, supported := o.oidcProviders[fmt.Sprintf("%s", cookieProvider)]
+	if !supported {
+		o.writeErrorResponse(w, http.StatusBadRequest, "provider not supported: %+v", cookieProvider)
+
+		return
 	}
 
-	oauthToken, err := o.oauth2Config().Exchange(r.Context(), code)
+	oauthToken, err := provider.OAuth2Config().Exchange(r.Context(), code)
 	if err != nil {
 		o.writeErrorResponse(w, http.StatusBadGateway,
 			fmt.Sprintf("failed to exchange oauth2 code for token : %s", err))
@@ -338,9 +343,7 @@ func (o *Operation) oidcCallbackHandler(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	oidcToken, err := o.oidcProvider.Verifier(&oidc.Config{
-		ClientID: o.oidcClientID,
-	}).Verify(r.Context(), rawIDToken)
+	oidcToken, err := provider.Verify(r.Context(), rawIDToken)
 	if err != nil {
 		o.writeErrorResponse(w, http.StatusForbidden, fmt.Sprintf("failed to verify id_token : %s", err))
 
@@ -374,12 +377,20 @@ func (o *Operation) oidcCallbackHandler(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	req := admin.NewGetLoginRequestParams()
-	req.SetLoginChallenge(loginChallenge)
+	jar.Delete(hydraLoginChallengeCookie)
+	jar.Delete(stateCookie)
+	jar.Delete(providerCookie)
+
+	err = jar.Save(r, w)
+	if err != nil {
+		o.writeErrorResponse(w, http.StatusInternalServerError, "failed to delete cookies: %s", err.Error())
+
+		return
+	}
 
 	accept := admin.NewAcceptLoginRequestParams()
 
-	accept.SetLoginChallenge(loginChallenge)
+	accept.SetLoginChallenge(fmt.Sprintf("%s", hydraLoginChallenge))
 	accept.SetBody(&models.AcceptLoginRequest{
 		Subject: &claims.Sub,
 	})
@@ -772,10 +783,6 @@ func (o *Operation) writeErrorResponse(rw http.ResponseWriter, status int, msg s
 	}
 }
 
-func (o *Operation) oauth2Config(scopes ...string) oauth2Config {
-	return o.oauth2ConfigFunc(scopes...)
-}
-
 func (o *Operation) subject(w http.ResponseWriter, r *http.Request) (string, bool) {
 	token, proceed := o.bearerToken(w, r)
 	if !proceed {
@@ -849,37 +856,55 @@ func openStore(provider storage.Provider, name string) (storage.Store, error) {
 	return provider.OpenStore(name)
 }
 
-func initOIDCProvider(config *Config) (*oidc.Provider, error) {
-	var idp *oidc.Provider
+func initOIDCProviders(config *Config) (map[string]oidcProvider, error) {
+	providers := make(map[string]oidcProvider, len(config.OIDC.Providers))
 
-	err := backoff.RetryNotify(
-		func() error {
-			var idpErr error
+	for name, idpConfig := range config.OIDC.Providers {
+		name := name
+		idpConfig := idpConfig
 
-			idp, idpErr = oidc.NewProvider(
-				oidc.ClientContext(
-					context.Background(),
-					&http.Client{
-						Transport: &http.Transport{TLSClientConfig: config.TLSConfig},
-					},
-				),
-				config.OIDCProviderURL,
-			)
+		var idp *oidc.Provider
 
-			return idpErr
-		},
-		backoff.WithMaxRetries(backoff.NewConstantBackOff(time.Second), config.StartupTimeout),
-		func(retryErr error, t time.Duration) {
-			logger.Warnf(
-				"failed to connect to the OIDC provider, will sleep for %s before trying again : %s",
-				t, retryErr)
-		},
-	)
-	if err != nil {
-		return nil, fmt.Errorf("failed to init oidc provider with url [%s]: %w", config.OIDCProviderURL, err)
+		err := backoff.RetryNotify(
+			func() error {
+				var idpErr error
+
+				idp, idpErr = oidc.NewProvider(
+					oidc.ClientContext(
+						context.Background(),
+						&http.Client{
+							Transport: &http.Transport{TLSClientConfig: config.TLSConfig},
+						},
+					),
+					idpConfig.URL,
+				)
+
+				return idpErr
+			},
+			backoff.WithMaxRetries(backoff.NewConstantBackOff(time.Second), config.StartupTimeout),
+			func(retryErr error, t time.Duration) {
+				logger.Warnf(
+					"failed to connect to the [%s] OIDC provider, will sleep for %s before trying again : %s",
+					name, t, retryErr)
+			},
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to init oidc provider [%s] with url [%s]: %w", name, idpConfig.URL, err)
+		}
+
+		providers[name] = &oidcProviderImpl{
+			name:         name,
+			clientID:     idpConfig.ClientID,
+			clientSecret: idpConfig.ClientSecret,
+			callback:     config.OIDC.CallbackURL,
+			op:           idp,
+			httpClient: &http.Client{Transport: &http.Transport{
+				TLSClientConfig: config.TLSConfig,
+			}},
+		}
 	}
 
-	return idp, nil
+	return providers, nil
 }
 
 func merge(existing *user.Profile, update *UpdateBootstrapDataRequest) *user.Profile {
