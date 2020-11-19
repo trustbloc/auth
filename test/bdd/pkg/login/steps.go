@@ -31,7 +31,7 @@ const (
 	mockAuthenticationURL           = "https://localhost:8099/mock/authn"
 	mockConsentURL                  = "https://localhost:8099/mock/consent"
 	mockAuthorizationURL            = "https://localhost:8099/mock/authz"
-	mockOIDCProviderName            = "mock" // providers.yaml
+	mockOIDCProviderName            = "mockbank" // providers.yaml
 )
 
 // defines the payload expected by the mock login consent server's /authn endpoint
