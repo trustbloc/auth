@@ -12,7 +12,7 @@ SPDX-License-Identifier: Apache-2.0
                     <div class="bg-white shadow-lg border rounded text-center text-black px-32 pt-8 pb-8 md:flex-wrap md:justify-between">
                         <p class="text-xl">Select Sign-In Partner</p>
                         <div class="flex items-center  justify-center">
-                            <a href="/oauth2/login?provider=github" class="mx-auto bg-gray-100 lg:mx-0 border hover:underline my-4 py-2 px-8 shadow-lg">
+                            <a href="/oauth2/login?provider=mockbank" class="mx-auto bg-gray-100 lg:mx-0 border hover:underline my-4 py-2 px-8 shadow-lg">
                                 <img class="object-scale-down h-8 w-32"  alt="Google &quot;G&quot; Logo"
                                      src="https://upload.wikimedia.org/wikipedia/en/a/a4/Universal_Bank.svg"/>
                                 Mock Bank
