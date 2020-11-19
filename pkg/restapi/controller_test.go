@@ -11,11 +11,11 @@ import (
 	"crypto/rand"
 	"testing"
 
-	"github.com/trustbloc/hub-auth/pkg/internal/common/mockoidc"
-
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 	"github.com/trustbloc/edge-core/pkg/storage/memstore"
 
+	"github.com/trustbloc/hub-auth/pkg/internal/common/mockoidc"
 	"github.com/trustbloc/hub-auth/pkg/restapi/operation"
 )
 
@@ -30,7 +30,14 @@ func TestController_New(t *testing.T) {
 
 	t.Run("error if operations cannot start", func(t *testing.T) {
 		config := config(t)
-		config.OIDCProviderURL = "BadURL"
+		config.OIDC = &operation.OIDCConfig{
+			CallbackURL: "http://example.com/test",
+			Providers: map[string]operation.OIDCProviderConfig{
+				"test": {
+					URL: "INVALID",
+				},
+			},
+		}
 
 		_, err := New(config)
 		require.Error(t, err)
@@ -52,7 +59,16 @@ func config(t *testing.T) *operation.Config {
 	path := mockoidc.StartProvider(t)
 
 	return &operation.Config{
-		OIDCProviderURL:        path,
+		OIDC: &operation.OIDCConfig{
+			CallbackURL: "https://example.com/callback",
+			Providers: map[string]operation.OIDCProviderConfig{
+				"test": {
+					URL:          path,
+					ClientID:     uuid.New().String(),
+					ClientSecret: uuid.New().String(),
+				},
+			},
+		},
 		TransientStoreProvider: memstore.NewProvider(),
 		StoreProvider:          memstore.NewProvider(),
 		Cookies: &operation.CookieConfig{

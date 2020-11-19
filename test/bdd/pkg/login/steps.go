@@ -31,6 +31,7 @@ const (
 	mockAuthenticationURL           = "https://localhost:8099/mock/authn"
 	mockConsentURL                  = "https://localhost:8099/mock/consent"
 	mockAuthorizationURL            = "https://localhost:8099/mock/authz"
+	mockOIDCProviderName            = "mock" // providers.yaml
 )
 
 // defines the payload expected by the mock login consent server's /authn endpoint
@@ -134,7 +135,7 @@ func (s *Steps) walletRedirectsUserToAuthenticate() error {
 }
 
 func (s *Steps) userSelectsThirdPartyOIDCProvider() error {
-	request := fmt.Sprintf("%s?provider=%s", hubAuthSelectOIDCProviderURL, "test")
+	request := fmt.Sprintf("%s?provider=%s", hubAuthSelectOIDCProviderURL, mockOIDCProviderName)
 
 	result, err := s.browser.Get(request)
 	if err != nil {

@@ -16,32 +16,44 @@ import (
 )
 
 type oidcProvider interface {
+	Name() string
+	OAuth2Config(scope ...string) oauth2Config
 	Endpoint() oauth2.Endpoint
-	Verifier(*oidc.Config) verifier
-}
-
-type verifier interface {
 	Verify(context.Context, string) (idToken, error)
 }
 
 type oidcProviderImpl struct {
-	op *oidc.Provider
+	name         string
+	clientID     string
+	clientSecret string
+	callback     string
+	op           *oidc.Provider
+	httpClient   *http.Client
 }
 
-func (o *oidcProviderImpl) Verifier(config *oidc.Config) verifier {
-	return &verifierImpl{v: o.op.Verifier(config)}
+func (o *oidcProviderImpl) Name() string {
+	return o.name
 }
 
-type verifierImpl struct {
-	v *oidc.IDTokenVerifier
-}
-
-func (v *verifierImpl) Verify(ctx context.Context, token string) (idToken, error) {
-	return v.v.Verify(ctx, token)
+func (o *oidcProviderImpl) OAuth2Config(scope ...string) oauth2Config {
+	return &oauth2ConfigImpl{
+		client: o.httpClient,
+		oc: &oauth2.Config{
+			ClientID:     o.clientID,
+			ClientSecret: o.clientSecret,
+			Endpoint:     o.op.Endpoint(),
+			RedirectURL:  o.callback,
+			Scopes:       scope,
+		},
+	}
 }
 
 func (o *oidcProviderImpl) Endpoint() oauth2.Endpoint {
 	return o.op.Endpoint()
+}
+
+func (o *oidcProviderImpl) Verify(ctx context.Context, rawToken string) (idToken, error) {
+	return o.op.Verifier(&oidc.Config{ClientID: o.clientID}).Verify(ctx, rawToken)
 }
 
 type idToken interface {

@@ -20,9 +20,7 @@ services:
       - AUTH_REST_DATABASE_URL=authrest:authrest-secret-pw@tcp(mysql:3306)/
       - AUTH_REST_DATABASE_PREFIX=authrest
       - AUTH_REST_OIDC_CALLBACK=https://localhost:8070/oauth2/callback   # https://github.com/trustbloc/hub-auth/issues/13
-      - AUTH_REST_GOOGLE_URL=https://third.party.oidc.provider.example.com:5555/
-      - AUTH_REST_GOOGLE_CLIENTID=hub-auth # https://github.com/trustbloc/hub-auth/issues/9
-      - AUTH_REST_GOOGLE_CLIENTSECRET=hub-auth-secret
+      - AUTH_REST_OIDC_PROVIDERS_CONFIG=/etc/oidc-config/providers.yaml
       - AUTH_REST_SDS_DOCS_URL=https://TODO.docs.sds.org/              # onboard user: https://github.com/trustbloc/hub-auth/issues/38
       - AUTH_REST_SDS_OPSKEYS_URL=https://TODO.keys.sds.org/
       - AUTH_REST_KEYSERVER_AUTH_URL=https://TODO.auth.keyserver.org/  # onboard user: https://github.com/trustbloc/hub-auth/issues/38
@@ -38,6 +36,7 @@ services:
     command:  /bin/sh -c "sleep 30 && auth-rest start"
     volumes:
       - ../keys:/etc/keys
+      - ./oidc-config:/etc/oidc-config
     depends_on:
       - auth.rest.hydra.example.com
       - third.party.oidc.provider.example.com
