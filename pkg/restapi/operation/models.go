@@ -12,7 +12,7 @@ type BootstrapData struct {
 	KeySDSVaultURL      string            `json:"keySDSURL"`
 	AuthZKeyServerURL   string            `json:"authzKeyServerURL"`
 	OpsKeyServerURL     string            `json:"opsKeyServerURL"`
-	Data                map[string]string `json:"entries,omitempty"`
+	Data                map[string]string `json:"data,omitempty"`
 }
 
 type oidcClaims struct {
