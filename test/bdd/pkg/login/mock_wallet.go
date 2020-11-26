@@ -142,7 +142,13 @@ func (m *MockWallet) UpdateBootstrapData(endpoint string, update *operation.Upda
 }
 
 func (m *MockWallet) CreateAndPushSecretToHubAuth(endpoint string) error {
-	m.Secret = uuid.New().String()
+	secret := uuid.New().String()
+
+	return m.PushSecretToHubAuth(endpoint, secret)
+}
+
+func (m *MockWallet) PushSecretToHubAuth(endpoint, secret string) error {
+	m.Secret = secret
 
 	payload, err := json.Marshal(&operation.SetSecretRequest{
 		Secret: []byte(m.Secret),
