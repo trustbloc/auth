@@ -9,7 +9,7 @@ SPDX-License-Identifier: Apache-2.0
         <div class="pl-4 flex items-center">
             <a class="toggleColour text-black no-underline hover:no-underline font-bold text-2xl lg:text-4xl"  href="javascript:history.back()">
                 <i class="fa fa-cubes" style="font-size:32px;color:black"></i>
-                Hub Auth
+                TrustBloc Sign-In
             </a>
         </div>
         <div class="w-full flex-grow lg:flex lg:items-center lg:w-auto hidden lg:block mt-2 lg:mt-0 bg-white lg:bg-transparent text-black p-4 lg:p-0 z-20">
