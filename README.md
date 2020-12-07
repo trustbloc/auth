@@ -8,6 +8,10 @@
 
 # hub-auth
 
+The TrustBloc `hub-auth` service provides end-user authentication for the TrustBloc ecosystem as well as a minimal
+storage container where wallets can store bootstrap data to support recovery and multi-device scenarios. See the
+[Overview](./docs/overview.md) for a more in-depth explanation of how it works.
+
 ## Contributing
 Thank you for your interest in contributing. Please see our [community contribution guidelines](https://github.com/trustbloc/community/blob/master/CONTRIBUTING.md) for more information.
 Review our [building and testing documentation](./docs/build.md) for more information on pre-requisites, tooling, and
