@@ -6,8 +6,8 @@
 
 
 # Release Parameters
-BASE_VERSION=0.1.4
-IS_RELEASE=false
+BASE_VERSION=0.1.5
+IS_RELEASE=true
 
 # Project Parameters
 SOURCE_REPO=hub-auth
