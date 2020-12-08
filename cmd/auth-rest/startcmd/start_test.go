@@ -455,15 +455,6 @@ func TestTLSSystemCertPoolInvalidArgsEnvVar(t *testing.T) {
 }
 
 func Test_createProvider(t *testing.T) {
-	t.Run("Valid CouchDB URL", func(t *testing.T) {
-		provider, err := createProvider(&authRestParameters{
-			databaseType: databaseTypeCouchDBOption,
-			databaseURL:  "localhost:5984",
-		})
-
-		require.NoError(t, err)
-		require.NotNil(t, provider)
-	})
 	t.Run("Empty CouchDB URL", func(t *testing.T) {
 		provider, err := createProvider(&authRestParameters{
 			databaseType:   databaseTypeCouchDBOption,
