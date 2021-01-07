@@ -20,6 +20,8 @@ WORKDIR src/github.com/trustbloc/hub-auth
 ENV EXECUTABLES go git
 
 FROM golang as hub-auth
+LABEL org.opencontainers.image.source https://github.com/trustbloc/hub-auth
+
 RUN make auth-rest
 
 
