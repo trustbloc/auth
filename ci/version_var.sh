@@ -11,7 +11,7 @@ IS_RELEASE=false
 
 # Project Parameters
 SOURCE_REPO=hub-auth
-BASE_AUTH_PKG_NAME=auth-rest
+BASE_AUTH_PKG_NAME=hub-auth
 RELEASE_REPO=ghcr.io/trustbloc
 SNAPSHOT_REPO=ghcr.io/trustbloc-cicd
 
