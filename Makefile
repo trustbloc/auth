@@ -5,8 +5,8 @@
 AUTH_REST_PATH=cmd/auth-rest
 
 # Namespace for the agent images
-DOCKER_OUTPUT_NS   ?= docker.pkg.github.com
-AUTH_REST_IMAGE_NAME   ?= trustbloc/hub-auth/auth-rest
+DOCKER_OUTPUT_NS   ?= ghcr.io
+AUTH_REST_IMAGE_NAME   ?= trustbloc/hub-auth
 
 # Tool commands (overridable)
 ALPINE_VER ?= 3.11
@@ -44,8 +44,8 @@ auth-vue:
 	@npm --prefix cmd/auth-vue run build
 	@cp -rp cmd/auth-vue/dist/* ./.build/bin/auth-vue
 
-.PHONY: auth-rest-docker
-auth-rest-docker: auth-vue
+.PHONY: hub-auth-docker
+hub-auth-docker: auth-vue
 	@echo "Building auth rest docker image"
 	@docker build -f ./images/auth-rest/Dockerfile --no-cache -t $(DOCKER_OUTPUT_NS)/$(AUTH_REST_IMAGE_NAME):latest \
 	--build-arg GO_VER=$(GO_VER) \
@@ -57,7 +57,7 @@ mock-login-consent-docker:
 	@cd test/bdd/mock/loginconsent && docker build -f image/Dockerfile --build-arg GO_VER=$(GO_VER) --build-arg ALPINE_VER=$(ALPINE_VER) -t hubauth/mockloginconsent:latest .
 
 .PHONY: bdd-test
-bdd-test: clean auth-rest-docker generate-test-keys mock-login-consent-docker
+bdd-test: clean hub-auth-docker generate-test-keys mock-login-consent-docker
 	@scripts/check_integration.sh
 
 
