@@ -434,7 +434,7 @@ func startAuthService(parameters *authRestParameters, srv server) error {
 			OpsKeyServerURL:     parameters.bootstrapParams.opsKeyServerURL,
 		},
 		DeviceRootCerts: parameters.devicecertParams.caCerts,
-		TLSConfig:       &tls.Config{RootCAs: rootCAs, MinVersion: tls.VersionTLS13},
+		TLSConfig:       &tls.Config{RootCAs: rootCAs},
 		UIEndpoint:      uiEndpoint,
 		Cookies: &operation.CookieConfig{
 			AuthKey: parameters.keys.sessionCookieAuthKey,
