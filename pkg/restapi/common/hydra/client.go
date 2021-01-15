@@ -44,8 +44,7 @@ func NewClient(hydraURL *url.URL, rootCAs *x509.CertPool) *Client {
 			},
 		).Admin,
 		httpClient: &http.Client{Transport: &http.Transport{TLSClientConfig: &tls.Config{
-			RootCAs:    rootCAs,
-			MinVersion: tls.VersionTLS13,
+			RootCAs: rootCAs,
 		}}},
 	}
 }

@@ -102,7 +102,6 @@ func loadConfig() (*config, error) {
 		serveKeyFile:  serveKeyPath,
 		tlsConfig: &tls.Config{
 			RootCAs:    rootCACerts,
-			MinVersion: tls.VersionTLS13,
 		},
 		store: store,
 	}, nil
