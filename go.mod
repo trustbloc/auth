@@ -13,6 +13,6 @@ require (
 	github.com/gorilla/sessions v1.2.1
 	github.com/ory/hydra-client-go v1.7.4
 	github.com/stretchr/testify v1.6.1
-	github.com/trustbloc/edge-core v0.1.5-0.20201126210935-53388acb41fc
+	github.com/trustbloc/edge-core v0.1.6-0.20210127161542-9e174750f523
 	golang.org/x/oauth2 v0.0.0-20200902213428-5d25da1a8d43
 )
