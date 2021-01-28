@@ -71,6 +71,16 @@ type MockStore struct {
 	ResultsIteratorToReturn storage.ResultsIterator
 }
 
+// PutBulk mock not implemented.
+func (s *MockStore) PutBulk(keys []string, values [][]byte) error {
+	panic("implement me")
+}
+
+// GetBulk mock is not implemented.
+func (s *MockStore) GetBulk(k ...string) ([][]byte, error) {
+	panic("implement me")
+}
+
 // Put stores the key-value pair.
 func (s *MockStore) Put(k string, v []byte) error {
 	if k == "" {
