@@ -463,7 +463,7 @@ func Test_createProvider(t *testing.T) {
 		})
 
 		require.Error(t, err)
-		require.Contains(t, err.Error(), "hostURL for new CouchDB provider can't be blank")
+		require.Contains(t, err.Error(), "failed to ping couchDB: url can't be blank")
 		require.Nil(t, provider)
 	})
 }

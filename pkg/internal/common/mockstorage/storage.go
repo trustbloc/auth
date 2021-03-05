@@ -10,14 +10,13 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/trustbloc/edge-core/pkg/storage"
+	"github.com/hyperledger/aries-framework-go/spi/storage"
 )
 
 // Provider mock store provider.
 type Provider struct {
 	Stores             map[string]storage.Store
 	Store              *MockStore
-	ErrCreateStore     error
 	ErrOpenStoreHandle error
 	FailNameSpace      string
 }
@@ -30,11 +29,6 @@ func NewMockStoreProvider() *Provider {
 			Store: make(map[string][]byte),
 		},
 	}
-}
-
-// CreateStore creates a new store with the given name.
-func (p *Provider) CreateStore(name string) error {
-	return p.ErrCreateStore
 }
 
 // OpenStore opens and returns a store for given name space.
@@ -55,20 +49,52 @@ func (p *Provider) Close() error {
 	return nil
 }
 
-// CloseStore closes store for given name space.
-func (p *Provider) CloseStore(name string) error {
-	return nil
+// SetStoreConfig sets the configuration on a store.
+func (p *Provider) SetStoreConfig(name string, config storage.StoreConfiguration) error {
+	panic("implement me")
+}
+
+// GetStoreConfig gets the current store configuration.
+func (p *Provider) GetStoreConfig(name string) (storage.StoreConfiguration, error) {
+	panic("implement me")
+}
+
+// GetOpenStores returns all currently open stores.
+func (p *Provider) GetOpenStores() []storage.Store {
+	panic("implement me")
 }
 
 // MockStore represents a mock store.
 type MockStore struct {
-	Store                   map[string][]byte
-	lock                    sync.RWMutex
-	ErrPut                  error
-	ErrGet                  error
-	ErrCreateIndex          error
-	ErrQuery                error
-	ResultsIteratorToReturn storage.ResultsIterator
+	Store  map[string][]byte
+	lock   sync.RWMutex
+	ErrPut error
+	ErrGet error
+}
+
+// GetTags fetches all tags associated with the given key.
+func (s *MockStore) GetTags(key string) ([]storage.Tag, error) {
+	panic("implement me")
+}
+
+// Query returns all data that satisfies the expression. Expression format: TagName:TagValue.
+func (s *MockStore) Query(expression string, options ...storage.QueryOption) (storage.Iterator, error) {
+	panic("implement me")
+}
+
+// Batch performs multiple Put and/or Delete operations in order.
+func (s *MockStore) Batch(operations []storage.Operation) error {
+	panic("implement me")
+}
+
+// Flush forces any queued up Put and/or Delete operations to execute.
+func (s *MockStore) Flush() error {
+	panic("implement me")
+}
+
+// Close closes this store object, freeing resources.
+func (s *MockStore) Close() error {
+	panic("implement me")
 }
 
 // PutBulk mock not implemented.
@@ -82,9 +108,9 @@ func (s *MockStore) GetBulk(k ...string) ([][]byte, error) {
 }
 
 // Put stores the key-value pair.
-func (s *MockStore) Put(k string, v []byte) error {
+func (s *MockStore) Put(k string, v []byte, _ ...storage.Tag) error {
 	if k == "" {
-		return storage.ErrKeyRequired
+		return fmt.Errorf("key is required")
 	}
 
 	s.lock.Lock()
@@ -101,28 +127,13 @@ func (s *MockStore) Get(k string) ([]byte, error) {
 
 	val, ok := s.Store[k]
 	if !ok {
-		return nil, storage.ErrValueNotFound
+		return nil, storage.ErrDataNotFound
 	}
 
 	return val, s.ErrGet
 }
 
-// CreateIndex returns a mocked error.
-func (s *MockStore) CreateIndex(createIndexRequest storage.CreateIndexRequest) error {
-	return s.ErrCreateIndex
-}
-
-// Query returns a mocked error.
-func (s *MockStore) Query(query string) (storage.ResultsIterator, error) {
-	return s.ResultsIteratorToReturn, s.ErrQuery
-}
-
 // Delete is currently unimplemented.
 func (s *MockStore) Delete(k string) error {
-	panic("implement me")
-}
-
-// GetAll not implemented.
-func (s *MockStore) GetAll() (map[string][]byte, error) {
 	panic("implement me")
 }

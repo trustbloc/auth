@@ -12,8 +12,8 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
+	"github.com/hyperledger/aries-framework-go/component/storageutil/mem"
 	"github.com/stretchr/testify/require"
-	"github.com/trustbloc/edge-core/pkg/storage/memstore"
 
 	"github.com/trustbloc/hub-auth/pkg/internal/common/mockoidc"
 	"github.com/trustbloc/hub-auth/pkg/restapi/operation"
@@ -69,8 +69,8 @@ func config(t *testing.T) *operation.Config {
 				},
 			},
 		},
-		TransientStoreProvider: memstore.NewProvider(),
-		StoreProvider:          memstore.NewProvider(),
+		TransientStoreProvider: mem.NewProvider(),
+		StoreProvider:          mem.NewProvider(),
 		Cookies: &operation.CookieConfig{
 			AuthKey: cookieKey(t),
 			EncKey:  cookieKey(t),

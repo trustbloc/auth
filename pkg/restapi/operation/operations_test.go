@@ -28,12 +28,12 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/hyperledger/aries-framework-go/component/storageutil/mem"
+	mockstore "github.com/hyperledger/aries-framework-go/pkg/mock/storage"
+	"github.com/hyperledger/aries-framework-go/spi/storage"
 	"github.com/ory/hydra-client-go/client/admin"
 	"github.com/ory/hydra-client-go/models"
 	"github.com/stretchr/testify/require"
-	"github.com/trustbloc/edge-core/pkg/storage"
-	"github.com/trustbloc/edge-core/pkg/storage/memstore"
-	"github.com/trustbloc/edge-core/pkg/storage/mockstore"
 	"golang.org/x/oauth2"
 
 	"github.com/trustbloc/hub-auth/pkg/bootstrap/user"
@@ -54,9 +54,9 @@ func TestNew(t *testing.T) {
 	t.Run("success, bootstrap store already exists", func(t *testing.T) {
 		config := config(t)
 
-		config.TransientStoreProvider = memstore.NewProvider()
+		config.TransientStoreProvider = mem.NewProvider()
 
-		err := config.TransientStoreProvider.CreateStore(bootstrapStoreName)
+		_, err := config.TransientStoreProvider.OpenStore(bootstrapStoreName)
 		require.NoError(t, err)
 
 		svc, err := New(config)
@@ -78,17 +78,8 @@ func TestNew(t *testing.T) {
 
 	t.Run("error if unable to open transient store", func(t *testing.T) {
 		config := config(t)
-		config.TransientStoreProvider = &mockstore.Provider{
+		config.TransientStoreProvider = &mockstore.MockStoreProvider{
 			ErrOpenStoreHandle: errors.New("test"),
-		}
-		_, err := New(config)
-		require.Error(t, err)
-	})
-
-	t.Run("error if unable to create transient store", func(t *testing.T) {
-		config := config(t)
-		config.TransientStoreProvider = &mockstore.Provider{
-			ErrCreateStore: errors.New("generic"),
 		}
 		_, err := New(config)
 		require.Error(t, err)
@@ -104,9 +95,9 @@ func TestNew(t *testing.T) {
 
 	t.Run("error if cannot open secrets store", func(t *testing.T) {
 		config := config(t)
-		config.StoreProvider = &mockstorage.Provider{
-			FailNameSpace: secretsStoreName,
-			Store:         &mockstorage.MockStore{},
+		config.StoreProvider = &mockstore.MockStoreProvider{
+			FailNamespace: secretsStoreName,
+			Store:         &mockstore.MockStore{},
 		}
 		_, err := New(config)
 		require.Error(t, err)
@@ -313,24 +304,20 @@ func TestOIDCCallbackHandler(t *testing.T) {
 		state := uuid.New().String()
 		config := config(t)
 
-		config.TransientStoreProvider = &mockstorage.Provider{
-			Stores: map[string]storage.Store{
-				transientStoreName: &mockstore.MockStore{
-					Store: map[string][]byte{
-						state: []byte(state),
-					},
+		config.TransientStoreProvider = &mockstore.MockStoreProvider{
+			Store: &mockstore.MockStore{
+				Store: map[string]mockstore.DBEntry{
+					state: {Value: []byte(state)},
 				},
 			},
 		}
 
-		config.StoreProvider = &mockstorage.Provider{
-			Stores: map[string]storage.Store{
-				bootstrapStoreName: &mockstore.MockStore{
-					Store: map[string][]byte{
-						id: {},
-					},
-					ErrGet: errors.New("generic"),
+		config.StoreProvider = &mockstore.MockStoreProvider{
+			Store: &mockstore.MockStore{
+				Store: map[string]mockstore.DBEntry{
+					id: {},
 				},
+				ErrGet: errors.New("generic"),
 			},
 		}
 
@@ -369,25 +356,21 @@ func TestOIDCCallbackHandler(t *testing.T) {
 		state := uuid.New().String()
 		config := config(t)
 
-		config.TransientStoreProvider = &mockstorage.Provider{
-			Stores: map[string]storage.Store{
-				transientStoreName: &mockstore.MockStore{
-					Store: map[string][]byte{
-						state: []byte(state),
-					},
+		config.TransientStoreProvider = &mockstore.MockStoreProvider{
+			Store: &mockstore.MockStore{
+				Store: map[string]mockstore.DBEntry{
+					state: {Value: []byte(state)},
 				},
 			},
 		}
 
-		config.StoreProvider = &mockstorage.Provider{
-			Stores: map[string]storage.Store{
-				bootstrapStoreName: &mockstore.MockStore{
-					Store: map[string][]byte{
-						id: []byte("{}"),
-					},
-					ErrGet: storage.ErrValueNotFound,
-					ErrPut: errors.New("generic"),
+		config.StoreProvider = &mockstore.MockStoreProvider{
+			Store: &mockstore.MockStore{
+				Store: map[string]mockstore.DBEntry{
+					id: {},
 				},
+				ErrGet: storage.ErrDataNotFound,
+				ErrPut: errors.New("generic"),
 			},
 		}
 
@@ -422,9 +405,9 @@ func TestOIDCCallbackHandler(t *testing.T) {
 		provider := uuid.New().String()
 		state := uuid.New().String()
 		config := config(t)
-		config.TransientStoreProvider = &mockstore.Provider{Store: &mockstore.MockStore{
-			Store: map[string][]byte{
-				state: []byte(state),
+		config.TransientStoreProvider = &mockstore.MockStoreProvider{Store: &mockstore.MockStore{
+			Store: map[string]mockstore.DBEntry{
+				state: {Value: []byte(state)},
 			},
 		}}
 		svc, err := New(config)
@@ -447,9 +430,9 @@ func TestOIDCCallbackHandler(t *testing.T) {
 		provider := uuid.New().String()
 		state := uuid.New().String()
 		config := config(t)
-		config.TransientStoreProvider = &mockstore.Provider{Store: &mockstore.MockStore{
-			Store: map[string][]byte{
-				state: []byte(state),
+		config.TransientStoreProvider = &mockstore.MockStoreProvider{Store: &mockstore.MockStore{
+			Store: map[string]mockstore.DBEntry{
+				state: {Value: []byte(state)},
 			},
 		}}
 		svc, err := New(config)
@@ -473,9 +456,9 @@ func TestOIDCCallbackHandler(t *testing.T) {
 		provider := uuid.New().String()
 		state := uuid.New().String()
 		config := config(t)
-		config.TransientStoreProvider = &mockstore.Provider{Store: &mockstore.MockStore{
-			Store: map[string][]byte{
-				state: []byte(state),
+		config.TransientStoreProvider = &mockstore.MockStoreProvider{Store: &mockstore.MockStore{
+			Store: map[string]mockstore.DBEntry{
+				state: {Value: []byte(state)},
 			},
 		}}
 		svc, err := New(config)
@@ -499,9 +482,9 @@ func TestOIDCCallbackHandler(t *testing.T) {
 		provider := uuid.New().String()
 		state := uuid.New().String()
 		config := config(t)
-		config.TransientStoreProvider = &mockstore.Provider{Store: &mockstore.MockStore{
-			Store: map[string][]byte{
-				state: []byte(state),
+		config.TransientStoreProvider = &mockstore.MockStoreProvider{Store: &mockstore.MockStore{
+			Store: map[string]mockstore.DBEntry{
+				state: {Value: []byte(state)},
 			},
 		}}
 		svc, err := New(config)
@@ -525,15 +508,13 @@ func TestOIDCCallbackHandler(t *testing.T) {
 		state := uuid.New().String()
 		config := config(t)
 
-		config.TransientStoreProvider = &mockstorage.Provider{
-			Stores: map[string]storage.Store{
-				transientStoreName: &mockstore.MockStore{
-					Store: map[string][]byte{
-						id: []byte("{}"),
-					},
-					ErrGet: storage.ErrValueNotFound,
-					ErrPut: errors.New("generic"),
+		config.TransientStoreProvider = &mockstore.MockStoreProvider{
+			Store: &mockstore.MockStore{
+				Store: map[string]mockstore.DBEntry{
+					id: {Value: []byte("{}")},
 				},
+				ErrGet: storage.ErrDataNotFound,
+				ErrPut: errors.New("generic"),
 			},
 		}
 
@@ -565,9 +546,18 @@ func TestOIDCCallbackHandler(t *testing.T) {
 			provider: &mockOIDCProvider{
 				name: provider,
 				oauth2Config: &mockOAuth2Config{
-					exchangeVal: &mockToken{oauth2Claim: uuid.New().String()},
+					exchangeVal: &mockToken{
+						oauth2Claim: uuid.New().String()},
 				},
-				verifyVal: &mockToken{},
+				verifyVal: &mockToken{
+					oidcClaimsFunc: func(v interface{}) error {
+						c, ok := v.(*oidcClaims)
+						require.True(t, ok)
+						c.Sub = uuid.New().String()
+
+						return nil
+					},
+				},
 			},
 		}
 
@@ -596,7 +586,15 @@ func TestOIDCCallbackHandler(t *testing.T) {
 				oauth2Config: &mockOAuth2Config{
 					exchangeVal: &mockToken{oauth2Claim: uuid.New().String()},
 				},
-				verifyVal: &mockToken{},
+				verifyVal: &mockToken{
+					oidcClaimsFunc: func(v interface{}) error {
+						c, ok := v.(*oidcClaims)
+						require.True(t, ok)
+						c.Sub = uuid.New().String()
+
+						return nil
+					},
+				},
 			},
 		}
 		result := httptest.NewRecorder()
@@ -622,10 +620,10 @@ func TestOperations_HydraConsentHandler(t *testing.T) {
 				RedirectTo: &redirectURL,
 			}},
 		}
-		config.StoreProvider = &mockstorage.Provider{
-			Store: &mockstorage.MockStore{
-				Store: map[string][]byte{
-					sub: marshal(t, &user.Profile{}),
+		config.StoreProvider = &mockstore.MockStoreProvider{
+			Store: &mockstore.MockStore{
+				Store: map[string]mockstore.DBEntry{
+					sub: {Value: marshal(t, &user.Profile{})},
 				},
 			},
 		}
@@ -666,8 +664,8 @@ func TestOperations_HydraConsentHandler(t *testing.T) {
 
 	t.Run("err internalservererror if cannot fetch user from store", func(t *testing.T) {
 		config := config(t)
-		config.StoreProvider = &mockstorage.Provider{
-			Store: &mockstorage.MockStore{
+		config.StoreProvider = &mockstore.MockStoreProvider{
+			Store: &mockstore.MockStore{
 				ErrGet: errors.New("test"),
 			},
 		}
@@ -691,10 +689,10 @@ func TestOperations_HydraConsentHandler(t *testing.T) {
 		challenge := uuid.New().String()
 
 		config := config(t)
-		config.StoreProvider = &mockstorage.Provider{
-			Store: &mockstorage.MockStore{
-				Store: map[string][]byte{
-					sub: marshal(t, &user.Profile{}),
+		config.StoreProvider = &mockstore.MockStoreProvider{
+			Store: &mockstore.MockStore{
+				Store: map[string]mockstore.DBEntry{
+					sub: {Value: marshal(t, &user.Profile{})},
 				},
 			},
 		}
@@ -807,10 +805,10 @@ func TestGetBootstrapDataHandler(t *testing.T) {
 				Sub: userSub,
 			}},
 		}
-		config.StoreProvider = &mockstorage.Provider{
-			Store: &mockstorage.MockStore{
-				Store: map[string][]byte{
-					userSub: marshal(t, &user.Profile{}),
+		config.StoreProvider = &mockstore.MockStoreProvider{
+			Store: &mockstore.MockStore{
+				Store: map[string]mockstore.DBEntry{
+					userSub: {Value: marshal(t, &user.Profile{})},
 				},
 				ErrGet: errors.New("generic"),
 			},
@@ -842,13 +840,13 @@ func TestPostBootstrapDataHandler(t *testing.T) {
 				Sub: expected.ID,
 			}},
 		}
-		config.StoreProvider = &mockstorage.Provider{
-			Store: &mockstorage.MockStore{
-				Store: map[string][]byte{
-					expected.ID: marshal(t, &user.Profile{
+		config.StoreProvider = &mockstore.MockStoreProvider{
+			Store: &mockstore.MockStore{
+				Store: map[string]mockstore.DBEntry{
+					expected.ID: {Value: marshal(t, &user.Profile{
 						ID:     expected.ID,
 						AAGUID: expected.AAGUID,
-					}),
+					})},
 				},
 			},
 		}
@@ -902,10 +900,10 @@ func TestPostBootstrapDataHandler(t *testing.T) {
 	t.Run("internal server error on generic FETCH bootstrap store error", func(t *testing.T) {
 		userSub := uuid.New().String()
 		config := config(t)
-		config.StoreProvider = &mockstorage.Provider{
-			Store: &mockstorage.MockStore{
-				Store: map[string][]byte{
-					userSub: nil,
+		config.StoreProvider = &mockstore.MockStoreProvider{
+			Store: &mockstore.MockStore{
+				Store: map[string]mockstore.DBEntry{
+					userSub: {Value: nil},
 				},
 				ErrGet: errors.New("generic"),
 			},
@@ -926,10 +924,10 @@ func TestPostBootstrapDataHandler(t *testing.T) {
 	t.Run("internal server error if cannot persist update to bootstrap store", func(t *testing.T) {
 		userSub := uuid.New().String()
 		config := config(t)
-		config.StoreProvider = &mockstorage.Provider{
-			Store: &mockstorage.MockStore{
-				Store: map[string][]byte{
-					userSub: marshal(t, &user.Profile{}),
+		config.StoreProvider = &mockstore.MockStoreProvider{
+			Store: &mockstore.MockStore{
+				Store: map[string]mockstore.DBEntry{
+					userSub: {Value: marshal(t, &user.Profile{})},
 				},
 				ErrPut: errors.New("generic"),
 			},
@@ -981,10 +979,10 @@ func TestOperation_DeviceCertHandler(t *testing.T) {
 		config := config(t)
 
 		handle := uuid.New().String()
-		config.StoreProvider = &mockstorage.Provider{
-			Store: &mockstorage.MockStore{
-				Store: map[string][]byte{
-					handle: marshal(t, &user.Profile{}),
+		config.StoreProvider = &mockstore.MockStoreProvider{
+			Store: &mockstore.MockStore{
+				Store: map[string]mockstore.DBEntry{
+					handle: {Value: marshal(t, &user.Profile{})},
 				},
 			},
 		}
@@ -1029,10 +1027,10 @@ func TestOperation_DeviceCertHandler(t *testing.T) {
 	t.Run("can't load profile from store", func(t *testing.T) {
 		config := config(t)
 		handle := uuid.New().String()
-		config.StoreProvider = &mockstorage.Provider{
-			Store: &mockstorage.MockStore{
-				Store: map[string][]byte{
-					handle: marshal(t, &user.Profile{}),
+		config.StoreProvider = &mockstore.MockStoreProvider{
+			Store: &mockstore.MockStore{
+				Store: map[string]mockstore.DBEntry{
+					handle: {Value: marshal(t, &user.Profile{})},
 				},
 				ErrGet: errors.New("get error"),
 			},
@@ -1058,10 +1056,10 @@ func TestOperation_DeviceCertHandler(t *testing.T) {
 	t.Run("invalid cert PEM", func(t *testing.T) {
 		config := config(t)
 		handle := uuid.New().String()
-		config.StoreProvider = &mockstorage.Provider{
-			Store: &mockstorage.MockStore{
-				Store: map[string][]byte{
-					handle: marshal(t, &user.Profile{}),
+		config.StoreProvider = &mockstore.MockStoreProvider{
+			Store: &mockstore.MockStore{
+				Store: map[string]mockstore.DBEntry{
+					handle: {Value: marshal(t, &user.Profile{})},
 				},
 			},
 		}
@@ -1086,10 +1084,10 @@ func TestOperation_DeviceCertHandler(t *testing.T) {
 	t.Run("PEM does not encode a certificate", func(t *testing.T) {
 		config := config(t)
 		handle := uuid.New().String()
-		config.StoreProvider = &mockstorage.Provider{
-			Store: &mockstorage.MockStore{
-				Store: map[string][]byte{
-					handle: marshal(t, &user.Profile{}),
+		config.StoreProvider = &mockstore.MockStoreProvider{
+			Store: &mockstore.MockStore{
+				Store: map[string]mockstore.DBEntry{
+					handle: {Value: marshal(t, &user.Profile{})},
 				},
 			},
 		}
@@ -1119,10 +1117,10 @@ func TestOperation_DeviceCertHandler(t *testing.T) {
 	t.Run("cert is not signed by chain from root CAs", func(t *testing.T) {
 		config := config(t)
 		handle := uuid.New().String()
-		config.StoreProvider = &mockstorage.Provider{
-			Store: &mockstorage.MockStore{
-				Store: map[string][]byte{
-					handle: marshal(t, &user.Profile{}),
+		config.StoreProvider = &mockstore.MockStoreProvider{
+			Store: &mockstore.MockStore{
+				Store: map[string]mockstore.DBEntry{
+					handle: {Value: marshal(t, &user.Profile{})},
 				},
 			},
 		}
@@ -1149,10 +1147,10 @@ func TestOperation_DeviceCertHandler(t *testing.T) {
 	t.Run("success - device cert is a root cert", func(t *testing.T) {
 		config := config(t)
 		handle := uuid.New().String()
-		config.StoreProvider = &mockstorage.Provider{
-			Store: &mockstorage.MockStore{
-				Store: map[string][]byte{
-					handle: marshal(t, &user.Profile{}),
+		config.StoreProvider = &mockstore.MockStoreProvider{
+			Store: &mockstore.MockStore{
+				Store: map[string]mockstore.DBEntry{
+					handle: {Value: marshal(t, &user.Profile{})},
 				},
 			},
 		}
@@ -1184,10 +1182,10 @@ func TestOperation_DeviceCertHandler(t *testing.T) {
 	t.Run("success - device cert is signed by root cert", func(t *testing.T) {
 		config := config(t)
 		handle := uuid.New().String()
-		config.StoreProvider = &mockstorage.Provider{
-			Store: &mockstorage.MockStore{
-				Store: map[string][]byte{
-					handle: marshal(t, &user.Profile{}),
+		config.StoreProvider = &mockstore.MockStoreProvider{
+			Store: &mockstore.MockStore{
+				Store: map[string]mockstore.DBEntry{
+					handle: {Value: marshal(t, &user.Profile{})},
 				},
 			},
 		}
@@ -1221,10 +1219,10 @@ func TestOperation_DeviceCertHandler(t *testing.T) {
 	t.Run("success - device cert is signed by a rooted certificate chain", func(t *testing.T) {
 		config := config(t)
 		handle := uuid.New().String()
-		config.StoreProvider = &mockstorage.Provider{
-			Store: &mockstorage.MockStore{
-				Store: map[string][]byte{
-					handle: marshal(t, &user.Profile{}),
+		config.StoreProvider = &mockstore.MockStoreProvider{
+			Store: &mockstore.MockStore{
+				Store: map[string]mockstore.DBEntry{
+					handle: {Value: marshal(t, &user.Profile{})},
 				},
 			},
 		}
@@ -1697,8 +1695,8 @@ func config(t *testing.T) *Config {
 				},
 			},
 		},
-		TransientStoreProvider: memstore.NewProvider(),
-		StoreProvider:          memstore.NewProvider(),
+		TransientStoreProvider: mem.NewProvider(),
+		StoreProvider:          mem.NewProvider(),
 		BootstrapConfig: &BootstrapConfig{
 			DocumentSDSVaultURL: "http://docs.sds.example.org/sds/vaults",
 			KeySDSVaultURL:      "http://keys.sds.example.org/sds/vaults/",

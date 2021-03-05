@@ -12,8 +12,8 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
+	mockstore "github.com/hyperledger/aries-framework-go/pkg/mock/storage"
 	"github.com/stretchr/testify/require"
-	"github.com/trustbloc/edge-core/pkg/storage/mockstore"
 )
 
 func TestNewStore(t *testing.T) {
@@ -33,13 +33,13 @@ func TestSave(t *testing.T) {
 		}
 
 		store := &mockstore.MockStore{
-			Store: make(map[string][]byte),
+			Store: make(map[string]mockstore.DBEntry),
 		}
 
 		err := NewStore(store).Save(expected)
 		require.NoError(t, err)
 		result := &Profile{}
-		err = json.Unmarshal(store.Store[expected.ID], result)
+		err = json.Unmarshal(store.Store[expected.ID].Value, result)
 		require.NoError(t, err)
 		require.Equal(t, expected, result)
 	})
@@ -47,7 +47,7 @@ func TestSave(t *testing.T) {
 	t.Run("wraps store error", func(t *testing.T) {
 		expected := errors.New("test")
 		store := &mockstore.MockStore{
-			Store:  make(map[string][]byte),
+			Store:  make(map[string]mockstore.DBEntry),
 			ErrPut: expected,
 		}
 		err := NewStore(store).Save(&Profile{ID: "test"})
@@ -66,8 +66,8 @@ func TestGet(t *testing.T) {
 			},
 		}
 		store := &mockstore.MockStore{
-			Store: map[string][]byte{
-				expected.ID: toBytes(t, expected),
+			Store: map[string]mockstore.DBEntry{
+				expected.ID: {Value: toBytes(t, expected)},
 			},
 		}
 		result, err := NewStore(store).Get(expected.ID)
@@ -78,7 +78,7 @@ func TestGet(t *testing.T) {
 	t.Run("wraps store error", func(t *testing.T) {
 		expected := errors.New("test")
 		store := &mockstore.MockStore{
-			Store: map[string][]byte{
+			Store: map[string]mockstore.DBEntry{
 				"test": {},
 			},
 			ErrGet: expected,
