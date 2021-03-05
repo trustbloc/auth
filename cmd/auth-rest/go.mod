@@ -10,8 +10,8 @@ require (
 	github.com/cenkalti/backoff v2.2.1+incompatible
 	github.com/google/uuid v1.2.0
 	github.com/gorilla/mux v1.7.4
-	github.com/hyperledger/aries-framework-go-ext/component/storage/couchdb v0.0.0-20210303194824-a55a12f8d063
-	github.com/hyperledger/aries-framework-go-ext/component/storage/mysql v0.0.0-20210303194824-a55a12f8d063
+	github.com/hyperledger/aries-framework-go-ext/component/storage/couchdb v0.0.0-20210305211919-90001416b848
+	github.com/hyperledger/aries-framework-go-ext/component/storage/mysql v0.0.0-20210305211919-90001416b848
 	github.com/hyperledger/aries-framework-go/component/storageutil v0.0.0-20210305161732-29081cf55c77
 	github.com/hyperledger/aries-framework-go/spi v0.0.0-20210305165454-c65334e35380
 	github.com/rs/cors v1.7.0

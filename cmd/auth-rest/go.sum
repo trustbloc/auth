@@ -595,10 +595,10 @@ github.com/huaweicloud/golangsdk v0.0.0-20200304081349-45ec0797f2a4/go.mod h1:WQ
 github.com/hyperledger/aries-framework-go v0.1.6-0.20210304143139-eb97711ddc73/go.mod h1:uzv9LEnmNwl+3KDTns5H9hoa31dpKdZeEDijoRQQDpM=
 github.com/hyperledger/aries-framework-go v0.1.6-0.20210305165454-c65334e35380 h1:ncoe8b1+5F8TwRgwKwRj2JLCkLcaGJCNTgoogMiIXZ0=
 github.com/hyperledger/aries-framework-go v0.1.6-0.20210305165454-c65334e35380/go.mod h1:9y5nXHe7XLoyah/VdnC9hYqo3nDisnbGNq17CE69Az0=
-github.com/hyperledger/aries-framework-go-ext/component/storage/couchdb v0.0.0-20210303194824-a55a12f8d063 h1:BqEJdiMelF9YPirtpyxXIYWUiB4rdGHJQgZuOs7DVQ4=
-github.com/hyperledger/aries-framework-go-ext/component/storage/couchdb v0.0.0-20210303194824-a55a12f8d063/go.mod h1:dsFkir18bkgNh9Ch4MtNaWPrll4uf8Qy7Y9YHmk7FoM=
-github.com/hyperledger/aries-framework-go-ext/component/storage/mysql v0.0.0-20210303194824-a55a12f8d063 h1:cOWhWKd1m1NVn7NjDdrdFuQYz87NiG0hDhOSpyQFD2E=
-github.com/hyperledger/aries-framework-go-ext/component/storage/mysql v0.0.0-20210303194824-a55a12f8d063/go.mod h1:g4w+9JdQXlR9DK1HUIhig3SteJBuMY5Zt310q5gYans=
+github.com/hyperledger/aries-framework-go-ext/component/storage/couchdb v0.0.0-20210305211919-90001416b848 h1:ma1LlOoz4v91czSTmR1Z4JFKC/OA7nTrqgxRhAjMQmI=
+github.com/hyperledger/aries-framework-go-ext/component/storage/couchdb v0.0.0-20210305211919-90001416b848/go.mod h1:dsFkir18bkgNh9Ch4MtNaWPrll4uf8Qy7Y9YHmk7FoM=
+github.com/hyperledger/aries-framework-go-ext/component/storage/mysql v0.0.0-20210305211919-90001416b848 h1:bpxvIB5TE1hq1UUV/QGmgPDuJAAUQ0pD2SmYcj4Sz0o=
+github.com/hyperledger/aries-framework-go-ext/component/storage/mysql v0.0.0-20210305211919-90001416b848/go.mod h1:g4w+9JdQXlR9DK1HUIhig3SteJBuMY5Zt310q5gYans=
 github.com/hyperledger/aries-framework-go/component/storageutil v0.0.0-20210224230531-58e1368e5661/go.mod h1:XaPVDJcbQT8BKmThfQdWPc+hgicHFAQzSOavHw2gn/4=
 github.com/hyperledger/aries-framework-go/component/storageutil v0.0.0-20210305161732-29081cf55c77 h1:4InoCYnAcDkh7KtEHta3vE6g067OD30WR9rDv5MWjpc=
 github.com/hyperledger/aries-framework-go/component/storageutil v0.0.0-20210305161732-29081cf55c77/go.mod h1:zOolL2VqWj6+SPe13nrK0oo5QUOfQZQKB0j1iQsje0k=
