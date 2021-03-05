@@ -23,10 +23,10 @@ import (
 	"github.com/cenkalti/backoff"
 	"github.com/coreos/go-oidc"
 	"github.com/google/uuid"
+	"github.com/hyperledger/aries-framework-go/spi/storage"
 	"github.com/ory/hydra-client-go/client/admin"
 	"github.com/ory/hydra-client-go/models"
 	"github.com/trustbloc/edge-core/pkg/log"
-	"github.com/trustbloc/edge-core/pkg/storage"
 	tlsutils "github.com/trustbloc/edge-core/pkg/utils/tls"
 	"golang.org/x/oauth2"
 
@@ -361,7 +361,7 @@ func (o *Operation) oidcCallbackHandler(w http.ResponseWriter, r *http.Request) 
 	}
 
 	_, err = user.NewStore(o.bootstrapStore).Get(claims.Sub)
-	if errors.Is(err, storage.ErrValueNotFound) {
+	if errors.Is(err, storage.ErrDataNotFound) {
 		_, err = o.onboardUser(claims.Sub)
 		if err != nil {
 			o.writeErrorResponse(w, http.StatusInternalServerError, fmt.Sprintf("failed to onboard new user : %s", err))
@@ -487,7 +487,7 @@ func (o *Operation) getBootstrapDataHandler(w http.ResponseWriter, r *http.Reque
 	}
 
 	profile, err := user.NewStore(o.bootstrapStore).Get(subject)
-	if errors.Is(err, storage.ErrValueNotFound) {
+	if errors.Is(err, storage.ErrDataNotFound) {
 		o.writeErrorResponse(w, http.StatusBadRequest, "invalid handle")
 
 		return
@@ -541,7 +541,7 @@ func (o *Operation) postBootstrapDataHandler(w http.ResponseWriter, r *http.Requ
 	}
 
 	existing, err := user.NewStore(o.bootstrapStore).Get(subject)
-	if errors.Is(err, storage.ErrValueNotFound) {
+	if errors.Is(err, storage.ErrDataNotFound) {
 		o.writeErrorResponse(w, http.StatusConflict, "associated bootstrap data not found")
 
 		return
@@ -573,7 +573,7 @@ func (o *Operation) postSecretHandler(w http.ResponseWriter, r *http.Request) {
 
 	// ensure user exists
 	_, err := user.NewStore(o.bootstrapStore).Get(subject)
-	if errors.Is(err, storage.ErrValueNotFound) {
+	if errors.Is(err, storage.ErrDataNotFound) {
 		o.writeErrorResponse(w, http.StatusConflict, "no such user")
 
 		return
@@ -593,7 +593,7 @@ func (o *Operation) postSecretHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !errors.Is(err, storage.ErrValueNotFound) {
+	if !errors.Is(err, storage.ErrDataNotFound) {
 		o.writeErrorResponse(w, http.StatusInternalServerError, "failed to query secrets store: %s", err.Error())
 
 		return
@@ -640,7 +640,7 @@ func (o *Operation) getSecretHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	secret, err := o.secretsStore.Get(sub)
-	if errors.Is(err, storage.ErrValueNotFound) {
+	if errors.Is(err, storage.ErrDataNotFound) {
 		o.writeErrorResponse(w, http.StatusBadRequest, "non-existent user")
 
 		return
@@ -689,7 +689,7 @@ func (o *Operation) deviceCertHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	userProfile, err := user.NewStore(o.bootstrapStore).Get(ch.Sub)
-	if errors.Is(err, storage.ErrValueNotFound) {
+	if errors.Is(err, storage.ErrDataNotFound) {
 		o.writeErrorResponse(w, http.StatusBadRequest, "invalid user profile id")
 		return
 	} else if err != nil {
@@ -833,27 +833,21 @@ func (o *Operation) bearerToken(w http.ResponseWriter, r *http.Request) (string,
 }
 
 func createStore(p storage.Provider) (storage.Store, error) {
-	err := p.CreateStore(transientStoreName)
-	if err != nil && !errors.Is(err, storage.ErrDuplicateStore) {
-		return nil, fmt.Errorf("failed to create store [%s] : %w", transientStoreName, err)
+	s, err := p.OpenStore(transientStoreName)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open store [%s] : %w", transientStoreName, err)
 	}
 
-	return p.OpenStore(transientStoreName)
+	return s, nil
 }
 
 func openStore(provider storage.Provider, name string) (storage.Store, error) {
-	err := provider.CreateStore(name)
-	if err == nil {
-		logger.Infof(fmt.Sprintf("Created %s store.", name))
-	} else {
-		if !errors.Is(err, storage.ErrDuplicateStore) {
-			return nil, err
-		}
-
-		logger.Infof(fmt.Sprintf("%s store already exists. Skipping creation.", name))
+	s, err := provider.OpenStore(name)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open store [%s] : %w", transientStoreName, err)
 	}
 
-	return provider.OpenStore(name)
+	return s, nil
 }
 
 func initOIDCProviders(config *Config) (map[string]oidcProvider, error) {
