@@ -10,14 +10,14 @@ require (
 	github.com/cenkalti/backoff v2.2.1+incompatible
 	github.com/google/uuid v1.2.0
 	github.com/gorilla/mux v1.7.4
-	github.com/hyperledger/aries-framework-go-ext/component/storage/couchdb v0.0.0-20210305233053-d3d22c802c12
-	github.com/hyperledger/aries-framework-go-ext/component/storage/mysql v0.0.0-20210305233053-d3d22c802c12
-	github.com/hyperledger/aries-framework-go/component/storageutil v0.0.0-20210305161732-29081cf55c77
-	github.com/hyperledger/aries-framework-go/spi v0.0.0-20210305165454-c65334e35380
+	github.com/hyperledger/aries-framework-go-ext/component/storage/couchdb v0.0.0-20210306170115-156a24580a5c
+	github.com/hyperledger/aries-framework-go-ext/component/storage/mysql v0.0.0-20210306170115-156a24580a5c
+	github.com/hyperledger/aries-framework-go/component/storageutil v0.0.0-20210306162754-1a1e0c4a378e
+	github.com/hyperledger/aries-framework-go/spi v0.0.0-20210306162754-1a1e0c4a378e
 	github.com/rs/cors v1.7.0
 	github.com/spf13/cobra v0.0.6
 	github.com/stretchr/testify v1.7.0
-	github.com/trustbloc/edge-core v0.1.6-0.20210305000733-14a89fe44ae8
+	github.com/trustbloc/edge-core v0.1.6
 	github.com/trustbloc/hub-auth v0.0.0-00010101000000-000000000000
 	golang.org/x/net v0.0.0-20210226172049-e18ecbb05110 // indirect
 	gopkg.in/yaml.v2 v2.3.0
