@@ -28,7 +28,7 @@ type mockServer struct {
 	err error
 }
 
-func (s *mockServer) ListenAndServeTLS(host, certFile, keyFile string, handler http.Handler) error {
+func (s *mockServer) ListenAndServe(host, certFile, keyFile string, handler http.Handler) error {
 	return s.err
 }
 

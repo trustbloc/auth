@@ -196,14 +196,18 @@ type healthCheckResp struct {
 }
 
 type server interface {
-	ListenAndServeTLS(host, certFile, keyFile string, router http.Handler) error
+	ListenAndServe(host string, certFile, keyFile string, router http.Handler) error
 }
 
 // HTTPServer represents an actual HTTP server implementation.
 type HTTPServer struct{}
 
-// ListenAndServeTLS starts the server using the standard Go HTTP server implementation.
-func (s *HTTPServer) ListenAndServeTLS(host, certFile, keyFile string, router http.Handler) error {
+// ListenAndServe starts the server using the standard Go HTTP server implementation.
+func (s *HTTPServer) ListenAndServe(host, certFile, keyFile string, router http.Handler) error {
+	if certFile == "" || keyFile == "" {
+		return http.ListenAndServe(host, router)
+	}
+
 	return http.ListenAndServeTLS(host, certFile, keyFile, router)
 }
 
@@ -461,7 +465,7 @@ Database prefix: %s`, parameters.hostURL, parameters.databaseType, parameters.da
 		Methods(http.MethodGet).
 		HandlerFunc(uiHandler(parameters.staticFiles, http.ServeFile))
 
-	return srv.ListenAndServeTLS(
+	return srv.ListenAndServe(
 		parameters.hostURL,
 		parameters.tlsParams.serveCertPath,
 		parameters.tlsParams.serveKeyPath,
