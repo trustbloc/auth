@@ -65,17 +65,6 @@ func TestNew(t *testing.T) {
 		require.NotEmpty(t, svc.GetRESTHandlers())
 	})
 
-	t.Run("error if oidc provider is invalid", func(t *testing.T) {
-		config := config(t)
-		config.OIDC.Providers = map[string]OIDCProviderConfig{
-			"test": {
-				URL: "INVALID",
-			},
-		}
-		_, err := New(config)
-		require.Error(t, err)
-	})
-
 	t.Run("error if unable to open transient store", func(t *testing.T) {
 		config := config(t)
 		config.TransientStoreProvider = &mockstore.MockStoreProvider{
@@ -112,7 +101,7 @@ func TestOIDCLoginHandler(t *testing.T) {
 		svc, err := New(config)
 		require.NoError(t, err)
 		svc.cookies = mockCookies()
-		svc.oidcProviders = map[string]oidcProvider{
+		svc.cachedOIDCProviders = map[string]oidcProvider{
 			provider: &mockOIDCProvider{},
 		}
 		w := httptest.NewRecorder()
@@ -147,7 +136,7 @@ func TestOIDCLoginHandler(t *testing.T) {
 		result := httptest.NewRecorder()
 		svc.oidcLoginHandler(result, newOIDCLoginRequest("unsupported"))
 		require.Equal(t, http.StatusBadRequest, result.Code)
-		require.Contains(t, result.Body.String(), "unsupported provider")
+		require.Contains(t, result.Body.String(), "provider not supported")
 	})
 
 	t.Run("internal server error if cannot save cookies", func(t *testing.T) {
@@ -160,13 +149,31 @@ func TestOIDCLoginHandler(t *testing.T) {
 				SaveErr: errors.New("test"),
 			},
 		}
-		svc.oidcProviders = map[string]oidcProvider{
+		svc.cachedOIDCProviders = map[string]oidcProvider{
 			provider: &mockOIDCProvider{},
 		}
 		w := httptest.NewRecorder()
 		svc.oidcLoginHandler(w, newOIDCLoginRequest(provider))
 		require.Equal(t, http.StatusInternalServerError, w.Code)
 		require.Contains(t, w.Body.String(), "failed to persist session cookies")
+	})
+
+	t.Run("error if oidc provider is invalid", func(t *testing.T) {
+		config := config(t)
+		config.OIDC.Providers = map[string]OIDCProviderConfig{
+			"test": {
+				URL: "INVALID",
+			},
+		}
+
+		svc, err := New(config)
+		require.NoError(t, err)
+		svc.cookies = mockCookies()
+
+		w := httptest.NewRecorder()
+		svc.oidcLoginHandler(w, newOIDCLoginRequest("test"))
+		require.Equal(t, http.StatusBadRequest, w.Code)
+		require.Contains(t, w.Body.String(), "failed to init oidc providers")
 	})
 }
 
@@ -190,7 +197,7 @@ func TestOIDCCallbackHandler(t *testing.T) {
 		require.NoError(t, err)
 
 		o.cookies = mockCookies(withState(state), withHydraLoginChallenge(hydraChallenge), withProvider(provider))
-		o.oidcProviders = map[string]oidcProvider{
+		o.cachedOIDCProviders = map[string]oidcProvider{
 			provider: &mockOIDCProvider{
 				name: provider,
 				oauth2Config: &mockOAuth2Config{
@@ -325,7 +332,7 @@ func TestOIDCCallbackHandler(t *testing.T) {
 		require.NoError(t, err)
 
 		svc.cookies = mockCookies(withState(state), withHydraLoginChallenge("challenge"), withProvider(provider))
-		svc.oidcProviders = map[string]oidcProvider{
+		svc.cachedOIDCProviders = map[string]oidcProvider{
 			provider: &mockOIDCProvider{
 				name: provider,
 				oauth2Config: &mockOAuth2Config{
@@ -378,7 +385,7 @@ func TestOIDCCallbackHandler(t *testing.T) {
 		require.NoError(t, err)
 
 		svc.cookies = mockCookies(withState(state), withHydraLoginChallenge("challenge"), withProvider(provider))
-		svc.oidcProviders = map[string]oidcProvider{
+		svc.cachedOIDCProviders = map[string]oidcProvider{
 			provider: &mockOIDCProvider{
 				name: provider,
 				oauth2Config: &mockOAuth2Config{exchangeVal: &mockToken{
@@ -413,7 +420,7 @@ func TestOIDCCallbackHandler(t *testing.T) {
 		svc, err := New(config)
 		require.NoError(t, err)
 		svc.cookies = mockCookies(withState(state), withHydraLoginChallenge("challenge"), withProvider(provider))
-		svc.oidcProviders = map[string]oidcProvider{
+		svc.cachedOIDCProviders = map[string]oidcProvider{
 			provider: &mockOIDCProvider{
 				oauth2Config: &mockOAuth2Config{
 					exchangeErr: errors.New("test"),
@@ -438,7 +445,7 @@ func TestOIDCCallbackHandler(t *testing.T) {
 		svc, err := New(config)
 		require.NoError(t, err)
 		svc.cookies = mockCookies(withState(state), withHydraLoginChallenge("challenge"), withProvider(provider))
-		svc.oidcProviders = map[string]oidcProvider{
+		svc.cachedOIDCProviders = map[string]oidcProvider{
 			provider: &mockOIDCProvider{
 				name: provider,
 				oauth2Config: &mockOAuth2Config{
@@ -464,7 +471,7 @@ func TestOIDCCallbackHandler(t *testing.T) {
 		svc, err := New(config)
 		require.NoError(t, err)
 		svc.cookies = mockCookies(withState(state), withHydraLoginChallenge("challenge"), withProvider(provider))
-		svc.oidcProviders = map[string]oidcProvider{
+		svc.cachedOIDCProviders = map[string]oidcProvider{
 			provider: &mockOIDCProvider{
 				name: provider,
 				oauth2Config: &mockOAuth2Config{
@@ -490,7 +497,7 @@ func TestOIDCCallbackHandler(t *testing.T) {
 		svc, err := New(config)
 		require.NoError(t, err)
 		svc.cookies = mockCookies(withState(state), withHydraLoginChallenge("challenge"), withProvider(provider))
-		svc.oidcProviders = map[string]oidcProvider{
+		svc.cachedOIDCProviders = map[string]oidcProvider{
 			provider: &mockOIDCProvider{
 				name: provider,
 				oauth2Config: &mockOAuth2Config{
@@ -542,7 +549,7 @@ func TestOIDCCallbackHandler(t *testing.T) {
 		require.NoError(t, err)
 
 		o.cookies = mockCookies(withState(state), withHydraLoginChallenge(hydraChallenge), withProvider(provider))
-		o.oidcProviders = map[string]oidcProvider{
+		o.cachedOIDCProviders = map[string]oidcProvider{
 			provider: &mockOIDCProvider{
 				name: provider,
 				oauth2Config: &mockOAuth2Config{
@@ -581,7 +588,7 @@ func TestOIDCCallbackHandler(t *testing.T) {
 				SaveErr: errors.New("test"),
 			},
 		}
-		svc.oidcProviders = map[string]oidcProvider{
+		svc.cachedOIDCProviders = map[string]oidcProvider{
 			provider: &mockOIDCProvider{
 				oauth2Config: &mockOAuth2Config{
 					exchangeVal: &mockToken{oauth2Claim: uuid.New().String()},

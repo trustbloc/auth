@@ -18,6 +18,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/cenkalti/backoff"
@@ -62,18 +63,23 @@ var logger = log.New("hub-auth-restapi")
 
 // Operation defines handlers.
 type Operation struct {
-	client          httpClient
-	requestTokens   map[string]string
-	transientStore  storage.Store
-	oidcProviders   map[string]oidcProvider
-	uiEndpoint      string
-	bootstrapStore  storage.Store
-	secretsStore    storage.Store
-	bootstrapConfig *BootstrapConfig
-	hydra           Hydra
-	deviceRootCerts *x509.CertPool
-	cookies         cookie.Store
-	secretsToken    string
+	client              httpClient
+	requestTokens       map[string]string
+	transientStore      storage.Store
+	oidcProvidersConfig map[string]OIDCProviderConfig
+	cachedOIDCProviders map[string]oidcProvider
+	uiEndpoint          string
+	bootstrapStore      storage.Store
+	secretsStore        storage.Store
+	bootstrapConfig     *BootstrapConfig
+	hydra               Hydra
+	deviceRootCerts     *x509.CertPool
+	cookies             cookie.Store
+	secretsToken        string
+	tlsConfig           *tls.Config
+	callbackURL         string
+	timeout             uint64
+	cachedOIDCProvLock  sync.RWMutex
 }
 
 // Config defines configuration for rp operations.
@@ -123,21 +129,21 @@ type BootstrapConfig struct {
 // New returns rp operation instance.
 func New(config *Config) (*Operation, error) {
 	svc := &Operation{
-		client:          &http.Client{Transport: &http.Transport{TLSClientConfig: config.TLSConfig}},
-		requestTokens:   config.RequestTokens,
-		bootstrapConfig: config.BootstrapConfig,
-		hydra:           config.Hydra,
-		uiEndpoint:      config.UIEndpoint,
-		cookies:         cookie.NewStore(config.Cookies.AuthKey, config.Cookies.EncKey),
-		secretsToken:    config.SecretsToken,
+		client:              &http.Client{Transport: &http.Transport{TLSClientConfig: config.TLSConfig}},
+		requestTokens:       config.RequestTokens,
+		bootstrapConfig:     config.BootstrapConfig,
+		hydra:               config.Hydra,
+		uiEndpoint:          config.UIEndpoint,
+		cookies:             cookie.NewStore(config.Cookies.AuthKey, config.Cookies.EncKey),
+		secretsToken:        config.SecretsToken,
+		oidcProvidersConfig: config.OIDC.Providers,
+		tlsConfig:           config.TLSConfig,
+		callbackURL:         config.OIDC.CallbackURL,
+		cachedOIDCProviders: make(map[string]oidcProvider),
+		timeout:             config.StartupTimeout,
 	}
 
 	var err error
-
-	svc.oidcProviders, err = initOIDCProviders(config)
-	if err != nil {
-		return nil, fmt.Errorf("failed to init oidc providers: %w", err)
-	}
 
 	svc.transientStore, err = createStore(config.TransientStoreProvider)
 	if err != nil {
@@ -235,9 +241,9 @@ func (o *Operation) oidcLoginHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	provider, supported := o.oidcProviders[providerID]
-	if !supported {
-		o.writeErrorResponse(w, http.StatusBadRequest, "unsupported provider: %s", providerID)
+	provider, err := o.getProvider(providerID)
+	if err != nil {
+		o.writeErrorResponse(w, http.StatusBadRequest, "get provider: %s", err.Error())
 
 		return
 	}
@@ -321,9 +327,9 @@ func (o *Operation) oidcCallbackHandler(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	provider, supported := o.oidcProviders[fmt.Sprintf("%s", cookieProvider)]
-	if !supported {
-		o.writeErrorResponse(w, http.StatusBadRequest, "provider not supported: %+v", cookieProvider)
+	provider, err := o.getProvider(fmt.Sprintf("%s", cookieProvider))
+	if err != nil {
+		o.writeErrorResponse(w, http.StatusBadRequest, "get provider : %s", err.Error())
 
 		return
 	}
@@ -832,6 +838,32 @@ func (o *Operation) bearerToken(w http.ResponseWriter, r *http.Request) (string,
 	return string(token), true
 }
 
+func (o *Operation) getProvider(providerID string) (oidcProvider, error) {
+	o.cachedOIDCProvLock.RLock()
+	prov, ok := o.cachedOIDCProviders[providerID]
+	o.cachedOIDCProvLock.RUnlock()
+
+	if ok {
+		return prov, nil
+	}
+
+	provider, ok := o.oidcProvidersConfig[providerID]
+	if !ok {
+		return nil, fmt.Errorf("provider not supported: %s", providerID)
+	}
+
+	prov, err := o.initOIDCProvider(providerID, &provider)
+	if err != nil {
+		return nil, fmt.Errorf("failed to init oidc providers: %w", err)
+	}
+
+	o.cachedOIDCProvLock.Lock()
+	o.cachedOIDCProviders[providerID] = prov
+	o.cachedOIDCProvLock.Unlock()
+
+	return prov, nil
+}
+
 func createStore(p storage.Provider) (storage.Store, error) {
 	s, err := p.OpenStore(transientStoreName)
 	if err != nil {
@@ -850,55 +882,46 @@ func openStore(provider storage.Provider, name string) (storage.Store, error) {
 	return s, nil
 }
 
-func initOIDCProviders(config *Config) (map[string]oidcProvider, error) {
-	providers := make(map[string]oidcProvider, len(config.OIDC.Providers))
+func (o *Operation) initOIDCProvider(providerID string, config *OIDCProviderConfig) (oidcProvider, error) {
+	var idp *oidc.Provider
 
-	for name, idpConfig := range config.OIDC.Providers {
-		name := name
-		idpConfig := idpConfig
+	err := backoff.RetryNotify(
+		func() error {
+			var idpErr error
 
-		var idp *oidc.Provider
+			idp, idpErr = oidc.NewProvider(
+				oidc.ClientContext(
+					context.Background(),
+					&http.Client{
+						Transport: &http.Transport{TLSClientConfig: o.tlsConfig},
+					},
+				),
+				config.URL,
+			)
 
-		err := backoff.RetryNotify(
-			func() error {
-				var idpErr error
-
-				idp, idpErr = oidc.NewProvider(
-					oidc.ClientContext(
-						context.Background(),
-						&http.Client{
-							Transport: &http.Transport{TLSClientConfig: config.TLSConfig},
-						},
-					),
-					idpConfig.URL,
-				)
-
-				return idpErr
-			},
-			backoff.WithMaxRetries(backoff.NewConstantBackOff(time.Second), config.StartupTimeout),
-			func(retryErr error, t time.Duration) {
-				logger.Warnf(
-					"failed to connect to the [%s] OIDC provider, will sleep for %s before trying again : %s",
-					name, t, retryErr)
-			},
-		)
-		if err != nil {
-			return nil, fmt.Errorf("failed to init oidc provider [%s] with url [%s]: %w", name, idpConfig.URL, err)
-		}
-
-		providers[name] = &oidcProviderImpl{
-			name:         name,
-			clientID:     idpConfig.ClientID,
-			clientSecret: idpConfig.ClientSecret,
-			callback:     config.OIDC.CallbackURL,
-			op:           idp,
-			httpClient: &http.Client{Transport: &http.Transport{
-				TLSClientConfig: config.TLSConfig,
-			}},
-		}
+			return idpErr
+		},
+		backoff.WithMaxRetries(backoff.NewConstantBackOff(time.Second), o.timeout),
+		func(retryErr error, t time.Duration) {
+			logger.Warnf(
+				"failed to connect to the [%s] OIDC provider, will sleep for %s before trying again : %s",
+				providerID, t, retryErr)
+		},
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to init oidc provider [%s] with url [%s]: %w", providerID, config.URL, err)
 	}
 
-	return providers, nil
+	return &oidcProviderImpl{
+		name:         providerID,
+		clientID:     config.ClientID,
+		clientSecret: config.ClientSecret,
+		callback:     o.callbackURL,
+		op:           idp,
+		httpClient: &http.Client{Transport: &http.Transport{
+			TLSClientConfig: o.tlsConfig,
+		}},
+	}, nil
 }
 
 func merge(existing *user.Profile, update *UpdateBootstrapDataRequest) *user.Profile {

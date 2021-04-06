@@ -9,10 +9,12 @@ package restapi
 import (
 	"crypto/aes"
 	"crypto/rand"
+	"errors"
 	"testing"
 
 	"github.com/google/uuid"
 	"github.com/hyperledger/aries-framework-go/component/storageutil/mem"
+	mockstore "github.com/hyperledger/aries-framework-go/pkg/mock/storage"
 	"github.com/stretchr/testify/require"
 
 	"github.com/trustbloc/hub-auth/pkg/internal/common/mockoidc"
@@ -30,13 +32,8 @@ func TestController_New(t *testing.T) {
 
 	t.Run("error if operations cannot start", func(t *testing.T) {
 		config := config(t)
-		config.OIDC = &operation.OIDCConfig{
-			CallbackURL: "http://example.com/test",
-			Providers: map[string]operation.OIDCProviderConfig{
-				"test": {
-					URL: "INVALID",
-				},
-			},
+		config.TransientStoreProvider = &mockstore.MockStoreProvider{
+			ErrOpenStoreHandle: errors.New("test"),
 		}
 
 		_, err := New(config)
