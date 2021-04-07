@@ -54,6 +54,8 @@ type oidcProviderConfig struct {
 	URL          string `yaml:"url"`
 	ClientID     string `yaml:"clientID"`
 	ClientSecret string `yaml:"clientSecret"`
+	Name         string `yaml:"name"`
+	LogoURL      string `yaml:"logoURL"`
 }
 
 type bootstrapParams struct {

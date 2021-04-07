@@ -38,13 +38,14 @@ import (
 )
 
 const (
-	hydraLoginPath   = "/hydra/login"
-	hydraConsentPath = "/hydra/consent"
-	oidcLoginPath    = "/oauth2/login"
-	oidcCallbackPath = "/oauth2/callback"
-	bootstrapPath    = "/bootstrap"
-	secretsPath      = "/secret"
-	deviceCertPath   = "/device"
+	hydraLoginPath    = "/hydra/login"
+	hydraConsentPath  = "/hydra/consent"
+	oidcLoginPath     = "/oauth2/login"
+	oidcCallbackPath  = "/oauth2/callback"
+	bootstrapPath     = "/bootstrap"
+	secretsPath       = "/secret"
+	deviceCertPath    = "/device"
+	authProvidersPath = "/oauth2/providers"
 	// api path params
 	providerQueryParam        = "provider"
 	stateCookie               = "oauth2_state"
@@ -80,6 +81,7 @@ type Operation struct {
 	callbackURL         string
 	timeout             uint64
 	cachedOIDCProvLock  sync.RWMutex
+	authProviders       []authProvider
 }
 
 // Config defines configuration for rp operations.
@@ -110,6 +112,8 @@ type OIDCProviderConfig struct {
 	URL          string
 	ClientID     string
 	ClientSecret string
+	Name         string
+	LogoURL      string
 }
 
 // CookieConfig holds cookie configuration.
@@ -128,6 +132,15 @@ type BootstrapConfig struct {
 
 // New returns rp operation instance.
 func New(config *Config) (*Operation, error) {
+	authProviders := make([]authProvider, 0)
+
+	for _, v := range config.OIDC.Providers {
+		prov := authProvider{ID: v.ClientID, Name: v.Name, LogoURL: v.LogoURL}
+		fmt.Println(prov)
+
+		authProviders = append(authProviders, prov)
+	}
+
 	svc := &Operation{
 		client:              &http.Client{Transport: &http.Transport{TLSClientConfig: config.TLSConfig}},
 		requestTokens:       config.RequestTokens,
@@ -141,6 +154,7 @@ func New(config *Config) (*Operation, error) {
 		callbackURL:         config.OIDC.CallbackURL,
 		cachedOIDCProviders: make(map[string]oidcProvider),
 		timeout:             config.StartupTimeout,
+		authProviders:       authProviders,
 	}
 
 	var err error
@@ -171,6 +185,7 @@ func New(config *Config) (*Operation, error) {
 // GetRESTHandlers get all controller API handler available for this service.
 func (o *Operation) GetRESTHandlers() []common.Handler {
 	return []common.Handler{
+		support.NewHTTPHandler(authProvidersPath, http.MethodGet, o.authProvidersHandler),
 		support.NewHTTPHandler(hydraLoginPath, http.MethodGet, o.hydraLoginHandler),
 		support.NewHTTPHandler(oidcLoginPath, http.MethodGet, o.oidcLoginHandler),
 		support.NewHTTPHandler(oidcCallbackPath, http.MethodGet, o.oidcCallbackHandler),
@@ -181,6 +196,10 @@ func (o *Operation) GetRESTHandlers() []common.Handler {
 		support.NewHTTPHandler(secretsPath, http.MethodGet, o.getSecretHandler),
 		support.NewHTTPHandler(deviceCertPath, http.MethodPost, o.deviceCertHandler),
 	}
+}
+
+func (o *Operation) authProvidersHandler(w http.ResponseWriter, _ *http.Request) {
+	o.writeResponse(w, &authProviders{Providers: o.authProviders})
 }
 
 func (o *Operation) hydraLoginHandler(w http.ResponseWriter, r *http.Request) {
@@ -789,6 +808,16 @@ func (o *Operation) writeErrorResponse(rw http.ResponseWriter, status int, msg s
 	}
 }
 
+// WriteResponse writes interface value to response.
+func (o *Operation) writeResponse(rw http.ResponseWriter, v interface{}) {
+	rw.Header().Set("Content-Type", "application/json")
+
+	err := json.NewEncoder(rw).Encode(v)
+	if err != nil {
+		logger.Errorf("Unable to send response, %s", err.Error())
+	}
+}
+
 func (o *Operation) subject(w http.ResponseWriter, r *http.Request) (string, bool) {
 	token, proceed := o.bearerToken(w, r)
 	if !proceed {
@@ -854,7 +883,7 @@ func (o *Operation) getProvider(providerID string) (oidcProvider, error) {
 
 	prov, err := o.initOIDCProvider(providerID, &provider)
 	if err != nil {
-		return nil, fmt.Errorf("failed to init oidc providers: %w", err)
+		return nil, fmt.Errorf("failed to init oidc provider: %w", err)
 	}
 
 	o.cachedOIDCProvLock.Lock()
