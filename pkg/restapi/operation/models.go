@@ -33,3 +33,13 @@ type SetSecretRequest struct {
 type GetSecretResponse struct {
 	Secret string `json:"secret"`
 }
+
+type authProviders struct {
+	Providers []authProvider `json:"authProviders"`
+}
+
+type authProvider struct {
+	ID      string `json:"id"`
+	Name    string `json:"name"`
+	LogoURL string `json:"logoURL"`
+}

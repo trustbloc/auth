@@ -532,6 +532,8 @@ func getOIDCParams(cmd *cobra.Command) (*oidcParams, error) {
 			URL:          v.URL,
 			ClientID:     v.ClientID,
 			ClientSecret: v.ClientSecret,
+			Name:         v.Name,
+			LogoURL:      v.LogoURL,
 		}
 	}
 

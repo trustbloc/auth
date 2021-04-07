@@ -173,7 +173,7 @@ func TestOIDCLoginHandler(t *testing.T) {
 		w := httptest.NewRecorder()
 		svc.oidcLoginHandler(w, newOIDCLoginRequest("test"))
 		require.Equal(t, http.StatusBadRequest, w.Code)
-		require.Contains(t, w.Body.String(), "failed to init oidc providers")
+		require.Contains(t, w.Body.String(), "failed to init oidc provider")
 	})
 }
 
@@ -1264,6 +1264,24 @@ func TestOperation_DeviceCertHandler(t *testing.T) {
 
 		require.Equal(t, "", w.Body.String())
 		require.Equal(t, http.StatusFound, w.Code)
+	})
+}
+
+func TestOperation_AuthProvidersHandler(t *testing.T) {
+	t.Run("success", func(t *testing.T) {
+		config := config(t)
+		o, err := New(config)
+		require.NoError(t, err)
+
+		w := httptest.NewRecorder()
+		o.authProvidersHandler(w, nil)
+
+		require.Equal(t, http.StatusOK, w.Code)
+		var resp *authProviders
+		err = json.Unmarshal(w.Body.Bytes(), &resp)
+		require.NoError(t, err)
+
+		require.Equal(t, 2, len(resp.Providers))
 	})
 }
 
