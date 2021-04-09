@@ -9,6 +9,7 @@
   },
   "dependencies": {
     "autoprefixer": "^9.8.5",
+    "axios": "^0.21.1",
     "core-js": "^3.6.4",
     "vue": "^2.6.11",
     "vue-router": "^3.3.2"

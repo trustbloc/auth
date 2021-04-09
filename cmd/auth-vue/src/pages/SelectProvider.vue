@@ -11,14 +11,16 @@ SPDX-License-Identifier: Apache-2.0
                 <div class="flex items-center justify-center">
                     <div class="bg-white shadow-lg border rounded text-left text-black px-10 pt-8 pb-8 md:flex-wrap md:justify-between">
                         <div class="grid grid-cols-3 gap-4">
-                            <div class="col-span-2">
+                            <div class="grid grid-cols-1 col-span-2">
                                 <p class="text-xl font-black pr-8">Select Sign-In Partner</p><br>
                                 <p class="pr-8">By selecting a Sign-In Partner, you are agreeing to the Terms and Conditions and Privacy Notice of TrustBloc.</p>
-                                <div class="flex items-center  justify-center mt-10">
-                                    <a href="/oauth2/login?provider=mockbank" class="mx-auto bg-gray-100 lg:mx-0 border hover:underline my-4 py-2 px-8 shadow-lg text-center">
-                                        <img class="object-scale-down h-8 w-32"  alt="Google &quot;G&quot; Logo"
-                                            src="https://upload.wikimedia.org/wikipedia/en/a/a4/Universal_Bank.svg"/>
-                                        Universal Bank
+                                <div class="grid grid-cols-3 flex items-center justify-center m-10" >
+                                    <a class="mx-auto bg-gray-100 lg:mx-0 border hover:underline my-4 py-2 px-8
+                                      shadow-lg text-center" v-for="(provider, index) in providers" :key="index"
+                                       :href="'/oauth2/login?provider=' + provider.id">
+                                        <img class="object-scale-down h-8 w-48"  alt="Google &quot;G&quot; Logo"
+                                            :src="provider.logoURL"/>
+                                        {{ provider.name }}
                                     </a>
                                 </div>
                             </div>
@@ -39,7 +41,24 @@ SPDX-License-Identifier: Apache-2.0
     </div>
 </template>
 <script>
-    export default {}
+
+    import axios from 'axios';
+
+    export default  {
+        name: "selectProvider",
+        data () {
+            return {
+                providers:[]
+            }
+        },
+        mounted() {
+            axios
+                .get('/oauth2/providers')
+                .then(response => {
+                    this.providers = response.data.authProviders
+                })
+        },
+    }
 </script>
 
 
