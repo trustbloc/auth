@@ -134,9 +134,8 @@ type BootstrapConfig struct {
 func New(config *Config) (*Operation, error) {
 	authProviders := make([]authProvider, 0)
 
-	for _, v := range config.OIDC.Providers {
-		prov := authProvider{ID: v.ClientID, Name: v.Name, LogoURL: v.LogoURL}
-		fmt.Println(prov)
+	for k, v := range config.OIDC.Providers {
+		prov := authProvider{ID: k, Name: v.Name, LogoURL: v.LogoURL}
 
 		authProviders = append(authProviders, prov)
 	}
