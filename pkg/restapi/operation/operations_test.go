@@ -554,7 +554,8 @@ func TestOIDCCallbackHandler(t *testing.T) {
 				name: provider,
 				oauth2Config: &mockOAuth2Config{
 					exchangeVal: &mockToken{
-						oauth2Claim: uuid.New().String()},
+						oauth2Claim: uuid.New().String(),
+					},
 				},
 				verifyVal: &mockToken{
 					oidcClaimsFunc: func(v interface{}) error {
@@ -1664,6 +1665,8 @@ func newGetSecretRequest(t *testing.T, sub, token string) *http.Request {
 }
 
 func newDeviceCertRequest(t *testing.T, data *certHolder) *http.Request {
+	t.Helper()
+
 	dataBytes, err := json.Marshal(data)
 	require.NoError(t, err)
 
@@ -1704,6 +1707,8 @@ func (m *mockOIDCProvider) Verify(_ context.Context, _ string) (idToken, error) 
 }
 
 func config(t *testing.T) *Config {
+	t.Helper()
+
 	return &Config{
 		OIDC: &OIDCConfig{
 			CallbackURL: "http://test.com",
@@ -1739,6 +1744,8 @@ func config(t *testing.T) *Config {
 }
 
 func cookieKey(t *testing.T) []byte {
+	t.Helper()
+
 	key := make([]byte, aes.BlockSize)
 
 	_, err := rand.Read(key)
@@ -1748,6 +1755,8 @@ func cookieKey(t *testing.T) []byte {
 }
 
 func marshal(t *testing.T, v interface{}) []byte {
+	t.Helper()
+
 	bits, err := json.Marshal(v)
 	require.NoError(t, err)
 
@@ -1832,6 +1841,8 @@ func (m *mockHydra) IntrospectOAuth2Token(
 
 // makeSelfSignedCert returns a PEM-encoded self-signed certificate.
 func makeSelfSignedCert(t *testing.T) string {
+	t.Helper()
+
 	template := x509.Certificate{
 		SerialNumber:          big.NewInt(1234),
 		NotBefore:             time.Now().Add(-time.Hour),
@@ -1855,6 +1866,8 @@ func makeSelfSignedCert(t *testing.T) string {
 
 // makeCACert returns a CA certificate, self-signed, with its PEM encoding and private key.
 func makeCACert(t *testing.T) (*x509.Certificate, string, interface{}) {
+	t.Helper()
+
 	certSerialNumber, err := rand.Int(rand.Reader, big.NewInt(math.MaxInt32))
 	require.NoError(t, err)
 
@@ -1887,6 +1900,8 @@ func makeCACert(t *testing.T) (*x509.Certificate, string, interface{}) {
 // makeChildCert returns a certificate signed by parent, with its PEM encoding and private key.
 func makeChildCert(t *testing.T, parent *x509.Certificate, parentPriv interface{},
 	isIntermediate bool) (*x509.Certificate, string, interface{}) {
+	t.Helper()
+
 	certSerialNumber, err := rand.Int(rand.Reader, big.NewInt(math.MaxInt32))
 	require.NoError(t, err)
 

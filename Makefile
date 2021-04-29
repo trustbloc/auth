@@ -9,8 +9,8 @@ DOCKER_OUTPUT_NS   ?= ghcr.io
 AUTH_REST_IMAGE_NAME   ?= trustbloc/hub-auth
 
 # Tool commands (overridable)
-ALPINE_VER ?= 3.11
-GO_VER ?= 1.14
+ALPINE_VER ?= 3.12
+GO_VER ?= 1.16
 
 .PHONY: all
 all: checks unit-test bdd-test

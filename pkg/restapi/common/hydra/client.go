@@ -43,7 +43,7 @@ func NewClient(hydraURL *url.URL, rootCAs *x509.CertPool) *Client {
 				BasePath: hydraURL.Path,
 			},
 		).Admin,
-		httpClient: &http.Client{Transport: &http.Transport{TLSClientConfig: &tls.Config{
+		httpClient: &http.Client{Transport: &http.Transport{TLSClientConfig: &tls.Config{ //nolint:gosec
 			RootCAs: rootCAs,
 		}}},
 	}
@@ -52,30 +52,35 @@ func NewClient(hydraURL *url.URL, rootCAs *x509.CertPool) *Client {
 // GetLoginRequest fetches the login request at hydra.
 func (c *Client) GetLoginRequest(params *admin.GetLoginRequestParams) (*admin.GetLoginRequestOK, error) {
 	params.SetHTTPClient(c.httpClient)
+
 	return c.hydraClient.GetLoginRequest(params)
 }
 
 // AcceptLoginRequest accepts the login request at hydra.
 func (c *Client) AcceptLoginRequest(params *admin.AcceptLoginRequestParams) (*admin.AcceptLoginRequestOK, error) {
 	params.SetHTTPClient(c.httpClient)
+
 	return c.hydraClient.AcceptLoginRequest(params)
 }
 
 // GetConsentRequest fetches the consent request at hydra.
 func (c *Client) GetConsentRequest(params *admin.GetConsentRequestParams) (*admin.GetConsentRequestOK, error) {
 	params.SetHTTPClient(c.httpClient)
+
 	return c.hydraClient.GetConsentRequest(params)
 }
 
 // AcceptConsentRequest accepts the consent request at hydra.
 func (c *Client) AcceptConsentRequest(params *admin.AcceptConsentRequestParams) (*admin.AcceptConsentRequestOK, error) {
 	params.SetHTTPClient(c.httpClient)
+
 	return c.hydraClient.AcceptConsentRequest(params)
 }
 
 // CreateOAuth2Client creates an oauth2 client at hydra.
 func (c *Client) CreateOAuth2Client(params *admin.CreateOAuth2ClientParams) (*admin.CreateOAuth2ClientCreated, error) {
 	params.SetHTTPClient(c.httpClient)
+
 	return c.hydraClient.CreateOAuth2Client(params)
 }
 
@@ -83,5 +88,6 @@ func (c *Client) CreateOAuth2Client(params *admin.CreateOAuth2ClientParams) (*ad
 func (c *Client) IntrospectOAuth2Token(
 	params *admin.IntrospectOAuth2TokenParams) (*admin.IntrospectOAuth2TokenOK, error) {
 	params.SetHTTPClient(c.httpClient)
+
 	return c.hydraClient.IntrospectOAuth2Token(params)
 }

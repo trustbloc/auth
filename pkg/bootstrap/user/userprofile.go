@@ -33,7 +33,6 @@ func NewStore(s storage.Store) *ProfileStore {
 // Save saves the user Profile.
 func (ps *ProfileStore) Save(p *Profile) error {
 	bits, err := json.Marshal(p)
-
 	if err != nil {
 		return fmt.Errorf("failed to marshal user profile : %w", err)
 	}

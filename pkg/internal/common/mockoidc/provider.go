@@ -17,6 +17,8 @@ import (
 // StartProvider starts a new http endpoint serving a mock OpenID Connect configuration file and returns its base URL.
 // Useful for tests that include code paths that resolve the OIDC configuration file.
 func StartProvider(t *testing.T) string {
+	t.Helper()
+
 	h := &testOIDCProvider{}
 	srv := httptest.NewServer(h)
 	h.baseURL = srv.URL
