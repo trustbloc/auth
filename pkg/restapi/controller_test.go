@@ -53,6 +53,8 @@ func TestController_GetOperations(t *testing.T) {
 }
 
 func config(t *testing.T) *operation.Config {
+	t.Helper()
+
 	path := mockoidc.StartProvider(t)
 
 	return &operation.Config{
@@ -77,6 +79,8 @@ func config(t *testing.T) *operation.Config {
 }
 
 func cookieKey(t *testing.T) []byte {
+	t.Helper()
+
 	key := make([]byte, aes.BlockSize)
 
 	_, err := rand.Read(key)

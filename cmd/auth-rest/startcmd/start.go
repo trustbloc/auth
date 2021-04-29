@@ -112,7 +112,7 @@ const (
 		"Alternatively, this can be set with the following environment variable: " + hydraURLEnvKey
 	hydraURLEnvKey = "AUTH_REST_HYDRA_URL"
 
-	// assumed to be the same landing page for all callbacks from all OIDC providers
+	// assumed to be the same landing page for all callbacks from all OIDC providers.
 	oidcCallbackURLFlagName  = "oidcCallbackURL"
 	oidcCallbackURLFlagUsage = "Base URL for the OIDC callback endpoint." +
 		" Alternatively, this can be set with the following environment variable: " + oidcCallbackURLEnvKey
@@ -162,7 +162,7 @@ const (
 )
 
 const (
-	// TODO temporary
+	// TODO temporary.
 	secretsAPITokenFlagName  = "secrets-api-token"
 	secretsAPITokenFlagUsage = "Static token used to protect the GET /secrets API." +
 		" Alternatively, this can be set with the following environment variable: " + secretsAPITokenEnvKey
@@ -183,12 +183,12 @@ const (
 )
 
 const (
-	// api
+	// api.
 	uiEndpoint          = "/ui"
 	healthCheckEndpoint = "/healthcheck"
 )
 
-var logger = log.New("auth-rest")
+var logger = log.New("auth-rest") //nolint:gochecknoglobals
 
 type healthCheckResp struct {
 	Status      string    `json:"status"`
@@ -438,7 +438,7 @@ func startAuthService(parameters *authRestParameters, srv server) error {
 			OpsKeyServerURL:     parameters.bootstrapParams.opsKeyServerURL,
 		},
 		DeviceRootCerts: parameters.devicecertParams.caCerts,
-		TLSConfig:       &tls.Config{RootCAs: rootCAs},
+		TLSConfig:       &tls.Config{RootCAs: rootCAs}, //nolint:gosec
 		UIEndpoint:      uiEndpoint,
 		Cookies: &operation.CookieConfig{
 			AuthKey: parameters.keys.sessionCookieAuthKey,
@@ -479,6 +479,7 @@ func uiHandler(
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == uiEndpoint {
 			fileServer(w, r, strings.ReplaceAll(basePath+"/index.html", "//", "/"))
+
 			return
 		}
 

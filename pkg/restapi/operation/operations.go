@@ -46,7 +46,7 @@ const (
 	secretsPath       = "/secret"
 	deviceCertPath    = "/device"
 	authProvidersPath = "/oauth2/providers"
-	// api path params
+	// api path params.
 	providerQueryParam        = "provider"
 	stateCookie               = "oauth2_state"
 	providerCookie            = "oauth2_provider"
@@ -56,11 +56,11 @@ const (
 	bootstrapStoreName = "bootstrapdata"
 	secretsStoreName   = "secrets"
 
-	// redirect url parameter
+	// redirect url parameter.
 	userProfileQueryParam = "up"
 )
 
-var logger = log.New("hub-auth-restapi")
+var logger = log.New("hub-auth-restapi") //nolint:gochecknoglobals
 
 // Operation defines handlers.
 type Operation struct {
@@ -709,15 +709,18 @@ func (o *Operation) deviceCertHandler(w http.ResponseWriter, r *http.Request) {
 	err := dec.Decode(&ch)
 	if err != nil {
 		o.writeErrorResponse(w, http.StatusBadRequest, "cert request invalid json")
+
 		return
 	}
 
 	userProfile, err := user.NewStore(o.bootstrapStore).Get(ch.Sub)
 	if errors.Is(err, storage.ErrDataNotFound) {
 		o.writeErrorResponse(w, http.StatusBadRequest, "invalid user profile id")
+
 		return
 	} else if err != nil {
 		o.writeErrorResponse(w, http.StatusInternalServerError, "failed to load user profile")
+
 		return
 	}
 
@@ -732,6 +735,7 @@ func (o *Operation) deviceCertHandler(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		o.writeErrorResponse(w, http.StatusInternalServerError,
 			fmt.Sprintf("failed to marshal user profile data : %s", err))
+
 		return
 	}
 
@@ -743,7 +747,7 @@ func (o *Operation) verifyDeviceCert(ch *certHolder) error {
 		return errors.New("missing device certificate")
 	}
 
-	var certs = []*x509.Certificate{}
+	var certs []*x509.Certificate
 
 	for _, x5c := range ch.X5C {
 		block, _ := pem.Decode([]byte(x5c))

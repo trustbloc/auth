@@ -469,6 +469,8 @@ func Test_createProvider(t *testing.T) {
 }
 
 func setEnvVars(t *testing.T) {
+	t.Helper()
+
 	err := os.Setenv(hostURLEnvKey, "localhost:8080")
 	require.NoError(t, err)
 	err = os.Setenv(databaseTypeEnvKey, "mem")
@@ -498,6 +500,8 @@ func setEnvVars(t *testing.T) {
 }
 
 func unsetEnvVars(t *testing.T) {
+	t.Helper()
+
 	vars := []string{
 		hostURLEnvKey,
 		databaseTypeEnvKey,
@@ -517,6 +521,8 @@ func unsetEnvVars(t *testing.T) {
 }
 
 func checkFlagPropertiesCorrect(t *testing.T, cmd *cobra.Command, flagName, flagShorthand, flagUsage string) {
+	t.Helper()
+
 	flag := cmd.Flag(flagName)
 
 	require.NotNil(t, flag)
@@ -530,6 +536,8 @@ func checkFlagPropertiesCorrect(t *testing.T, cmd *cobra.Command, flagName, flag
 }
 
 func mockOIDCProvider(t *testing.T) string {
+	t.Helper()
+
 	h := &testOIDCProvider{}
 	srv := httptest.NewServer(h)
 	h.baseURL = srv.URL
@@ -572,6 +580,8 @@ func (t *testOIDCProvider) ServeHTTP(w http.ResponseWriter, _ *http.Request) {
 }
 
 func allArgs(t *testing.T) []string {
+	t.Helper()
+
 	return []string{
 		"--" + hostURLFlagName, "localhost:8080",
 		"--" + logLevelFlagName, log.ParseString(log.DEBUG),
@@ -593,6 +603,8 @@ func allArgs(t *testing.T) []string {
 }
 
 func oidcProvConfig(t *testing.T) string {
+	t.Helper()
+
 	config, err := json.Marshal(&oidcProvidersConfig{
 		Providers: map[string]*oidcProviderConfig{
 			"provider1": {

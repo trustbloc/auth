@@ -33,7 +33,6 @@ func WriteErrorResponsef(rw http.ResponseWriter, logger log.Logger, status int, 
 	err := json.NewEncoder(rw).Encode(ErrorResponse{
 		Message: fmt.Sprintf(msg, args...),
 	})
-
 	if err != nil {
 		logger.Errorf("Unable to send error message, %s", err)
 	}

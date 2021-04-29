@@ -12,7 +12,7 @@ import (
 	"github.com/trustbloc/hub-auth/cmd/auth-rest/startcmd"
 )
 
-var logger = log.New("auth-rest")
+var logger = log.New("auth-rest") //nolint:gochecknoglobals
 
 func main() {
 	rootCmd := &cobra.Command{

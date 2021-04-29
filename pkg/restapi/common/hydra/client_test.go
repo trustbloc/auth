@@ -27,6 +27,7 @@ func Test_SetsHTTPClient(t *testing.T) {
 		c.hydraClient = &stubHydra{
 			getLoginFunc: func(params *admin.GetLoginRequestParams) (*admin.GetLoginRequestOK, error) {
 				check(params.HTTPClient)
+
 				return nil, nil
 			},
 		}
@@ -39,6 +40,7 @@ func Test_SetsHTTPClient(t *testing.T) {
 		c.hydraClient = &stubHydra{
 			acceptLoginFunc: func(params *admin.AcceptLoginRequestParams) (*admin.AcceptLoginRequestOK, error) {
 				check(params.HTTPClient)
+
 				return nil, nil
 			},
 		}
@@ -51,6 +53,7 @@ func Test_SetsHTTPClient(t *testing.T) {
 		c.hydraClient = &stubHydra{
 			getConsentFunc: func(params *admin.GetConsentRequestParams) (*admin.GetConsentRequestOK, error) {
 				check(params.HTTPClient)
+
 				return nil, nil
 			},
 		}
@@ -63,6 +66,7 @@ func Test_SetsHTTPClient(t *testing.T) {
 		c.hydraClient = &stubHydra{
 			acceptConsentFunc: func(params *admin.AcceptConsentRequestParams) (*admin.AcceptConsentRequestOK, error) {
 				check(params.HTTPClient)
+
 				return nil, nil
 			},
 		}
@@ -75,6 +79,7 @@ func Test_SetsHTTPClient(t *testing.T) {
 		c.hydraClient = &stubHydra{
 			createClientFunc: func(params *admin.CreateOAuth2ClientParams) (*admin.CreateOAuth2ClientCreated, error) {
 				check(params.HTTPClient)
+
 				return nil, nil
 			},
 		}
@@ -87,6 +92,7 @@ func Test_SetsHTTPClient(t *testing.T) {
 		c.hydraClient = &stubHydra{
 			introspectFunc: func(params *admin.IntrospectOAuth2TokenParams) (*admin.IntrospectOAuth2TokenOK, error) {
 				check(params.HTTPClient)
+
 				return nil, nil
 			},
 		}
@@ -130,6 +136,8 @@ func (s *stubHydra) IntrospectOAuth2Token(
 }
 
 func testURL(t *testing.T) *url.URL {
+	t.Helper()
+
 	u, err := url.Parse("http://test.com/some/path")
 	require.NoError(t, err)
 
