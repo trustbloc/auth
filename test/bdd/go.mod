@@ -15,7 +15,7 @@ require (
 	github.com/pkg/errors v0.9.1
 	github.com/pquerna/cachecontrol v0.0.0-20200921180117-858c6e7e6b7e // indirect
 	github.com/tidwall/gjson v1.6.7
-	github.com/trustbloc/edge-core v0.1.7-0.20210429084532-c385778b4d8b
+	github.com/trustbloc/edge-core v0.1.7-0.20210429222332-96b987820e63
 	// TODO replace revision below to ` v0.0.0-00010101000000-000000000000` once kms removes this dependency.
 	github.com/trustbloc/hub-auth v0.1.7-0.20210310162148-949bbe290351
 	golang.org/x/oauth2 v0.0.0-20200902213428-5d25da1a8d43
