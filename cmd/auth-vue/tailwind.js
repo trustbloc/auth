@@ -5,7 +5,7 @@ SPDX-License-Identifier: Apache-2.0
 */
 
 module.exports = {
-  purge: [],
+  purge: false,
   theme: {
     extend: {},
   },

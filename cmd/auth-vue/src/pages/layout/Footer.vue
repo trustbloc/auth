@@ -5,11 +5,15 @@ SPDX-License-Identifier: Apache-2.0
 */
 
 <template>
-    <footer class="footer container mx-auto text-center py-2 mb-12">
-            <div class="text-black font py-1">
-                Copyright &copy; <a href="https://securekey.com/" rel="nofollow">SecureKey Technologies</a> and the TrustBloc Contributors.
-            </div>
-    </footer>
+  <footer class="absolute w-full bottom-0 pb-6">
+    <div class="container mx-auto">
+      <div class="flex flex-wrap items-center md:justify-between justify-center">
+        <footer class='w-full text-center text-white border-grey p-4 py-12'>
+          Copyright &copy; <a href="https://securekey.com/">SecureKey Technologies</a> and the TrustBloc Contributors.
+        </footer>
+        </div>
+      </div>
+  </footer>
 </template>
 <script>
     export default {};
