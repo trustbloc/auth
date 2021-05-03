@@ -5,12 +5,24 @@ SPDX-License-Identifier: Apache-2.0
 */
 
 <template>
-      <nav class="flex items-center gradient justify-center flex-wrap pt-12">
-        <div class="flex items-center flex-no-shrink text-white mr-6">
-          <img class="h-8 w-8 mr-2" src="./img/logo.png" alt="">
-          <a class="font-semibold text-2xl lg:text-4xl tracking-tight" href="javascript:history.back()">TrustBloc</a>
+    <div class="w-full container mx-auto flex flex-wrap items-center justify-between mt-0 py-2">
+        <div class="pl-4 flex items-center">
+            <a class="toggleColour text-black no-underline hover:no-underline font-bold text-2xl lg:text-4xl"  href="javascript:history.back()">
+                <i class="fa fa-cubes" style="font-size:32px;color:black"></i>
+                TrustBloc Sign-In
+            </a>
         </div>
-      </nav>
+        <div class="w-full flex-grow lg:flex lg:items-center lg:w-auto hidden lg:block mt-2 lg:mt-0 bg-white lg:bg-transparent text-black p-4 lg:p-0 z-20">
+            <ul class="list-reset lg:flex justify-end flex-1 items-center">
+                <li class="mr-3">
+                    <a class="inline-block text-black no-underline hover:text-green hover:text-underline py-2 px-4" href="">About Us</a>
+                </li>
+                <li class="mr-3">
+                    <a class="inline-block text-black no-underline hover:text-green hover:text-underline py-2 px-4" href="https://github.com/trustbloc/hub-auth">Github</a>
+                </li>
+            </ul>
+        </div>
+    </div>
 </template>
 
 <script>
@@ -18,4 +30,3 @@ SPDX-License-Identifier: Apache-2.0
         name: "Nav.vue"
     }
 </script>
-
