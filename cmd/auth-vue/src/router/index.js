@@ -4,13 +4,14 @@ Copyright SecureKey Technologies Inc. All Rights Reserved.
 SPDX-License-Identifier: Apache-2.0
 */
 
+import Layout from "@/pages/layout/Layout";
 import SelectProvider from '@/pages/SelectProvider'
 import NotFound from '@/pages/PageNotFound'
 
 const routes = [
     {
         path: "/ui",
-        component: SelectProvider,
+        component: Layout,
         name: "main",
         redirect: "ui/selectProvider",
         children: [
