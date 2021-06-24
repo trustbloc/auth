@@ -1289,12 +1289,14 @@ func TestOperation_AuthProvidersHandler(t *testing.T) {
 func TestOperation_HydraLoginHandler(t *testing.T) {
 	t.Run("redirects to login UI", func(t *testing.T) {
 		uiEndpoint := "/ui"
+		rURL := "https://test-com/oauth2?provider="
 		hydraLoginRequest := &admin.GetLoginRequestOK{Payload: &models.LoginRequest{
 			Client: &models.OAuth2Client{
 				ClientID: uuid.New().String(),
 				Scope:    "registered scopes",
 			},
 			RequestedScope: []string{"requested", "scope"},
+			RequestURL:     &rURL,
 		}}
 
 		config := config(t)
@@ -1314,6 +1316,62 @@ func TestOperation_HydraLoginHandler(t *testing.T) {
 		require.Equal(t, http.StatusFound, w.Code)
 		require.True(t, strings.HasPrefix(w.Header().Get("Location"), uiEndpoint))
 		require.Equal(t, uiEndpoint, w.Header().Get("location"))
+	})
+
+	t.Run("redirects to hydra login", func(t *testing.T) {
+		hydraLoginURL := "/oauth2/login?provider=mockbank"
+		rURL := "https://test-com/oauth2?provider=mockbank"
+		hydraLoginRequest := &admin.GetLoginRequestOK{Payload: &models.LoginRequest{
+			Client: &models.OAuth2Client{
+				ClientID: uuid.New().String(),
+				Scope:    "registered scopes",
+			},
+			RequestedScope: []string{"requested", "scope"},
+			RequestURL:     &rURL,
+		}}
+
+		config := config(t)
+		config.Hydra = &mockHydra{
+			getLoginRequestValue: hydraLoginRequest,
+		}
+
+		o, err := New(config)
+		require.NoError(t, err)
+
+		o.cookies = mockCookies()
+
+		w := httptest.NewRecorder()
+		o.hydraLoginHandler(w, newHydraLoginHTTPRequest(uuid.New().String()))
+
+		require.Equal(t, http.StatusFound, w.Code)
+		require.True(t, strings.HasPrefix(w.Header().Get("Location"), hydraLoginURL))
+		require.Equal(t, hydraLoginURL, w.Header().Get("location"))
+	})
+	t.Run("redirects to hydra login error", func(t *testing.T) {
+		rURL := "https://user:abc{DEf1=ghi@example.com:5432/db?"
+		hydraLoginRequest := &admin.GetLoginRequestOK{Payload: &models.LoginRequest{
+			Client: &models.OAuth2Client{
+				ClientID: uuid.New().String(),
+				Scope:    "registered scopes",
+			},
+			RequestedScope: []string{"requested", "scope"},
+			RequestURL:     &rURL,
+		}}
+
+		config := config(t)
+		config.Hydra = &mockHydra{
+			getLoginRequestValue: hydraLoginRequest,
+		}
+
+		o, err := New(config)
+		require.NoError(t, err)
+
+		o.cookies = mockCookies()
+
+		w := httptest.NewRecorder()
+		o.hydraLoginHandler(w, newHydraLoginHTTPRequest(uuid.New().String()))
+
+		require.Equal(t, http.StatusBadRequest, w.Code)
 	})
 
 	t.Run("error bad request if login_challenge is missing", func(t *testing.T) {
@@ -1352,6 +1410,54 @@ func TestOperation_HydraLoginHandler(t *testing.T) {
 		w := httptest.NewRecorder()
 		o.hydraLoginHandler(w, newHydraLoginHTTPRequest(uuid.New().String()))
 		require.Equal(t, http.StatusInternalServerError, w.Code)
+	})
+}
+
+func TestOperation_FetchProviderNameError(t *testing.T) {
+	tests := []struct {
+		in  string
+		out string
+	}{
+		{"https://user:abc{DEf1=ghi@example.com:5432/db?", "failed to parse url"},
+		{"hi/there?: err=%+v url=%+v\\n", "failed to parse raw query for provider name"},
+	}
+	config := config(t)
+
+	o, err := New(config)
+	require.NoError(t, err)
+
+	for _, tt := range tests {
+		t.Run(tt.in, func(t *testing.T) {
+			provider, err := o.fetchProviderFromURL(&tt.in)
+			require.Error(t, err)
+			require.Empty(t, provider)
+			require.Contains(t, err.Error(), tt.out)
+		})
+	}
+}
+
+func TestOperation_FetchProviderSuccess(t *testing.T) {
+	t.Run("fetch provider name success", func(t *testing.T) {
+		rURL := "https://test-com/oauth2?provider=test"
+		config := config(t)
+
+		o, err := New(config)
+		require.NoError(t, err)
+
+		provider, err := o.fetchProviderFromURL(&rURL)
+		require.NoError(t, err)
+		require.Equal(t, "test", provider)
+	})
+	t.Run("no provider query optional parameter", func(t *testing.T) {
+		rURL := "https://test-com/oauth2?clientID="
+		config := config(t)
+
+		o, err := New(config)
+		require.NoError(t, err)
+
+		provider, err := o.fetchProviderFromURL(&rURL)
+		require.NoError(t, err)
+		require.Equal(t, "", provider)
 	})
 }
 
