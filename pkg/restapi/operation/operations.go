@@ -201,25 +201,12 @@ func (o *Operation) authProvidersHandler(w http.ResponseWriter, _ *http.Request)
 	o.writeResponse(w, &authProviders{Providers: o.authProviders})
 }
 
-func (o *Operation) hydraLoginHandler(w http.ResponseWriter, r *http.Request) {
+func (o *Operation) hydraLoginHandler(w http.ResponseWriter, r *http.Request) { //nolint:funlen
 	logger.Debugf("handling login request: %s", r.URL.String())
 
 	challenge := r.URL.Query().Get("login_challenge")
 	if challenge == "" {
 		o.writeErrorResponse(w, http.StatusBadRequest, "missing challenge on login request")
-
-		return
-	}
-
-	req := admin.NewGetLoginRequestParams()
-
-	req.SetLoginChallenge(challenge)
-
-	// ensure login request is valid
-	_, err := o.hydra.GetLoginRequest(req) // nolint:errcheck // don't know why errcheck is complaining
-	if err != nil {
-		o.writeErrorResponse(w,
-			http.StatusBadGateway, "failed to fetch login request from hydra: %s", err.Error())
 
 		return
 	}
@@ -240,13 +227,62 @@ func (o *Operation) hydraLoginHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	req := admin.NewGetLoginRequestParams()
+
+	req.SetLoginChallenge(challenge)
+
+	// ensure login request is valid
+	resp, err := o.hydra.GetLoginRequest(req)
+	if err != nil {
+		o.writeErrorResponse(w,
+			http.StatusBadGateway, "failed to fetch login request from hydra: %s", err.Error())
+
+		return
+	}
+
 	// TODO need to check if the relying party (login.Payload.Client.ClientID) is registered:
 	//  https://github.com/trustbloc/hub-auth/issues/53.
+
+	// fetching the request url from the valid login request to fetch provider (custom parameter)
+	providerID, err := o.fetchProviderFromURL(resp.Payload.RequestURL)
+	if err != nil {
+		o.writeErrorResponse(w,
+			http.StatusBadRequest, "failed to fetch the provider name: %s", err.Error())
+
+		return
+	}
+
+	if providerID != "" {
+		redirectURL := oidcLoginPath + "?" + providerQueryParam + "=" + providerID
+
+		http.Redirect(w, r, redirectURL, http.StatusFound)
+		logger.Debugf("redirected to oidc login: %s", redirectURL)
+
+		return
+	}
 
 	redirectURL := o.uiEndpoint
 
 	http.Redirect(w, r, redirectURL, http.StatusFound)
 	logger.Debugf("redirected to: %s", redirectURL)
+}
+
+func (o *Operation) fetchProviderFromURL(requestURL *string) (string, error) {
+	parsedURL, err := url.Parse(*requestURL)
+	if err != nil {
+		return "", fmt.Errorf("failed to parse url: %s", parsedURL)
+	}
+
+	params, err := url.ParseQuery(parsedURL.RawQuery)
+	if err != nil {
+		return "", fmt.Errorf("failed to parse raw query for provider name: %s", parsedURL.RawQuery)
+	}
+
+	if providerName, ok := params[providerQueryParam]; ok {
+		return providerName[0], nil
+	}
+
+	return "", nil
 }
 
 func (o *Operation) oidcLoginHandler(w http.ResponseWriter, r *http.Request) {
