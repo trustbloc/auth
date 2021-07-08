@@ -479,6 +479,8 @@ func setEnvVars(t *testing.T) {
 	require.NoError(t, err)
 	err = os.Setenv(oidcProvidersConfigFileEnvKey, oidcProvConfig(t))
 	require.NoError(t, err)
+	err = os.Setenv(oidcStaticImageFolderEnvKey, "/etc/static/image")
+	require.NoError(t, err)
 	err = os.Setenv(docsSDSURLEnvKey, "http://docs.sds.example.com")
 	require.NoError(t, err)
 	err = os.Setenv(opsKeysSDSURLEnvKey, "https://keys.sds.example.com")
@@ -592,6 +594,7 @@ func allArgs(t *testing.T) []string {
 		"--" + docsSDSURLFlagName, "http://docs.sds.example.com",
 		"--" + opsKeysSDSURLFlagName, "https://keys.sds.example.com",
 		"--" + authKeyServerURLFlagName, "https://auth.keyserver.example.com",
+		"--" + oidcStaticImageFolderFlagName, "etc/static/images",
 		"--" + opsKeyServerURLFlagName, "http://ops.keyserver.example.com",
 		"--" + hydraURLFlagName, "http://hydra.example.com",
 		"--" + secretsAPITokenFlagName, uuid.New().String(),

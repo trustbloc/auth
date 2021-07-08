@@ -113,6 +113,8 @@ type OIDCProviderConfig struct {
 	ClientID     string
 	ClientSecret string
 	Name         string
+	SignUpText   string
+	SignInText   string
 	LogoURL      string
 }
 

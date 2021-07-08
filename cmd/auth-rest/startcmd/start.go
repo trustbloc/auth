@@ -122,6 +122,11 @@ const (
 	oidcProvidersConfigFileFlagUsage = "Path to the yaml file with the configured OIDC providers." +
 		" Alternatively, this can be set with the following environment variable: " + oidcProvidersConfigFileEnvKey
 	oidcProvidersConfigFileEnvKey = "AUTH_REST_OIDC_PROVIDERS_CONFIG"
+
+	oidcStaticImageFolderFlagName  = "oidcStaticImageFolder"
+	oidcStaticImageFolderFlagUsage = "Path to static logo images for the oidc providers." +
+		" Alternatively, this can be set with the following environment variable: " + oidcStaticImageFolderEnvKey
+	oidcStaticImageFolderEnvKey = "AUTH_REST_STATIC_IMAGES"
 )
 
 // Device certificate validation parameters.
@@ -283,6 +288,12 @@ func getAuthRestParameters(cmd *cobra.Command) (*authRestParameters, error) { //
 		return nil, err
 	}
 
+	oidcStaticImages, err := cmdutils.GetUserSetVarFromString(cmd,
+		oidcStaticImageFolderFlagName, oidcStaticImageFolderEnvKey, false)
+	if err != nil {
+		return nil, err
+	}
+
 	bootstrapParams, err := getBootstrapParams(cmd)
 	if err != nil {
 		return nil, err
@@ -322,6 +333,7 @@ func getAuthRestParameters(cmd *cobra.Command) (*authRestParameters, error) { //
 		startupTimeout:   timeout,
 		secretsAPIToken:  secretsToken,
 		keys:             keys,
+		staticImages:     oidcStaticImages,
 	}, nil
 }
 
@@ -387,6 +399,7 @@ func createFlags(startCmd *cobra.Command) {
 	startCmd.Flags().StringP(hydraURLFlagName, "", "", hydraURLFlagUsage)
 	startCmd.Flags().StringP(oidcCallbackURLFlagName, "", "", oidcCallbackURLFlagUsage)
 	startCmd.Flags().StringP(oidcProvidersConfigFileFlagName, "", "", oidcProvidersConfigFileFlagUsage)
+	startCmd.Flags().StringP(oidcStaticImageFolderFlagName, "", "", oidcStaticImageFolderFlagUsage)
 	startCmd.Flags().StringP(docsSDSURLFlagName, "", "", docsSDSURLFlagUsage)
 	startCmd.Flags().StringP(opsKeysSDSURLFlagName, "", "", opsKeysSDSURLFlagUsage)
 	startCmd.Flags().StringP(authKeyServerURLFlagName, "", "", authKeyServerURLFlagUsage)
@@ -416,6 +429,10 @@ func startAuthService(parameters *authRestParameters, srv server) error {
 	}
 
 	router := mux.NewRouter()
+
+	fs := http.FileServer(http.Dir(parameters.staticImages))
+	router.Handle("/static/images", fs)
+
 	// health check
 	router.HandleFunc(healthCheckEndpoint, healthCheckHandler).Methods(http.MethodGet)
 
@@ -534,6 +551,8 @@ func getOIDCParams(cmd *cobra.Command) (*oidcParams, error) {
 			ClientID:     v.ClientID,
 			ClientSecret: v.ClientSecret,
 			Name:         v.Name,
+			SignUpText:   v.SignUpText,
+			SignInText:   v.SignInText,
 			LogoURL:      v.LogoURL,
 		}
 	}
