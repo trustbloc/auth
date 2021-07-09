@@ -9,5 +9,7 @@ providers:
     url: https://third.party.oidc.provider.example.com:5555/
     clientID: hub-auth
     clientSecret: hub-auth-secret
-    name: Universal Bank
-    logoURL: https://upload.wikimedia.org/wikipedia/en/a/a4/Universal_Bank.svg
+    name: Demo OIDC
+    signUpText: Demo Sign-Up Partner
+    signInText: Demo Sign-In Partner
+    logoURL: https://localhost:8070/static/images/demo_provider.svg

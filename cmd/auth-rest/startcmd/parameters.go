@@ -25,6 +25,7 @@ type authRestParameters struct {
 	devicecertParams *deviceCertParams
 	staticFiles      string
 	secretsAPIToken  string
+	staticImages     string
 	keys             *keyParameters
 }
 
@@ -55,6 +56,8 @@ type oidcProviderConfig struct {
 	ClientID     string `yaml:"clientID"`
 	ClientSecret string `yaml:"clientSecret"`
 	Name         string `yaml:"name"`
+	SignUpText   string `yaml:"signUpText"`
+	SignInText   string `yaml:"signInText"`
 	LogoURL      string `yaml:"logoURL"`
 }
 
