@@ -431,7 +431,7 @@ func startAuthService(parameters *authRestParameters, srv server) error {
 	router := mux.NewRouter()
 
 	fs := http.FileServer(http.Dir(parameters.staticImages))
-	router.Handle("/static/images", fs)
+	router.PathPrefix("/static/images/").Handler(http.StripPrefix("/static/images/", fs))
 
 	// health check
 	router.HandleFunc(healthCheckEndpoint, healthCheckHandler).Methods(http.MethodGet)
