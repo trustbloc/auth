@@ -137,7 +137,10 @@ func New(config *Config) (*Operation, error) {
 	authProviders := make([]authProvider, 0)
 
 	for k, v := range config.OIDC.Providers {
-		prov := authProvider{ID: k, Name: v.Name, LogoURL: v.LogoURL}
+		prov := authProvider{
+			ID: k, Name: v.Name, LogoURL: v.LogoURL, SignUpText: v.SignUpText,
+			SignInText: v.SignInText,
+		}
 
 		authProviders = append(authProviders, prov)
 	}
