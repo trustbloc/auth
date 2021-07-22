@@ -326,11 +326,12 @@ func (o *Operation) oidcLoginHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	authOption := oauth2.SetAuthURLParam(providerQueryParam, providerID)
 	redirectURL := provider.OAuth2Config(
 		oidc.ScopeOpenID,
 		"profile",
 		"email",
-	).AuthCodeURL(state, oauth2.AccessTypeOnline)
+	).AuthCodeURL(state, oauth2.AccessTypeOnline, authOption)
 
 	http.Redirect(w, r, redirectURL, http.StatusFound)
 
