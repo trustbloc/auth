@@ -12,6 +12,7 @@ import (
 
 	"github.com/cenkalti/backoff"
 	"github.com/hyperledger/aries-framework-go-ext/component/storage/couchdb"
+	"github.com/hyperledger/aries-framework-go-ext/component/storage/mongodb"
 	"github.com/hyperledger/aries-framework-go-ext/component/storage/mysql"
 	"github.com/hyperledger/aries-framework-go/component/storageutil/mem"
 	"github.com/hyperledger/aries-framework-go/spi/storage"
@@ -27,6 +28,9 @@ func supportedProviders() map[string]func(url, prefix string) (storage.Provider,
 		},
 		databaseTypeMySQLOption: func(url, prefix string) (storage.Provider, error) {
 			return mysql.NewProvider(url, mysql.WithDBPrefix(prefix))
+		},
+		databaseTypeMongoDBOption: func(url, prefix string) (storage.Provider, error) {
+			return mongodb.NewProvider(url, mongodb.WithDBPrefix(prefix))
 		},
 	}
 }

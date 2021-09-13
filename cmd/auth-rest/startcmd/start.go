@@ -36,6 +36,7 @@ const (
 	databaseTypeMemOption     = "mem"
 	databaseTypeCouchDBOption = "couchdb"
 	databaseTypeMySQLOption   = "mysql"
+	databaseTypeMongoDBOption = "mongodb"
 
 	hostURLFlagName      = "host-url"
 	hostURLFlagShorthand = "u"
@@ -73,13 +74,13 @@ const (
 	databaseTypeFlagName      = "database-type"
 	databaseTypeEnvKey        = "AUTH_REST_DATABASE_TYPE"
 	databaseTypeFlagShorthand = "d"
-	databaseTypeFlagUsage     = "The type of database to use for storage. Supported options: mem, couchdb, mysql. " +
-		" Alternatively, this can be set with the following environment variable: " + databaseTypeEnvKey
+	databaseTypeFlagUsage     = "The type of database to use for storage. Supported options: mem, couchdb, mysql, " +
+		"mongodb. Alternatively, this can be set with the following environment variable: " + databaseTypeEnvKey
 
 	databaseURLFlagName      = "database-url"
 	databaseURLEnvKey        = "AUTH_REST_DATABASE_URL"
 	databaseURLFlagShorthand = "r"
-	databaseURLFlagUsage     = "The URL of the database. Not needed if using memstore." +
+	databaseURLFlagUsage     = "The URL (or connection string) of the database. Not needed if using memstore." +
 		" For CouchDB, include the username:password@ text if required." +
 		" Alternatively, this can be set with the following environment variable: " + databaseURLEnvKey
 
@@ -92,7 +93,6 @@ const (
 	databasePrefixEnvKey        = "AUTH_REST_DATABASE_PREFIX"
 	databasePrefixFlagShorthand = "p"
 	databasePrefixFlagUsage     = "An optional prefix to be used when creating and retrieving databases." +
-		" This followed by an underscore will be prepended to any databases created by hub-auth. " +
 		" Alternatively, this can be set with the following environment variable: " + databasePrefixEnvKey
 
 	invalidDatabaseTypeErrMsg = "%s is not a valid database type. Run start --help to see the available options"

@@ -12,10 +12,11 @@ require (
 	github.com/go-sql-driver/mysql v1.6.0 // indirect
 	github.com/google/uuid v1.2.0
 	github.com/gorilla/mux v1.7.4
-	github.com/hyperledger/aries-framework-go-ext/component/storage/couchdb v0.0.0-20210816155437-90525d054756
-	github.com/hyperledger/aries-framework-go-ext/component/storage/mysql v0.0.0-20210816155437-90525d054756
-	github.com/hyperledger/aries-framework-go/component/storageutil v0.0.0-20210807121559-b41545a4f1e8
-	github.com/hyperledger/aries-framework-go/spi v0.0.0-20210816113201-26c0665ef2b9
+	github.com/hyperledger/aries-framework-go-ext/component/storage/couchdb v0.0.0-20210913191140-6a8013cdda32
+	github.com/hyperledger/aries-framework-go-ext/component/storage/mongodb v0.0.0-20210913191140-6a8013cdda32
+	github.com/hyperledger/aries-framework-go-ext/component/storage/mysql v0.0.0-20210913191140-6a8013cdda32
+	github.com/hyperledger/aries-framework-go/component/storageutil v0.0.0-20210913152107-80cff90741e9
+	github.com/hyperledger/aries-framework-go/spi v0.0.0-20210913152107-80cff90741e9
 	github.com/rs/cors v1.7.0
 	github.com/spf13/cobra v0.0.6
 	github.com/stretchr/testify v1.7.0
