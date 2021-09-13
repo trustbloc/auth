@@ -12,8 +12,8 @@ require (
 	github.com/google/uuid v1.1.2
 	github.com/gorilla/sessions v1.2.1
 	github.com/hyperledger/aries-framework-go v0.1.7-0.20210816113201-26c0665ef2b9
-	github.com/hyperledger/aries-framework-go/component/storageutil v0.0.0-20210807121559-b41545a4f1e8
-	github.com/hyperledger/aries-framework-go/spi v0.0.0-20210807121559-b41545a4f1e8
+	github.com/hyperledger/aries-framework-go/component/storageutil v0.0.0-20210913152107-80cff90741e9
+	github.com/hyperledger/aries-framework-go/spi v0.0.0-20210913152107-80cff90741e9
 	github.com/ory/hydra-client-go v1.7.4
 	github.com/stretchr/testify v1.7.0
 	github.com/trustbloc/edge-core v0.1.7-0.20210816120552-ed93662ac716

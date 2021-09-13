@@ -466,6 +466,18 @@ func Test_createProvider(t *testing.T) {
 		require.Contains(t, err.Error(), "failed to ping couchDB: url can't be blank")
 		require.Nil(t, provider)
 	})
+	t.Run("Empty MongoDB URL", func(t *testing.T) {
+		provider, err := createProvider(&authRestParameters{
+			databaseType:   databaseTypeMongoDBOption,
+			databaseURL:    "",
+			startupTimeout: 1,
+		})
+
+		require.Error(t, err)
+		require.EqualError(t, err, "failed to connect to storage at  : failed to create a new MongoDB "+
+			`client: error parsing uri: scheme must be "mongodb" or "mongodb+srv"`)
+		require.Nil(t, provider)
+	})
 }
 
 func setEnvVars(t *testing.T) {

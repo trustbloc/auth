@@ -21,10 +21,10 @@ import (
 
 const (
 	bootstrapDataPath = login.HUB_AUTH_HOST + "/bootstrap"
-	docsSDSURL        = "https://TODO.docs.sds.org/"
-	keysSDSURL        = "https://TODO.keys.sds.org/"
-	authKeyServerURL  = "https://TODO.auth.keyserver.org/"
-	opsKeyServerURL   = "https://TODO.ops.keyserver.org/"
+	docsSDSURL        = "https://TODO.docs.sds.org"
+	keysSDSURL        = "https://TODO.keys.sds.org"
+	authKeyServerURL  = "https://TODO.auth.keyserver.org"
+	opsKeyServerURL   = "https://TODO.ops.keyserver.org"
 )
 
 type Steps struct {
