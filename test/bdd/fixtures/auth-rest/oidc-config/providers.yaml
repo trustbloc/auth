@@ -10,6 +10,6 @@ providers:
     clientID: hub-auth
     clientSecret: hub-auth-secret
     name: Demo OIDC
-    signUpText: Demo Sign-Up Partner
-    signInText: Demo Sign-In Partner
-    logoURL: https://localhost:8070/static/images/demo_provider.svg
+    signUpLogoURL: https://localhost:8070/static/images/signup_logo.svg
+    signInLogoURL: https://localhost:8070/static/images/signin_logo.svg
+    order: 1
