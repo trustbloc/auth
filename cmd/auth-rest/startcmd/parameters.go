@@ -52,13 +52,13 @@ type oidcProvidersConfig struct {
 }
 
 type oidcProviderConfig struct {
-	URL          string `yaml:"url"`
-	ClientID     string `yaml:"clientID"`
-	ClientSecret string `yaml:"clientSecret"`
-	Name         string `yaml:"name"`
-	SignUpText   string `yaml:"signUpText"`
-	SignInText   string `yaml:"signInText"`
-	LogoURL      string `yaml:"logoURL"`
+	URL           string `yaml:"url"`
+	ClientID      string `yaml:"clientID"`
+	ClientSecret  string `yaml:"clientSecret"`
+	Name          string `yaml:"name"`
+	SignUpLogoURL string `yaml:"signUpLogoURL"`
+	SignInLogoURL string `yaml:"signInLogoURL"`
+	Order         int    `yaml:"order"`
 }
 
 type bootstrapParams struct {

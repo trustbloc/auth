@@ -109,13 +109,13 @@ type OIDCConfig struct {
 
 // OIDCProviderConfig holds the configuration for a single OIDC provider.
 type OIDCProviderConfig struct {
-	URL          string
-	ClientID     string
-	ClientSecret string
-	Name         string
-	SignUpText   string
-	SignInText   string
-	LogoURL      string
+	URL           string
+	ClientID      string
+	ClientSecret  string
+	Name          string
+	SignUpLogoURL string
+	SignInLogoURL string
+	Order         int
 }
 
 // CookieConfig holds cookie configuration.
@@ -138,8 +138,8 @@ func New(config *Config) (*Operation, error) {
 
 	for k, v := range config.OIDC.Providers {
 		prov := authProvider{
-			ID: k, Name: v.Name, LogoURL: v.LogoURL, SignUpText: v.SignUpText,
-			SignInText: v.SignInText,
+			ID: k, Name: v.Name, SignUpLogoURL: v.SignUpLogoURL,
+			SignInLogoURL: v.SignInLogoURL, Order: v.Order,
 		}
 
 		authProviders = append(authProviders, prov)

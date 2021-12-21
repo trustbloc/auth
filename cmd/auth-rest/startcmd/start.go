@@ -547,13 +547,13 @@ func getOIDCParams(cmd *cobra.Command) (*oidcParams, error) {
 
 	for k, v := range data.Providers {
 		params.providers[k] = operation.OIDCProviderConfig{
-			URL:          v.URL,
-			ClientID:     v.ClientID,
-			ClientSecret: v.ClientSecret,
-			Name:         v.Name,
-			SignUpText:   v.SignUpText,
-			SignInText:   v.SignInText,
-			LogoURL:      v.LogoURL,
+			URL:           v.URL,
+			ClientID:      v.ClientID,
+			ClientSecret:  v.ClientSecret,
+			Name:          v.Name,
+			SignUpLogoURL: v.SignUpLogoURL,
+			SignInLogoURL: v.SignInLogoURL,
+			Order:         v.Order,
 		}
 	}
 
