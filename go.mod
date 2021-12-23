@@ -8,7 +8,7 @@ go 1.16
 
 require (
 	github.com/cenkalti/backoff v2.2.1+incompatible
-	github.com/coreos/go-oidc v2.2.1+incompatible
+	github.com/coreos/go-oidc/v3 v3.1.0
 	github.com/google/uuid v1.1.2
 	github.com/gorilla/sessions v1.2.1
 	github.com/hyperledger/aries-framework-go v0.1.7

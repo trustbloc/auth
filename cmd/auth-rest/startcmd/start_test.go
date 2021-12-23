@@ -80,6 +80,16 @@ func TestOIDCParameters(t *testing.T) {
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "failed to parse contents")
 	})
+
+	t.Run("valid provider config", func(t *testing.T) {
+		startCmd := GetStartCmd(&mockServer{})
+
+		args := overrideArg(allArgs(t), oidcProvidersConfigFileFlagName, "./test/data/providers.yaml")
+		startCmd.SetArgs(args)
+
+		err := startCmd.Execute()
+		require.NoError(t, err)
+	})
 }
 
 func TestStartCmdContents(t *testing.T) {

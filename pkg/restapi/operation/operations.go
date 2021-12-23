@@ -22,7 +22,7 @@ import (
 	"time"
 
 	"github.com/cenkalti/backoff"
-	"github.com/coreos/go-oidc"
+	"github.com/coreos/go-oidc/v3/oidc"
 	"github.com/google/uuid"
 	"github.com/hyperledger/aries-framework-go/spi/storage"
 	"github.com/ory/hydra-client-go/client/admin"
@@ -109,13 +109,14 @@ type OIDCConfig struct {
 
 // OIDCProviderConfig holds the configuration for a single OIDC provider.
 type OIDCProviderConfig struct {
-	URL           string
-	ClientID      string
-	ClientSecret  string
-	Name          string
-	SignUpLogoURL string
-	SignInLogoURL string
-	Order         int
+	URL             string
+	ClientID        string
+	ClientSecret    string
+	Name            string
+	SignUpLogoURL   string
+	SignInLogoURL   string
+	Order           int
+	SkipIssuerCheck bool
 }
 
 // CookieConfig holds cookie configuration.
@@ -963,9 +964,15 @@ func (o *Operation) initOIDCProvider(providerID string, config *OIDCProviderConf
 		func() error {
 			var idpErr error
 
+			ctx := context.Background()
+
+			if config.SkipIssuerCheck {
+				ctx = oidc.InsecureIssuerURLContext(context.Background(), config.URL)
+			}
+
 			idp, idpErr = oidc.NewProvider(
 				oidc.ClientContext(
-					context.Background(),
+					ctx,
 					&http.Client{
 						Transport: &http.Transport{TLSClientConfig: o.tlsConfig},
 					},
@@ -987,11 +994,12 @@ func (o *Operation) initOIDCProvider(providerID string, config *OIDCProviderConf
 	}
 
 	return &oidcProviderImpl{
-		name:         providerID,
-		clientID:     config.ClientID,
-		clientSecret: config.ClientSecret,
-		callback:     o.callbackURL,
-		op:           idp,
+		name:            providerID,
+		clientID:        config.ClientID,
+		clientSecret:    config.ClientSecret,
+		callback:        o.callbackURL,
+		skipIssuerCheck: config.SkipIssuerCheck,
+		op:              idp,
 		httpClient: &http.Client{Transport: &http.Transport{
 			TLSClientConfig: o.tlsConfig,
 		}},

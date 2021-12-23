@@ -10,7 +10,7 @@ import (
 	"context"
 	"net/http"
 
-	"github.com/coreos/go-oidc"
+	"github.com/coreos/go-oidc/v3/oidc"
 	"github.com/ory/hydra-client-go/client/admin"
 	"golang.org/x/oauth2"
 )
@@ -23,12 +23,13 @@ type oidcProvider interface {
 }
 
 type oidcProviderImpl struct {
-	name         string
-	clientID     string
-	clientSecret string
-	callback     string
-	op           *oidc.Provider
-	httpClient   *http.Client
+	name            string
+	clientID        string
+	clientSecret    string
+	callback        string
+	skipIssuerCheck bool
+	op              *oidc.Provider
+	httpClient      *http.Client
 }
 
 func (o *oidcProviderImpl) Name() string {
@@ -53,7 +54,7 @@ func (o *oidcProviderImpl) Endpoint() oauth2.Endpoint {
 }
 
 func (o *oidcProviderImpl) Verify(ctx context.Context, rawToken string) (idToken, error) {
-	return o.op.Verifier(&oidc.Config{ClientID: o.clientID}).Verify(ctx, rawToken)
+	return o.op.Verifier(&oidc.Config{ClientID: o.clientID, SkipIssuerCheck: o.skipIssuerCheck}).Verify(ctx, rawToken)
 }
 
 type idToken interface {
