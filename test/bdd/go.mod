@@ -7,13 +7,12 @@ module github.com/trustbloc/hub-auth/test/bdd
 go 1.16
 
 require (
-	github.com/coreos/go-oidc v2.2.1+incompatible
+	github.com/coreos/go-oidc/v3 v3.1.0
 	github.com/cucumber/godog v0.9.0
 	github.com/fsouza/go-dockerclient v1.6.5
 	github.com/google/uuid v1.1.2
 	github.com/ory/hydra-client-go v1.8.5
 	github.com/pkg/errors v0.9.1
-	github.com/pquerna/cachecontrol v0.0.0-20200921180117-858c6e7e6b7e // indirect
 	github.com/tidwall/gjson v1.6.7
 	github.com/trustbloc/edge-core v0.1.7
 	github.com/trustbloc/hub-auth v0.0.0

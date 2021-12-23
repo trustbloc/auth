@@ -1,0 +1,15 @@
+#
+# Copyright SecureKey Technologies Inc. All Rights Reserved.
+#
+# SPDX-License-Identifier: Apache-2.0
+#
+
+providers:
+  mockbank:
+    url: https://third.party.oidc.provider.example.com:5555/
+    clientID: hub-auth
+    clientSecret: hub-auth-secret
+    name: Demo OIDC
+    signUpLogoURL: https://localhost:8070/static/images/signup_logo.svg
+    signInLogoURL: https://localhost:8070/static/images/signin_logo.svg
+    order: 1
