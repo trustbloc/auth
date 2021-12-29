@@ -19,12 +19,20 @@ type BDDContext struct {
 
 // NewBDDContext create new BDDContext.
 func NewBDDContext(caCertPath string) (*BDDContext, error) {
-	rootCAs, err := tlsutils.GetCertPool(false, []string{caCertPath})
-	if err != nil {
-		return nil, err
+	var tlsConfig *tls.Config
+
+	if caCertPath != "" {
+		rootCAs, err := tlsutils.GetCertPool(false, []string{caCertPath})
+		if err != nil {
+			return nil, err
+		}
+
+		tlsConfig = &tls.Config{
+			RootCAs: rootCAs, MinVersion: tls.VersionTLS12,
+		}
 	}
 
-	return &BDDContext{tlsConfig: &tls.Config{RootCAs: rootCAs}}, nil
+	return &BDDContext{tlsConfig: tlsConfig}, nil
 }
 
 // TLSConfig return tls config.
