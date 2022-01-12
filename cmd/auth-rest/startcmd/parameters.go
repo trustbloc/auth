@@ -44,7 +44,7 @@ type deviceCertParams struct {
 type oidcParams struct {
 	hydraURL    *url.URL
 	callbackURL string
-	providers   map[string]operation.OIDCProviderConfig
+	providers   map[string]*operation.OIDCProviderConfig
 }
 
 type oidcProvidersConfig struct {
@@ -52,14 +52,15 @@ type oidcProvidersConfig struct {
 }
 
 type oidcProviderConfig struct {
-	URL             string `yaml:"url"`
-	ClientID        string `yaml:"clientID"`
-	ClientSecret    string `yaml:"clientSecret"`
-	Name            string `yaml:"name"`
-	SignUpLogoURL   string `yaml:"signUpLogoURL"`
-	SignInLogoURL   string `yaml:"signInLogoURL"`
-	Order           int    `yaml:"order"`
-	SkipIssuerCheck bool   `yaml:"skipIssuerCheck"`
+	URL             string   `yaml:"url"`
+	ClientID        string   `yaml:"clientID"`
+	ClientSecret    string   `yaml:"clientSecret"`
+	Name            string   `yaml:"name"`
+	SignUpLogoURL   string   `yaml:"signUpLogoURL"`
+	SignInLogoURL   string   `yaml:"signInLogoURL"`
+	Order           int      `yaml:"order"`
+	SkipIssuerCheck bool     `yaml:"skipIssuerCheck"`
+	Scopes          []string `yaml:"scopes"`
 }
 
 type bootstrapParams struct {

@@ -67,7 +67,7 @@ type Operation struct {
 	client              httpClient
 	requestTokens       map[string]string
 	transientStore      storage.Store
-	oidcProvidersConfig map[string]OIDCProviderConfig
+	oidcProvidersConfig map[string]*OIDCProviderConfig
 	cachedOIDCProviders map[string]oidcProvider
 	uiEndpoint          string
 	bootstrapStore      storage.Store
@@ -104,7 +104,7 @@ type Config struct {
 // OIDCConfig holds the OIDC configuration.
 type OIDCConfig struct {
 	CallbackURL string
-	Providers   map[string]OIDCProviderConfig
+	Providers   map[string]*OIDCProviderConfig
 }
 
 // OIDCProviderConfig holds the configuration for a single OIDC provider.
@@ -117,6 +117,7 @@ type OIDCProviderConfig struct {
 	SignInLogoURL   string
 	Order           int
 	SkipIssuerCheck bool
+	Scopes          []string
 }
 
 // CookieConfig holds cookie configuration.
@@ -327,11 +328,23 @@ func (o *Operation) oidcLoginHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	provConfig, ok := o.oidcProvidersConfig[providerID]
+	if !ok {
+		o.writeErrorResponse(w, http.StatusInternalServerError, "provider not supported: %s", providerID)
+
+		return
+	}
+
+	scopes := []string{oidc.ScopeOpenID}
+	if len(provConfig.Scopes) != 0 {
+		scopes = append(scopes, provConfig.Scopes...)
+	} else {
+		scopes = append(scopes, "profile", "email")
+	}
+
 	authOption := oauth2.SetAuthURLParam(providerQueryParam, providerID)
 	redirectURL := provider.OAuth2Config(
-		oidc.ScopeOpenID,
-		"profile",
-		"email",
+		scopes...,
 	).AuthCodeURL(state, oauth2.AccessTypeOnline, authOption)
 
 	http.Redirect(w, r, redirectURL, http.StatusFound)
@@ -927,7 +940,7 @@ func (o *Operation) getProvider(providerID string) (oidcProvider, error) {
 		return nil, fmt.Errorf("provider not supported: %s", providerID)
 	}
 
-	prov, err := o.initOIDCProvider(providerID, &provider)
+	prov, err := o.initOIDCProvider(providerID, provider)
 	if err != nil {
 		return nil, fmt.Errorf("failed to init oidc provider: %w", err)
 	}

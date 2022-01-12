@@ -60,7 +60,7 @@ func config(t *testing.T) *operation.Config {
 	return &operation.Config{
 		OIDC: &operation.OIDCConfig{
 			CallbackURL: "https://example.com/callback",
-			Providers: map[string]operation.OIDCProviderConfig{
+			Providers: map[string]*operation.OIDCProviderConfig{
 				"test": {
 					URL:          path,
 					ClientID:     uuid.New().String(),

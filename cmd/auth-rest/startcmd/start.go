@@ -543,10 +543,10 @@ func getOIDCParams(cmd *cobra.Command) (*oidcParams, error) {
 		return nil, fmt.Errorf("failed to parse contents of %s: %w", oidcProvFile, err)
 	}
 
-	params.providers = make(map[string]operation.OIDCProviderConfig, len(data.Providers))
+	params.providers = make(map[string]*operation.OIDCProviderConfig, len(data.Providers))
 
 	for k, v := range data.Providers {
-		params.providers[k] = operation.OIDCProviderConfig{
+		params.providers[k] = &operation.OIDCProviderConfig{
 			URL:             v.URL,
 			ClientID:        v.ClientID,
 			ClientSecret:    v.ClientSecret,
@@ -555,6 +555,7 @@ func getOIDCParams(cmd *cobra.Command) (*oidcParams, error) {
 			SignInLogoURL:   v.SignInLogoURL,
 			Order:           v.Order,
 			SkipIssuerCheck: v.SkipIssuerCheck,
+			Scopes:          v.Scopes,
 		}
 	}
 
