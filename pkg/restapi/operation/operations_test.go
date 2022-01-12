@@ -104,10 +104,25 @@ func TestOIDCLoginHandler(t *testing.T) {
 		svc.cachedOIDCProviders = map[string]oidcProvider{
 			provider: &mockOIDCProvider{},
 		}
+		svc.oidcProvidersConfig = map[string]*OIDCProviderConfig{provider: {}}
 		w := httptest.NewRecorder()
 		svc.oidcLoginHandler(w, newOIDCLoginRequest(provider))
 		require.Equal(t, http.StatusFound, w.Code)
 		require.NotEmpty(t, w.Header().Get("location"))
+	})
+
+	t.Run("provider not supported", func(t *testing.T) {
+		provider := uuid.New().String()
+		config := config(t)
+		svc, err := New(config)
+		require.NoError(t, err)
+		svc.cookies = mockCookies()
+		svc.cachedOIDCProviders = map[string]oidcProvider{
+			provider: &mockOIDCProvider{},
+		}
+		w := httptest.NewRecorder()
+		svc.oidcLoginHandler(w, newOIDCLoginRequest(provider))
+		require.Equal(t, http.StatusInternalServerError, w.Code)
 	})
 
 	t.Run("internal server error if cannot open cookie store", func(t *testing.T) {
@@ -160,7 +175,7 @@ func TestOIDCLoginHandler(t *testing.T) {
 
 	t.Run("error if oidc provider is invalid", func(t *testing.T) {
 		config := config(t)
-		config.OIDC.Providers = map[string]OIDCProviderConfig{
+		config.OIDC.Providers = map[string]*OIDCProviderConfig{
 			"test": {
 				URL: "INVALID",
 			},
@@ -1818,7 +1833,7 @@ func config(t *testing.T) *Config {
 	return &Config{
 		OIDC: &OIDCConfig{
 			CallbackURL: "http://test.com",
-			Providers: map[string]OIDCProviderConfig{
+			Providers: map[string]*OIDCProviderConfig{
 				"mock1": {
 					URL:          mockoidc.StartProvider(t),
 					ClientID:     uuid.New().String(),
