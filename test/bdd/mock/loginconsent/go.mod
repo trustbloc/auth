@@ -10,6 +10,6 @@ require (
 	github.com/gorilla/mux v1.8.0
 	github.com/hyperledger/aries-framework-go/component/storageutil v0.0.0-20210807121559-b41545a4f1e8
 	github.com/hyperledger/aries-framework-go/spi v0.0.0-20210807121559-b41545a4f1e8
-	github.com/ory/hydra-client-go v1.8.5
+	github.com/ory/hydra-client-go v1.10.6
 	github.com/trustbloc/edge-core v0.1.7-0.20210816120552-ed93662ac716
 )

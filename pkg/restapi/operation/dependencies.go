@@ -94,9 +94,13 @@ type httpClient interface {
 
 // Hydra is the client used to interface with the Hydra service.
 type Hydra interface {
-	GetLoginRequest(*admin.GetLoginRequestParams) (*admin.GetLoginRequestOK, error)
-	AcceptLoginRequest(*admin.AcceptLoginRequestParams) (*admin.AcceptLoginRequestOK, error)
-	GetConsentRequest(*admin.GetConsentRequestParams) (*admin.GetConsentRequestOK, error)
-	AcceptConsentRequest(*admin.AcceptConsentRequestParams) (*admin.AcceptConsentRequestOK, error)
-	IntrospectOAuth2Token(params *admin.IntrospectOAuth2TokenParams) (*admin.IntrospectOAuth2TokenOK, error)
+	GetLoginRequest(params *admin.GetLoginRequestParams, opts ...admin.ClientOption) (*admin.GetLoginRequestOK, error)
+	AcceptLoginRequest(params *admin.AcceptLoginRequestParams,
+		opts ...admin.ClientOption) (*admin.AcceptLoginRequestOK, error)
+	GetConsentRequest(params *admin.GetConsentRequestParams,
+		opts ...admin.ClientOption) (*admin.GetConsentRequestOK, error)
+	AcceptConsentRequest(params *admin.AcceptConsentRequestParams,
+		opts ...admin.ClientOption) (*admin.AcceptConsentRequestOK, error)
+	IntrospectOAuth2Token(params *admin.IntrospectOAuth2TokenParams,
+		opts ...admin.ClientOption) (*admin.IntrospectOAuth2TokenOK, error)
 }

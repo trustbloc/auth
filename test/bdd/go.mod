@@ -10,8 +10,8 @@ require (
 	github.com/coreos/go-oidc/v3 v3.1.0
 	github.com/cucumber/godog v0.9.0
 	github.com/fsouza/go-dockerclient v1.6.5
-	github.com/google/uuid v1.1.2
-	github.com/ory/hydra-client-go v1.8.5
+	github.com/google/uuid v1.3.0
+	github.com/ory/hydra-client-go v1.10.6
 	github.com/pkg/errors v0.9.1
 	github.com/tidwall/gjson v1.6.7
 	github.com/trustbloc/edge-core v0.1.7
