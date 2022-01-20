@@ -1939,24 +1939,28 @@ type mockHydra struct {
 	introspectErr             error
 }
 
-func (m *mockHydra) GetLoginRequest(_ *admin.GetLoginRequestParams) (*admin.GetLoginRequestOK, error) {
+func (m *mockHydra) GetLoginRequest(_ *admin.GetLoginRequestParams,
+	_ ...admin.ClientOption) (*admin.GetLoginRequestOK, error) {
 	return m.getLoginRequestValue, m.getLoginRequestErr
 }
 
-func (m *mockHydra) AcceptLoginRequest(_ *admin.AcceptLoginRequestParams) (*admin.AcceptLoginRequestOK, error) {
+func (m *mockHydra) AcceptLoginRequest(_ *admin.AcceptLoginRequestParams,
+	_ ...admin.ClientOption) (*admin.AcceptLoginRequestOK, error) {
 	return m.acceptLoginRequestValue, m.acceptLoginRequestErr
 }
 
-func (m *mockHydra) GetConsentRequest(_ *admin.GetConsentRequestParams) (*admin.GetConsentRequestOK, error) {
+func (m *mockHydra) GetConsentRequest(_ *admin.GetConsentRequestParams,
+	_ ...admin.ClientOption) (*admin.GetConsentRequestOK, error) {
 	return m.getConsentRequestValue, m.getConsentRequestErr
 }
 
-func (m *mockHydra) AcceptConsentRequest(_ *admin.AcceptConsentRequestParams) (*admin.AcceptConsentRequestOK, error) {
+func (m *mockHydra) AcceptConsentRequest(_ *admin.AcceptConsentRequestParams,
+	_ ...admin.ClientOption) (*admin.AcceptConsentRequestOK, error) {
 	return m.acceptConsentRequestValue, m.acceptConsentRequestErr
 }
 
-func (m *mockHydra) IntrospectOAuth2Token(
-	params *admin.IntrospectOAuth2TokenParams) (*admin.IntrospectOAuth2TokenOK, error) {
+func (m *mockHydra) IntrospectOAuth2Token(params *admin.IntrospectOAuth2TokenParams,
+	_ ...admin.ClientOption) (*admin.IntrospectOAuth2TokenOK, error) {
 	return m.introspectValue, m.introspectErr
 }
 
