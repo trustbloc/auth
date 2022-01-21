@@ -10,7 +10,7 @@ pr:
   - main
 
 variables:
-  GO_VERSION: 1.16
+  GO_VERSION: 1.17
   GOPATH: $(Agent.BuildDirectory)/go
 
 jobs:
