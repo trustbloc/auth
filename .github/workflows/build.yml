@@ -60,7 +60,8 @@ jobs:
           go-version: ${{ env.GO_VERSION }}
       - name: Run BDD test
         run: |
-          make bdd-test
+         echo '127.0.0.1 third.party.oidc.provider.example.com' | sudo tee -a /etc/hosts
+         make bdd-test
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
