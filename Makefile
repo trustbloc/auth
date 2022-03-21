@@ -27,7 +27,7 @@ license:
 	@scripts/check_license.sh
 
 .PHONY: unit-test
-unit-test:
+unit-test: generate-unit-test-key
 	@scripts/check_unit.sh
 
 .PHONY: auth-rest
@@ -69,6 +69,14 @@ generate-test-keys: clean
 		--entrypoint "/opt/workspace/auth/scripts/generate_test_keys.sh" \
 		frapsoft/openssl
 
+.PHONY: generate-unit-test-key
+generate-unit-test-key: clean
+	@mkdir -p component/gnap/testdata/crypto/tls
+	@docker run -i --rm \
+		-v $(abspath .)/component/gnap:/opt/workspace/auth \
+		--entrypoint "/opt/workspace/auth/testdata/scripts/generate_test_keys.sh" \
+		frapsoft/openssl
+
 .PHONY: clean
 clean: clean-build
 
@@ -77,3 +85,4 @@ clean-build:
 	@rm -Rf ./.build
 	@rm -Rf ./test/bdd/fixtures/keys/tls
 	@rm -Rf ./test/bdd/docker-compose.log
+	@rm -Rf ./component/gnap/testdata/crypto
