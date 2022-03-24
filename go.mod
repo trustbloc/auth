@@ -11,12 +11,12 @@ require (
 	github.com/coreos/go-oidc/v3 v3.1.0
 	github.com/google/uuid v1.3.0
 	github.com/gorilla/sessions v1.2.1
-	github.com/hyperledger/aries-framework-go v0.1.8-0.20220322085443-50e8f9bd208b
-	github.com/hyperledger/aries-framework-go/component/storageutil v0.0.0-20220322085443-50e8f9bd208b
-	github.com/hyperledger/aries-framework-go/spi v0.0.0-20220322085443-50e8f9bd208b
+	github.com/hyperledger/aries-framework-go v0.1.8-0.20220324201531-18c87667df19
+	github.com/hyperledger/aries-framework-go/component/storageutil v0.0.0-20220324201531-18c87667df19
+	github.com/hyperledger/aries-framework-go/spi v0.0.0-20220324201531-18c87667df19
 	github.com/ory/hydra-client-go v1.10.6
 	github.com/stretchr/testify v1.7.0
-	github.com/trustbloc/edge-core v0.1.8-0.20220308160458-17fbc683162d
+	github.com/trustbloc/edge-core v0.1.8-0.20220324215259-0ab3fd8db3f3
 	golang.org/x/oauth2 v0.0.0-20211104180415-d3ed0bb246c8
 )
 
@@ -39,7 +39,6 @@ require (
 	github.com/golang/protobuf v1.5.2 // indirect
 	github.com/google/go-cmp v0.5.6 // indirect
 	github.com/gorilla/securecookie v1.1.1 // indirect
-	github.com/hyperledger/aries-framework-go/test/component v0.0.0-20220217153004-1622c70e5767 // indirect
 	github.com/josharian/intern v1.0.0 // indirect
 	github.com/mailru/easyjson v0.7.6 // indirect
 	github.com/mitchellh/mapstructure v1.4.3 // indirect
