@@ -11,13 +11,13 @@ require (
 	github.com/coreos/go-oidc/v3 v3.1.0
 	github.com/google/uuid v1.3.0
 	github.com/gorilla/sessions v1.2.1
-	github.com/hyperledger/aries-framework-go v0.1.7
-	github.com/hyperledger/aries-framework-go/component/storageutil v0.0.0-20210913152107-80cff90741e9
-	github.com/hyperledger/aries-framework-go/spi v0.0.0-20210913152107-80cff90741e9
+	github.com/hyperledger/aries-framework-go v0.1.8-0.20220322085443-50e8f9bd208b
+	github.com/hyperledger/aries-framework-go/component/storageutil v0.0.0-20220322085443-50e8f9bd208b
+	github.com/hyperledger/aries-framework-go/spi v0.0.0-20220322085443-50e8f9bd208b
 	github.com/ory/hydra-client-go v1.10.6
 	github.com/stretchr/testify v1.7.0
-	github.com/trustbloc/edge-core v0.1.7
-	golang.org/x/oauth2 v0.0.0-20200902213428-5d25da1a8d43
+	github.com/trustbloc/edge-core v0.1.8-0.20220308160458-17fbc683162d
+	golang.org/x/oauth2 v0.0.0-20211104180415-d3ed0bb246c8
 )
 
 require (
@@ -37,18 +37,20 @@ require (
 	github.com/go-openapi/validate v0.20.2 // indirect
 	github.com/go-stack/stack v1.8.0 // indirect
 	github.com/golang/protobuf v1.5.2 // indirect
+	github.com/google/go-cmp v0.5.6 // indirect
 	github.com/gorilla/securecookie v1.1.1 // indirect
+	github.com/hyperledger/aries-framework-go/test/component v0.0.0-20220217153004-1622c70e5767 // indirect
 	github.com/josharian/intern v1.0.0 // indirect
 	github.com/mailru/easyjson v0.7.6 // indirect
-	github.com/mitchellh/mapstructure v1.4.1 // indirect
+	github.com/mitchellh/mapstructure v1.4.3 // indirect
 	github.com/oklog/ulid v1.3.1 // indirect
 	github.com/opentracing/opentracing-go v1.2.0 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	go.mongodb.org/mongo-driver v1.5.1 // indirect
-	golang.org/x/crypto v0.0.0-20210616213533-5ff15b29337e // indirect
-	golang.org/x/net v0.0.0-20210226172049-e18ecbb05110 // indirect
-	golang.org/x/text v0.3.5 // indirect
-	google.golang.org/appengine v1.6.6 // indirect
+	golang.org/x/crypto v0.0.0-20210817164053-32db794688a5 // indirect
+	golang.org/x/net v0.0.0-20210813160813-60bc85c4be6d // indirect
+	golang.org/x/text v0.3.7 // indirect
+	google.golang.org/appengine v1.6.7 // indirect
 	google.golang.org/protobuf v1.27.1 // indirect
 	gopkg.in/square/go-jose.v2 v2.5.1 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
