@@ -14,7 +14,7 @@ require (
 	github.com/ory/hydra-client-go v1.10.6
 	github.com/pkg/errors v0.9.1
 	github.com/tidwall/gjson v1.6.7
-	github.com/trustbloc/edge-core v0.1.8-0.20220308160458-17fbc683162d
+	github.com/trustbloc/edge-core v0.1.8-0.20220324215259-0ab3fd8db3f3
 	github.com/trustbloc/hub-auth v0.0.0
 	golang.org/x/oauth2 v0.0.0-20211104180415-d3ed0bb246c8
 )
@@ -52,7 +52,7 @@ require (
 	github.com/golang/protobuf v1.5.2 // indirect
 	github.com/gorilla/securecookie v1.1.1 // indirect
 	github.com/gorilla/sessions v1.2.1 // indirect
-	github.com/hyperledger/aries-framework-go/spi v0.0.0-20220322085443-50e8f9bd208b // indirect
+	github.com/hyperledger/aries-framework-go/spi v0.0.0-20220324201531-18c87667df19 // indirect
 	github.com/josharian/intern v1.0.0 // indirect
 	github.com/konsorten/go-windows-terminal-sequences v1.0.3 // indirect
 	github.com/mailru/easyjson v0.7.6 // indirect

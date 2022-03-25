@@ -13,12 +13,12 @@ require (
 	github.com/hyperledger/aries-framework-go-ext/component/storage/couchdb v0.0.0-20220318063402-17308bff816f
 	github.com/hyperledger/aries-framework-go-ext/component/storage/mongodb v0.0.0-20220318063402-17308bff816f
 	github.com/hyperledger/aries-framework-go-ext/component/storage/mysql v0.0.0-20220318063402-17308bff816f
-	github.com/hyperledger/aries-framework-go/component/storageutil v0.0.0-20220322085443-50e8f9bd208b
-	github.com/hyperledger/aries-framework-go/spi v0.0.0-20220322085443-50e8f9bd208b
+	github.com/hyperledger/aries-framework-go/component/storageutil v0.0.0-20220324201531-18c87667df19
+	github.com/hyperledger/aries-framework-go/spi v0.0.0-20220324201531-18c87667df19
 	github.com/rs/cors v1.8.2
 	github.com/spf13/cobra v1.3.0
 	github.com/stretchr/testify v1.7.0
-	github.com/trustbloc/edge-core v0.1.8-0.20220308160458-17fbc683162d
+	github.com/trustbloc/edge-core v0.1.8-0.20220324215259-0ab3fd8db3f3
 	github.com/trustbloc/hub-auth v0.0.0-00010101000000-000000000000
 	gopkg.in/yaml.v2 v2.4.0
 )
