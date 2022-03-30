@@ -10,15 +10,15 @@ require (
 	github.com/cenkalti/backoff v2.2.1+incompatible
 	github.com/google/uuid v1.3.0
 	github.com/gorilla/mux v1.8.0
-	github.com/hyperledger/aries-framework-go-ext/component/storage/couchdb v0.0.0-20220325184342-8ccd5c996898
-	github.com/hyperledger/aries-framework-go-ext/component/storage/mongodb v0.0.0-20220325184342-8ccd5c996898
-	github.com/hyperledger/aries-framework-go-ext/component/storage/mysql v0.0.0-20220325184342-8ccd5c996898
-	github.com/hyperledger/aries-framework-go/component/storageutil v0.0.0-20220324201531-18c87667df19
-	github.com/hyperledger/aries-framework-go/spi v0.0.0-20220324201531-18c87667df19
+	github.com/hyperledger/aries-framework-go-ext/component/storage/couchdb v0.0.0-20220330151152-6bbd64bde42e
+	github.com/hyperledger/aries-framework-go-ext/component/storage/mongodb v0.0.0-20220330151152-6bbd64bde42e
+	github.com/hyperledger/aries-framework-go-ext/component/storage/mysql v0.0.0-20220330151152-6bbd64bde42e
+	github.com/hyperledger/aries-framework-go/component/storageutil v0.0.0-20220330140627-07042d78580c
+	github.com/hyperledger/aries-framework-go/spi v0.0.0-20220330140627-07042d78580c
 	github.com/rs/cors v1.8.2
 	github.com/spf13/cobra v1.3.0
 	github.com/stretchr/testify v1.7.0
-	github.com/trustbloc/edge-core v0.1.8-0.20220324215259-0ab3fd8db3f3
+	github.com/trustbloc/edge-core v0.1.8
 	github.com/trustbloc/hub-auth v0.0.0-00010101000000-000000000000
 	gopkg.in/yaml.v2 v2.4.0
 )
