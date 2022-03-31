@@ -1,0 +1,144 @@
+/*
+Copyright SecureKey Technologies Inc. All Rights Reserved.
+
+SPDX-License-Identifier: Apache-2.0
+*/
+
+package gnap
+
+import (
+	"encoding/json"
+	"net/http"
+	"strings"
+
+	"github.com/hyperledger/aries-framework-go/pkg/common/log"
+
+	"github.com/trustbloc/hub-auth/pkg/gnap/accesspolicy"
+	"github.com/trustbloc/hub-auth/pkg/internal/common/support"
+	"github.com/trustbloc/hub-auth/pkg/restapi/common"
+	"github.com/trustbloc/hub-auth/spi/gnap"
+	"github.com/trustbloc/hub-auth/spi/gnap/clientverifier/httpsig"
+)
+
+var logger = log.New("hub-auth-restapi") //nolint:gochecknoglobals
+
+const (
+	gnapBasePath = "/gnap"
+	// AuthRequestPath endpoint for GNAP authorization request.
+	AuthRequestPath = gnapBasePath + "/auth"
+	// AuthContinuePath endpoint for GNAP authorization continuation.
+	AuthContinuePath = gnapBasePath + "/continue"
+	// AuthIntrospectPath endpoint for GNAP token introspection.
+	AuthIntrospectPath = gnapBasePath + "/introspect"
+
+	// GNAP error response codes.
+	errInvalidRequest = "invalid_request"
+	errRequestDenied  = "request_denied"
+)
+
+// TODO: figure out what logic should go in the access policy vs operation handlers.
+
+// Operation defines Auth Server GNAP handlers.
+type Operation struct {
+	accessPolicy accesspolicy.AccessPolicy
+}
+
+// New creates GNAP operation handler.
+func New() *Operation {
+	return &Operation{}
+}
+
+// GetRESTHandlers get all controller API handler available for this service.
+func (o *Operation) GetRESTHandlers() []common.Handler {
+	return []common.Handler{
+		support.NewHTTPHandler(AuthRequestPath, http.MethodPost, o.authRequestHandler),
+		support.NewHTTPHandler(AuthContinuePath, http.MethodPost, o.authContinueHandler),
+		support.NewHTTPHandler(AuthIntrospectPath, http.MethodPost, o.introspectHandler),
+	}
+}
+
+func (o *Operation) authRequestHandler(w http.ResponseWriter, req *http.Request) {
+	authRequest := &gnap.AuthRequest{}
+
+	if err := json.NewDecoder(req.Body).Decode(authRequest); err != nil {
+		logger.Errorf("failed to parse gnap auth request: %s", err.Error())
+		w.WriteHeader(http.StatusBadRequest)
+		o.writeResponse(w, &gnap.ErrorResponse{
+			Error: errInvalidRequest,
+		})
+
+		return
+	}
+
+	v := httpsig.NewVerifier(req)
+
+	resp, err := o.accessPolicy.HandleAccessRequest(authRequest, v)
+	if err != nil {
+		logger.Errorf("access policy failed to handle access request: %s", err.Error())
+		w.WriteHeader(http.StatusUnauthorized)
+		o.writeResponse(w, &gnap.ErrorResponse{
+			Error: errRequestDenied,
+		})
+
+		return
+	}
+
+	o.writeResponse(w, resp)
+}
+
+func (o *Operation) authContinueHandler(w http.ResponseWriter, req *http.Request) {
+	tokHeader := strings.Split(strings.Trim(req.Header.Get("Authorization"), " "), " ")
+
+	if len(tokHeader) < 2 || tokHeader[0] != "GNAP" {
+		logger.Errorf("GNAP continuation endpoint requires GNAP token")
+		w.WriteHeader(http.StatusUnauthorized)
+		o.writeResponse(w, &gnap.ErrorResponse{
+			Error: errRequestDenied,
+		})
+
+		return
+	}
+
+	token := tokHeader[1]
+
+	continueRequest := &gnap.ContinueRequest{}
+
+	if err := json.NewDecoder(req.Body).Decode(continueRequest); err != nil {
+		logger.Errorf("failed to parse gnap continue request: %s", err.Error())
+		w.WriteHeader(http.StatusBadRequest)
+		o.writeResponse(w, &gnap.ErrorResponse{
+			Error: errInvalidRequest,
+		})
+
+		return
+	}
+
+	v := httpsig.NewVerifier(req)
+
+	resp, err := o.accessPolicy.HandleContinueRequest(continueRequest, token, v)
+	if err != nil {
+		logger.Errorf("access policy failed to handle continue request: %s", err.Error())
+		w.WriteHeader(http.StatusUnauthorized)
+		o.writeResponse(w, &gnap.ErrorResponse{
+			Error: errRequestDenied,
+		})
+
+		return
+	}
+
+	o.writeResponse(w, resp)
+}
+
+func (o *Operation) introspectHandler(w http.ResponseWriter, req *http.Request) {
+	o.writeResponse(w, nil)
+}
+
+// WriteResponse writes interface value to response.
+func (o *Operation) writeResponse(rw http.ResponseWriter, v interface{}) {
+	rw.Header().Set("Content-Type", "application/json")
+
+	err := json.NewEncoder(rw).Encode(v)
+	if err != nil {
+		logger.Errorf("Unable to send response: %s", err.Error())
+	}
+}

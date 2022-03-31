@@ -10,6 +10,7 @@ import (
 	"fmt"
 
 	"github.com/trustbloc/hub-auth/pkg/restapi/common"
+	"github.com/trustbloc/hub-auth/pkg/restapi/gnap"
 	"github.com/trustbloc/hub-auth/pkg/restapi/operation"
 )
 
@@ -23,6 +24,10 @@ func New(config *operation.Config) (*Controller, error) {
 	}
 
 	allHandlers = append(allHandlers, rpService.GetRESTHandlers()...)
+
+	gnapService := gnap.New()
+
+	allHandlers = append(allHandlers, gnapService.GetRESTHandlers()...)
 
 	return &Controller{handlers: allHandlers}, nil
 }

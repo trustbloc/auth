@@ -65,7 +65,7 @@ require (
 	github.com/opentracing/opentracing-go v1.2.0 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/sirupsen/logrus v1.6.0 // indirect
-	github.com/stretchr/testify v1.7.0 // indirect
+	github.com/stretchr/testify v1.7.1 // indirect
 	github.com/tidwall/match v1.0.3 // indirect
 	github.com/tidwall/pretty v1.0.2 // indirect
 	go.mongodb.org/mongo-driver v1.5.1 // indirect
@@ -85,3 +85,5 @@ require (
 )
 
 replace github.com/trustbloc/hub-auth => ../..
+
+replace github.com/trustbloc/hub-auth/spi/gnap => ../../spi/gnap
