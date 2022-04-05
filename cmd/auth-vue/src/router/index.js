@@ -4,28 +4,52 @@ Copyright SecureKey Technologies Inc. All Rights Reserved.
 SPDX-License-Identifier: Apache-2.0
 */
 
-import SelectProvider from '@/pages/SelectProvider'
-import NotFound from '@/pages/PageNotFound'
+import { createRouter, createWebHistory } from 'vue-router';
+import TheRoot from './TheRoot.vue';
+import routes from './routes';
+import supportedLocales from '@/config/supportedLocales';
 
-const routes = [
+// Creates regex (en|fr)
+function getLocaleRegex() {
+  let reg = '';
+  supportedLocales.forEach((locale, index) => {
+    reg = `${reg}${locale.id}${
+      index !== supportedLocales.length - 1 ? '|' : ''
+    }`;
+  });
+  return `(${reg})`;
+}
+
+const router = createRouter({
+  history: createWebHistory(import.meta.env.BASE_URL),
+  routes: [
     {
-        path: "/ui",
-        component: SelectProvider,
-        name: "main",
-        redirect: "ui/selectProvider",
-        children: [
-            {
-                path: "selectProvider",
-                name: "selectProvider",
-                component: SelectProvider
-            }
-        ]
+      path: `/:locale${getLocaleRegex()}?`,
+      component: TheRoot,
+      children: routes,
     },
-    {
-        path: '*',
-        name: 'NotFound',
-        component: NotFound
-    }
-];
+  ],
+});
 
-export default routes;
+router.beforeEach((to, from, next) => {
+  // TODO: get locale dynamically
+  const locale = 'en';
+  if (to.params.locale && to.params.locale !== locale.id) {
+    // router.replace({
+    //   name: to.params.name,
+    //   params: {
+    //     ...router.currentRoute._value.params,
+    //     ...to.params,
+    //     locale: locale.base,
+    //   },
+    //   query: to.query,
+    // });
+    next();
+    return;
+  } else {
+    next();
+    return;
+  }
+});
+
+export default router;
