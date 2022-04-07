@@ -19,15 +19,15 @@ if [ -f profile.out ]; then
 fi
 }
 
-# Running hub-auth unit tests
-PKGS=`go list github.com/trustbloc/hub-auth/... 2> /dev/null | \
+# Running auth unit tests
+PKGS=`go list github.com/trustbloc/auth/... 2> /dev/null | \
                                                   grep -v /mocks`
 go test $PKGS -count=1 -race -coverprofile=profile.out -covermode=atomic -timeout=10m
 amend_coverage_file
 
 # Running auth-rest unit tests
 cd cmd/auth-rest
-PKGS=`go list github.com/trustbloc/hub-auth/cmd/auth-rest/... 2> /dev/null | \
+PKGS=`go list github.com/trustbloc/auth/cmd/auth-rest/... 2> /dev/null | \
                                                  grep -v /mocks`
 go test $PKGS -count=1 -race -coverprofile=profile.out -covermode=atomic -timeout=10m
 amend_coverage_file

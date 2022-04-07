@@ -9,7 +9,7 @@ package session
 import (
 	"errors"
 
-	"github.com/trustbloc/hub-auth/spi/gnap"
+	"github.com/trustbloc/auth/spi/gnap"
 )
 
 /*

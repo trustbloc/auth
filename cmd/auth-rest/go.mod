@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
-module github.com/trustbloc/hub-auth/cmd/auth-rest
+module github.com/trustbloc/auth/cmd/auth-rest
 
 go 1.17
 
@@ -19,7 +19,7 @@ require (
 	github.com/spf13/cobra v1.3.0
 	github.com/stretchr/testify v1.7.1
 	github.com/trustbloc/edge-core v0.1.8
-	github.com/trustbloc/hub-auth v0.0.0-00010101000000-000000000000
+	github.com/trustbloc/auth v0.0.0-00010101000000-000000000000
 	gopkg.in/yaml.v2 v2.4.0
 )
 
@@ -70,7 +70,7 @@ require (
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/sirupsen/logrus v1.8.1 // indirect
 	github.com/spf13/pflag v1.0.5 // indirect
-	github.com/trustbloc/hub-auth/spi/gnap v0.0.0-00010101000000-000000000000 // indirect
+	github.com/trustbloc/auth/spi/gnap v0.0.0-00010101000000-000000000000 // indirect
 	github.com/xdg-go/pbkdf2 v1.0.0 // indirect
 	github.com/xdg-go/scram v1.0.2 // indirect
 	github.com/xdg-go/stringprep v1.0.2 // indirect
@@ -88,6 +88,6 @@ require (
 	gopkg.in/yaml.v3 v3.0.0-20210107192922-496545a6307b // indirect
 )
 
-replace github.com/trustbloc/hub-auth => ../..
+replace github.com/trustbloc/auth => ../..
 
-replace github.com/trustbloc/hub-auth/spi/gnap => ../../spi/gnap
+replace github.com/trustbloc/auth/spi/gnap => ../../spi/gnap

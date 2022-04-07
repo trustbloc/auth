@@ -29,7 +29,7 @@ linters-settings:
   gofmt:
     simplify: true
   goimports:
-    local-prefixes: github.com/trustbloc/hub-auth
+    local-prefixes: github.com/trustbloc/auth
   gocyclo:
     min-complexity: 10
   maligned:

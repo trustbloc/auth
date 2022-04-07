@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
-module github.com/trustbloc/hub-auth
+module github.com/trustbloc/auth
 
 go 1.17
 
@@ -16,8 +16,8 @@ require (
 	github.com/hyperledger/aries-framework-go/spi v0.0.0-20220330140627-07042d78580c
 	github.com/ory/hydra-client-go v1.10.6
 	github.com/stretchr/testify v1.7.1
+	github.com/trustbloc/auth/spi/gnap v0.0.0-00010101000000-000000000000
 	github.com/trustbloc/edge-core v0.1.8
-	github.com/trustbloc/hub-auth/spi/gnap v0.0.0-00010101000000-000000000000
 	golang.org/x/oauth2 v0.0.0-20211104180415-d3ed0bb246c8
 )
 
@@ -39,6 +39,7 @@ require (
 	github.com/go-stack/stack v1.8.0 // indirect
 	github.com/golang/protobuf v1.5.2 // indirect
 	github.com/google/go-cmp v0.5.6 // indirect
+	github.com/gorilla/mux v1.7.3 // indirect
 	github.com/gorilla/securecookie v1.1.1 // indirect
 	github.com/josharian/intern v1.0.0 // indirect
 	github.com/mailru/easyjson v0.7.6 // indirect
@@ -46,6 +47,8 @@ require (
 	github.com/oklog/ulid v1.3.1 // indirect
 	github.com/opentracing/opentracing-go v1.2.0 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
+	github.com/rs/cors v1.7.0 // indirect
+	github.com/spf13/cobra v1.3.0 // indirect
 	go.mongodb.org/mongo-driver v1.5.1 // indirect
 	golang.org/x/crypto v0.0.0-20210817164053-32db794688a5 // indirect
 	golang.org/x/net v0.0.0-20210813160813-60bc85c4be6d // indirect
@@ -57,4 +60,4 @@ require (
 	gopkg.in/yaml.v3 v3.0.0-20210107192922-496545a6307b // indirect
 )
 
-replace github.com/trustbloc/hub-auth/spi/gnap => ./spi/gnap
+replace github.com/trustbloc/auth/spi/gnap => ./spi/gnap

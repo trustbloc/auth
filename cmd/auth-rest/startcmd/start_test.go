@@ -97,7 +97,7 @@ func TestStartCmdContents(t *testing.T) {
 
 	require.Equal(t, "start", startCmd.Use)
 	require.Equal(t, "Start auth-rest", startCmd.Short)
-	require.Equal(t, "Start auth-rest inside the hub-auth", startCmd.Long)
+	require.Equal(t, "Start auth-rest inside the auth", startCmd.Long)
 
 	checkFlagPropertiesCorrect(t, startCmd, hostURLFlagName, hostURLFlagShorthand, hostURLFlagUsage)
 }

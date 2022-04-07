@@ -18,15 +18,15 @@ import (
 	"github.com/cucumber/godog"
 	"github.com/google/uuid"
 
-	bddctx "github.com/trustbloc/hub-auth/test/bdd/pkg/context"
+	bddctx "github.com/trustbloc/auth/test/bdd/pkg/context"
 )
 
 const (
-	HUB_AUTH_HOST                   = "https://localhost:8070"
+	AUTH_HOST                       = "https://localhost:8070"
 	hubAuthHydraAdminURL            = "https://localhost:4445"
 	hubAuthOIDCProviderURL          = "https://localhost:4444/"
-	hubAuthOIDCProviderSelectionURL = HUB_AUTH_HOST + "/ui"
-	hubAuthSelectOIDCProviderURL    = HUB_AUTH_HOST + "/oauth2/login"
+	hubAuthOIDCProviderSelectionURL = AUTH_HOST + "/ui"
+	hubAuthSelectOIDCProviderURL    = AUTH_HOST + "/oauth2/login"
 	mockLoginURL                    = "https://localhost:8099/mock/login"
 	mockAuthenticationURL           = "https://localhost:8099/mock/authn"
 	mockConsentURL                  = "https://localhost:8099/mock/consent"
@@ -67,7 +67,7 @@ type Steps struct {
 
 func (s *Steps) RegisterSteps(gs *godog.Suite) {
 	gs.Step("the wallet is registered as an OIDC client", s.registerWallet)
-	gs.Step("the wallet redirects the user to authenticate at hub-auth", s.walletRedirectsUserToAuthenticate)
+	gs.Step("the wallet redirects the user to authenticate at auth", s.walletRedirectsUserToAuthenticate)
 	gs.Step("the user picks their third party OIDC provider", s.userSelectsThirdPartyOIDCProvider)
 	gs.Step("the user authenticates with the third party OIDC provider", s.userAuthenticatesAtThirdPartyProvider)
 	gs.Step("the user is redirected back to the wallet", s.userRedirectedBackToWallet)

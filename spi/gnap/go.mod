@@ -1,4 +1,4 @@
-module github.com/trustbloc/hub-auth/spi/gnap
+module github.com/trustbloc/auth/spi/gnap
 
 go 1.17
 

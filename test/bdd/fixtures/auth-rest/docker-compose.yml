@@ -19,11 +19,11 @@ services:
       - AUTH_REST_DATABASE_TYPE=mongodb
       - AUTH_REST_DATABASE_URL=mongodb://mongodb.example.com:27017
       - AUTH_REST_DATABASE_PREFIX=authrest_
-      - AUTH_REST_OIDC_CALLBACK=https://localhost:8070/oauth2/callback   # https://github.com/trustbloc/hub-auth/issues/13
+      - AUTH_REST_OIDC_CALLBACK=https://localhost:8070/oauth2/callback   # https://github.com/trustbloc/auth/issues/13
       - AUTH_REST_OIDC_PROVIDERS_CONFIG=/etc/oidc-config/providers.yaml
-      - AUTH_REST_SDS_DOCS_URL=https://TODO.docs.sds.org              # onboard user: https://github.com/trustbloc/hub-auth/issues/38
+      - AUTH_REST_SDS_DOCS_URL=https://TODO.docs.sds.org              # onboard user: https://github.com/trustbloc/auth/issues/38
       - AUTH_REST_SDS_OPSKEYS_URL=https://TODO.keys.sds.org
-      - AUTH_REST_KEYSERVER_AUTH_URL=https://TODO.auth.keyserver.org  # onboard user: https://github.com/trustbloc/hub-auth/issues/38
+      - AUTH_REST_KEYSERVER_AUTH_URL=https://TODO.auth.keyserver.org  # onboard user: https://github.com/trustbloc/auth/issues/38
       - AUTH_REST_KEYSERVER_OPS_URL=https://TODO.ops.keyserver.org
       - AUTH_REST_HYDRA_URL=https://auth.rest.hydra.example.com:4445
       - AUTH_REST_LOG_LEVEL=DEBUG

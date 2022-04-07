@@ -7,8 +7,8 @@
 providers:
   mockbank:
     url: https://third.party.oidc.provider.example.com:5555/
-    clientID: hub-auth
-    clientSecret: hub-auth-secret
+    clientID: auth
+    clientSecret: auth-secret
     name: Demo OIDC
     signUpLogoURL: https://localhost:8070/static/images/signup_logo.svg
     signInLogoURL: https://localhost:8070/static/images/signin_logo.svg

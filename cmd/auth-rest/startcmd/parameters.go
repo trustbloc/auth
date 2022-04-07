@@ -9,7 +9,7 @@ package startcmd
 import (
 	"net/url"
 
-	"github.com/trustbloc/hub-auth/pkg/restapi/operation"
+	"github.com/trustbloc/auth/pkg/restapi/operation"
 )
 
 type authRestParameters struct {

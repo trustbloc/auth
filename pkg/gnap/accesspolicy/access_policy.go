@@ -9,9 +9,9 @@ package accesspolicy
 import (
 	"errors"
 
-	"github.com/trustbloc/hub-auth/pkg/gnap/api"
-	"github.com/trustbloc/hub-auth/pkg/gnap/session"
-	"github.com/trustbloc/hub-auth/spi/gnap"
+	"github.com/trustbloc/auth/pkg/gnap/api"
+	"github.com/trustbloc/auth/pkg/gnap/session"
+	"github.com/trustbloc/auth/spi/gnap"
 )
 
 /*

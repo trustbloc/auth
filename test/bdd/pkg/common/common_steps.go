@@ -16,7 +16,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/tidwall/gjson"
 
-	"github.com/trustbloc/hub-auth/test/bdd/pkg/context"
+	"github.com/trustbloc/auth/test/bdd/pkg/context"
 )
 
 var logger = log.New("bdd-test-common")

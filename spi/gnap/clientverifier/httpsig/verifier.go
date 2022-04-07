@@ -10,7 +10,7 @@ import (
 	"errors"
 	"net/http"
 
-	"github.com/trustbloc/hub-auth/spi/gnap"
+	"github.com/trustbloc/auth/spi/gnap"
 )
 
 // Verifier verifies that the client request is signed by the client key, using http-signature verification.

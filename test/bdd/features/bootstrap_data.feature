@@ -12,9 +12,9 @@ Feature: Bootstrap data
 
   Scenario: Fetch bootstrap data
     When the wallet executes an HTTP GET on the bootstrap endpoint
-    Then hub-auth returns the SDS and KeyServer URLs
+    Then auth returns the SDS and KeyServer URLs
 
   Scenario: Update bootstrap data
     When the wallet executes an HTTP POST on the bootstrap endpoint
      And the wallet executes an HTTP GET on the bootstrap endpoint
-    Then hub-auth returns the updated bootstrap data
+    Then auth returns the updated bootstrap data

@@ -11,11 +11,11 @@ Feature: Secrets
     Given a user logged in with their wallet
 
   Scenario: Put secret
-    When the wallet stores the secret in hub-auth
-     And the key server queries hub-auth for the secret
+    When the wallet stores the secret in auth
+     And the key server queries auth for the secret
     Then the key server receives the secret
 
   Scenario: User attempts to store secret twice
-    When the wallet stores the secret in hub-auth
+    When the wallet stores the secret in auth
      And the wallet attempts to store the secret again
-    Then hub-auth returns an error
+    Then auth returns an error

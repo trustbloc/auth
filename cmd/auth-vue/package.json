@@ -1,5 +1,5 @@
 {
-  "name": "hub-auth-vue",
+  "name": "auth-vue",
   "version": "0.1.0",
   "private": true,
   "scripts": {

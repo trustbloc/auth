@@ -17,8 +17,8 @@ import (
 	mockstore "github.com/hyperledger/aries-framework-go/pkg/mock/storage"
 	"github.com/stretchr/testify/require"
 
-	"github.com/trustbloc/hub-auth/pkg/internal/common/mockoidc"
-	"github.com/trustbloc/hub-auth/pkg/restapi/operation"
+	"github.com/trustbloc/auth/pkg/internal/common/mockoidc"
+	"github.com/trustbloc/auth/pkg/restapi/operation"
 )
 
 func TestController_New(t *testing.T) {

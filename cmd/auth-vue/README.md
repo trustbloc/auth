@@ -1,4 +1,4 @@
-# hub-auth-vue
+# auth-vue
 
 Frontend for the hub auth.
 

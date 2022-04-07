@@ -13,14 +13,14 @@ import (
 
 	"github.com/hyperledger/aries-framework-go/pkg/common/log"
 
-	"github.com/trustbloc/hub-auth/pkg/gnap/accesspolicy"
-	"github.com/trustbloc/hub-auth/pkg/internal/common/support"
-	"github.com/trustbloc/hub-auth/pkg/restapi/common"
-	"github.com/trustbloc/hub-auth/spi/gnap"
-	"github.com/trustbloc/hub-auth/spi/gnap/clientverifier/httpsig"
+	"github.com/trustbloc/auth/pkg/gnap/accesspolicy"
+	"github.com/trustbloc/auth/pkg/internal/common/support"
+	"github.com/trustbloc/auth/pkg/restapi/common"
+	"github.com/trustbloc/auth/spi/gnap"
+	"github.com/trustbloc/auth/spi/gnap/clientverifier/httpsig"
 )
 
-var logger = log.New("hub-auth-restapi") //nolint:gochecknoglobals
+var logger = log.New("auth-restapi") //nolint:gochecknoglobals
 
 const (
 	gnapBasePath = "/gnap"

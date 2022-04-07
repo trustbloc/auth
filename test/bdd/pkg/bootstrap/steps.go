@@ -14,13 +14,13 @@ import (
 	"github.com/cucumber/godog"
 	"github.com/google/uuid"
 
-	"github.com/trustbloc/hub-auth/pkg/restapi/operation"
-	bddctx "github.com/trustbloc/hub-auth/test/bdd/pkg/context"
-	"github.com/trustbloc/hub-auth/test/bdd/pkg/login"
+	"github.com/trustbloc/auth/pkg/restapi/operation"
+	bddctx "github.com/trustbloc/auth/test/bdd/pkg/context"
+	"github.com/trustbloc/auth/test/bdd/pkg/login"
 )
 
 const (
-	bootstrapDataPath = login.HUB_AUTH_HOST + "/bootstrap"
+	bootstrapDataPath = login.AUTH_HOST + "/bootstrap"
 	docsSDSURL        = "https://TODO.docs.sds.org"
 	keysSDSURL        = "https://TODO.keys.sds.org"
 	authKeyServerURL  = "https://TODO.auth.keyserver.org"
@@ -42,9 +42,9 @@ func NewSteps(ctx *bddctx.BDDContext) *Steps {
 func (s *Steps) RegisterSteps(gs *godog.Suite) {
 	gs.Step("a wallet that has logged in", s.userLoggedIn)
 	gs.Step("the wallet executes an HTTP GET on the bootstrap endpoint", s.walletFetchesBootstrapData)
-	gs.Step("hub-auth returns the SDS and KeyServer URLs", s.hubAuthReturnsSDSAndKeyServerURLs)
+	gs.Step("auth returns the SDS and KeyServer URLs", s.hubAuthReturnsSDSAndKeyServerURLs)
 	gs.Step("the wallet executes an HTTP POST on the bootstrap endpoint", s.walletUpdatesBootstrapData)
-	gs.Step("hub-auth returns the updated bootstrap data", s.hubAuthReturnsUpdatedBootstrapData)
+	gs.Step("auth returns the updated bootstrap data", s.hubAuthReturnsUpdatedBootstrapData)
 }
 
 func (s *Steps) userLoggedIn() error {

@@ -26,9 +26,9 @@ import (
 	tlsutils "github.com/trustbloc/edge-core/pkg/utils/tls"
 	"gopkg.in/yaml.v2"
 
-	"github.com/trustbloc/hub-auth/pkg/restapi"
-	"github.com/trustbloc/hub-auth/pkg/restapi/common/hydra"
-	"github.com/trustbloc/hub-auth/pkg/restapi/operation"
+	"github.com/trustbloc/auth/pkg/restapi"
+	"github.com/trustbloc/auth/pkg/restapi/common/hydra"
+	"github.com/trustbloc/auth/pkg/restapi/operation"
 )
 
 // General parameters.
@@ -229,7 +229,7 @@ func createStartCmd(srv server) *cobra.Command {
 	return &cobra.Command{
 		Use:   "start",
 		Short: "Start auth-rest",
-		Long:  "Start auth-rest inside the hub-auth",
+		Long:  "Start auth-rest inside the auth",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			parameters, err := getAuthRestParameters(cmd)
 			if err != nil {
@@ -472,7 +472,7 @@ func startAuthService(parameters *authRestParameters, srv server) error {
 		router.HandleFunc(handler.Path(), handler.Handle()).Methods(handler.Method())
 	}
 
-	logger.Infof(`Starting hub-auth REST server with the following parameters:Host URL: %s Database type: %s
+	logger.Infof(`Starting auth REST server with the following parameters:Host URL: %s Database type: %s
 Database URL: %s
 Database prefix: %s`, parameters.hostURL, parameters.databaseType, parameters.databaseURL, parameters.databasePrefix)
 

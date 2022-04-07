@@ -36,10 +36,10 @@ import (
 	"github.com/stretchr/testify/require"
 	"golang.org/x/oauth2"
 
-	"github.com/trustbloc/hub-auth/pkg/bootstrap/user"
-	"github.com/trustbloc/hub-auth/pkg/internal/common/mockoidc"
-	"github.com/trustbloc/hub-auth/pkg/internal/common/mockstorage"
-	"github.com/trustbloc/hub-auth/pkg/restapi/common/store/cookie"
+	"github.com/trustbloc/auth/pkg/bootstrap/user"
+	"github.com/trustbloc/auth/pkg/internal/common/mockoidc"
+	"github.com/trustbloc/auth/pkg/internal/common/mockstorage"
+	"github.com/trustbloc/auth/pkg/restapi/common/store/cookie"
 )
 
 func TestNew(t *testing.T) {
@@ -1721,12 +1721,12 @@ func TestGetSecretHandler(t *testing.T) {
 
 func newHydraLoginHTTPRequest(challenge string) *http.Request {
 	return httptest.NewRequest(http.MethodGet,
-		fmt.Sprintf("http://hub-auth.com/hydra/login?login_challenge=%s", challenge), nil)
+		fmt.Sprintf("http://auth.com/hydra/login?login_challenge=%s", challenge), nil)
 }
 
 func newHydraConsentHTTPRequest(challenge string) *http.Request {
 	return httptest.NewRequest(http.MethodGet,
-		fmt.Sprintf("http://hub-auth.com/hydra/consent?consent_challenge=%s", challenge), nil)
+		fmt.Sprintf("http://auth.com/hydra/consent?consent_challenge=%s", challenge), nil)
 }
 
 func newOIDCLoginRequest(provider string) *http.Request {
