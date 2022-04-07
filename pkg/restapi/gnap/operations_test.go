@@ -15,7 +15,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/trustbloc/hub-auth/spi/gnap"
+	"github.com/trustbloc/auth/spi/gnap"
 )
 
 func TestOperation_GetRESTHandlers(t *testing.T) {

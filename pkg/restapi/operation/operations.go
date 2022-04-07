@@ -31,10 +31,10 @@ import (
 	tlsutils "github.com/trustbloc/edge-core/pkg/utils/tls"
 	"golang.org/x/oauth2"
 
-	"github.com/trustbloc/hub-auth/pkg/bootstrap/user"
-	"github.com/trustbloc/hub-auth/pkg/internal/common/support"
-	"github.com/trustbloc/hub-auth/pkg/restapi/common"
-	"github.com/trustbloc/hub-auth/pkg/restapi/common/store/cookie"
+	"github.com/trustbloc/auth/pkg/bootstrap/user"
+	"github.com/trustbloc/auth/pkg/internal/common/support"
+	"github.com/trustbloc/auth/pkg/restapi/common"
+	"github.com/trustbloc/auth/pkg/restapi/common/store/cookie"
 )
 
 const (
@@ -60,7 +60,7 @@ const (
 	userProfileQueryParam = "up"
 )
 
-var logger = log.New("hub-auth-restapi") //nolint:gochecknoglobals
+var logger = log.New("auth-restapi") //nolint:gochecknoglobals
 
 // Operation defines handlers.
 type Operation struct {
@@ -248,7 +248,7 @@ func (o *Operation) hydraLoginHandler(w http.ResponseWriter, r *http.Request) { 
 	}
 
 	// TODO need to check if the relying party (login.Payload.Client.ClientID) is registered:
-	//  https://github.com/trustbloc/hub-auth/issues/53.
+	//  https://github.com/trustbloc/auth/issues/53.
 
 	// fetching the request url from the valid login request to fetch provider (custom parameter)
 	providerID, err := o.fetchProviderFromURL(resp.Payload.RequestURL)
@@ -543,7 +543,7 @@ func (o *Operation) hydraConsentHandler(w http.ResponseWriter, r *http.Request) 
 	logger.Debugf("redirected to: %s", redirectURL)
 }
 
-// TODO onboard user at key server and SDS: https://github.com/trustbloc/hub-auth/issues/38
+// TODO onboard user at key server and SDS: https://github.com/trustbloc/auth/issues/38
 func (o *Operation) onboardUser(sub string) (*user.Profile, error) {
 	userProfile := &user.Profile{
 		ID:   sub,

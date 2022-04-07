@@ -11,13 +11,13 @@ import (
 	"strings"
 
 	"github.com/cucumber/godog"
-	"github.com/trustbloc/hub-auth/test/bdd/pkg/login"
+	"github.com/trustbloc/auth/test/bdd/pkg/login"
 
-	bddctx "github.com/trustbloc/hub-auth/test/bdd/pkg/context"
+	bddctx "github.com/trustbloc/auth/test/bdd/pkg/context"
 )
 
 const (
-	secretsEndpoint = login.HUB_AUTH_HOST + "/secret"
+	secretsEndpoint = login.AUTH_HOST + "/secret"
 	apiToken        = "test_token"
 )
 
@@ -37,11 +37,11 @@ type Steps struct {
 
 func (s *Steps) RegisterSteps(gs *godog.Suite) {
 	gs.Step("a user logged in with their wallet", s.userLogin)
-	gs.Step("the wallet stores the secret in hub-auth", s.walletStoresSecretInHubAuth)
-	gs.Step("the key server queries hub-auth for the secret", s.keyServerFetchesSecret)
+	gs.Step("the wallet stores the secret in auth", s.walletStoresSecretInHubAuth)
+	gs.Step("the key server queries auth for the secret", s.keyServerFetchesSecret)
 	gs.Step("the key server receives the secret", s.keyServerReceivesTheSameSecret)
 	gs.Step("the wallet attempts to store the secret again", s.walletAttemptsStoringSecretAgain)
-	gs.Step("hub-auth returns an error", s.updateSecretResultsInError)
+	gs.Step("auth returns an error", s.updateSecretResultsInError)
 }
 
 func (s *Steps) userLogin() error {
@@ -58,7 +58,7 @@ func (s *Steps) userLogin() error {
 func (s *Steps) walletStoresSecretInHubAuth() error {
 	err := s.wallet.CreateAndPushSecretToHubAuth(secretsEndpoint)
 	if err != nil {
-		return fmt.Errorf("wallet failed to store secret in hub-auth: %w", err)
+		return fmt.Errorf("wallet failed to store secret in auth: %w", err)
 	}
 
 	return nil
@@ -95,7 +95,7 @@ func (s *Steps) walletAttemptsStoringSecretAgain() error {
 
 func (s *Steps) updateSecretResultsInError() error {
 	if !strings.Contains(s.updateSecretErr.Error(), "secret already set") {
-		return fmt.Errorf("unexpected error message from hub-auth: %s", s.updateSecretErr.Error())
+		return fmt.Errorf("unexpected error message from auth: %s", s.updateSecretErr.Error())
 	}
 
 	return nil

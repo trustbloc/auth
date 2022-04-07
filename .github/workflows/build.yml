@@ -4,7 +4,7 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 
-name: "hub-auth ci"
+name: "auth ci"
 
 env:
   GO_VERSION: 1.17
@@ -87,9 +87,9 @@ jobs:
           source ci/version_var.sh
           echo $DOCKER_PASSWORD | docker login ghcr.io --username $DOCKER_USER --password-stdin
 
-          make hub-auth-docker
-          docker tag ghcr.io/trustbloc/hub-auth:latest ${HUB_AUTH_PKG}:${HUB_AUTH_TAG}
-          docker push ${HUB_AUTH_PKG}:${HUB_AUTH_TAG}
+          make auth-docker
+          docker tag ghcr.io/trustbloc/auth:latest ${AUTH_PKG}:${AUTH_TAG}
+          docker push ${AUTH_PKG}:${AUTH_TAG}
         env:
           DOCKER_USER: ${{ secrets.CR_USER }}
           DOCKER_PASSWORD: ${{ secrets.CR_PAT }}

@@ -7,7 +7,7 @@ SPDX-License-Identifier: Apache-2.0
 package api
 
 import (
-	"github.com/trustbloc/hub-auth/spi/gnap"
+	"github.com/trustbloc/auth/spi/gnap"
 )
 
 // Verifier verifies that a client request is signed by the client's key.

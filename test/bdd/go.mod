@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
-module github.com/trustbloc/hub-auth/test/bdd
+module github.com/trustbloc/auth/test/bdd
 
 go 1.17
 
@@ -15,7 +15,7 @@ require (
 	github.com/pkg/errors v0.9.1
 	github.com/tidwall/gjson v1.6.7
 	github.com/trustbloc/edge-core v0.1.8
-	github.com/trustbloc/hub-auth v0.0.0
+	github.com/trustbloc/auth v0.0.0
 	golang.org/x/oauth2 v0.0.0-20211104180415-d3ed0bb246c8
 )
 
@@ -84,6 +84,6 @@ require (
 	gotest.tools/v3 v3.0.3 // indirect
 )
 
-replace github.com/trustbloc/hub-auth => ../..
+replace github.com/trustbloc/auth => ../..
 
-replace github.com/trustbloc/hub-auth/spi/gnap => ../../spi/gnap
+replace github.com/trustbloc/auth/spi/gnap => ../../spi/gnap

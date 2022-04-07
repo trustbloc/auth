@@ -16,12 +16,12 @@ import (
 
 	"github.com/cucumber/godog"
 
-	"github.com/trustbloc/hub-auth/test/bdd/dockerutil"
-	"github.com/trustbloc/hub-auth/test/bdd/pkg/bootstrap"
-	"github.com/trustbloc/hub-auth/test/bdd/pkg/common"
-	bddctx "github.com/trustbloc/hub-auth/test/bdd/pkg/context"
-	"github.com/trustbloc/hub-auth/test/bdd/pkg/login"
-	"github.com/trustbloc/hub-auth/test/bdd/pkg/secrets"
+	"github.com/trustbloc/auth/test/bdd/dockerutil"
+	"github.com/trustbloc/auth/test/bdd/pkg/bootstrap"
+	"github.com/trustbloc/auth/test/bdd/pkg/common"
+	bddctx "github.com/trustbloc/auth/test/bdd/pkg/context"
+	"github.com/trustbloc/auth/test/bdd/pkg/login"
+	"github.com/trustbloc/auth/test/bdd/pkg/secrets"
 )
 
 func TestMain(m *testing.M) {

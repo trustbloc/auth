@@ -1,20 +1,20 @@
-# TrustBloc hub-auth
+# TrustBloc Auth
 
 ## Overview
 
-`hub-auth` enables [Chained Federation](https://apicrazy.com/2014/04/24/cross-domain-identity-patterns-chained-federation-service-broker/)
+`Auth` enables [Chained Federation](https://apicrazy.com/2014/04/24/cross-domain-identity-patterns-chained-federation-service-broker/)
 in the role of Service Broker. It provides end-user authentication services for other components in the TrustBloc
 ecosystem as well as minimal storage containers for end-user wallets to store bootstrap data.
 
 ![overview](./img/overview.svg)
 
-`hub-auth` only supports [OpenID Connect](https://openid.net/specs/openid-connect-core-1_0.html) upstream providers as
+`Auth` only supports [OpenID Connect](https://openid.net/specs/openid-connect-core-1_0.html) upstream providers as
 of the time of this writing.
 
 
 ## OpenID Service
 
-`hub-auth` provides a standard [OIDC Discovery](https://openid.net/specs/openid-connect-discovery-1_0.html) endpoint
+`Auth` provides a standard [OIDC Discovery](https://openid.net/specs/openid-connect-discovery-1_0.html) endpoint
 that your client software can use to discover the authorization, token, and userinfo endpoints.
 
 
@@ -103,7 +103,7 @@ POST /secret
 
 ### Fetching the secret
 
-> **Note:** as of the time of this writing, the user is not allowed to fetch their own secret from hub-auth. This
+> **Note:** as of the time of this writing, the user is not allowed to fetch their own secret from auth. This
 > functionality is instead reserved for the user's trusted WebKMS server.
 
 > **Note:** as of the time of this writing, this endpoint is protected by a _static api token_, not the wallet's

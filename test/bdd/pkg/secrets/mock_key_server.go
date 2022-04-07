@@ -11,22 +11,23 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"github.com/trustbloc/hub-auth/pkg/restapi/operation"
 	"io/ioutil"
 	"net/http"
+
+	"github.com/trustbloc/auth/pkg/restapi/operation"
 )
 
 func NewMockKeyServer(token string, tlsConfig *tls.Config) *MockKeyServer {
 	return &MockKeyServer{
-		ApiToken: token,
+		ApiToken:  token,
 		TLSConfig: tlsConfig,
 	}
 }
 
 type MockKeyServer struct {
-	ApiToken string
-	TLSConfig *tls.Config
-	UserSecret   string
+	ApiToken   string
+	TLSConfig  *tls.Config
+	UserSecret string
 }
 
 func (m *MockKeyServer) FetchSecretShare(endpoint string) error {

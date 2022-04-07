@@ -6,7 +6,7 @@ AUTH_REST_PATH=cmd/auth-rest
 
 # Namespace for the agent images
 DOCKER_OUTPUT_NS   ?= ghcr.io
-AUTH_REST_IMAGE_NAME   ?= trustbloc/hub-auth
+AUTH_REST_IMAGE_NAME   ?= trustbloc/auth
 
 # Tool commands (overridable)
 ALPINE_VER ?= 3.15
@@ -44,8 +44,8 @@ auth-vue:
 	@npm --prefix cmd/auth-vue run build
 	@cp -rp cmd/auth-vue/dist/* ./.build/bin/auth-vue
 
-.PHONY: hub-auth-docker
-hub-auth-docker: auth-vue
+.PHONY: auth-docker
+auth-docker: auth-vue
 	@echo "Building auth rest docker image"
 	@docker build -f ./images/auth-rest/Dockerfile --no-cache -t $(DOCKER_OUTPUT_NS)/$(AUTH_REST_IMAGE_NAME):latest \
 	--build-arg GO_VER=$(GO_VER) \
@@ -57,7 +57,7 @@ mock-login-consent-docker:
 	@cd test/bdd/mock/loginconsent && docker build -f image/Dockerfile --build-arg GO_VER=$(GO_VER) --build-arg ALPINE_VER=$(ALPINE_VER) -t hubauth/mockloginconsent:latest .
 
 .PHONY: bdd-test
-bdd-test: clean hub-auth-docker generate-test-keys mock-login-consent-docker
+bdd-test: clean auth-docker generate-test-keys mock-login-consent-docker
 	@scripts/check_integration.sh
 
 
@@ -65,8 +65,8 @@ bdd-test: clean hub-auth-docker generate-test-keys mock-login-consent-docker
 generate-test-keys: clean
 	@mkdir -p -p test/bdd/fixtures/keys/tls
 	@docker run -i --rm \
-		-v $(abspath .):/opt/workspace/hub-auth \
-		--entrypoint "/opt/workspace/hub-auth/scripts/generate_test_keys.sh" \
+		-v $(abspath .):/opt/workspace/auth \
+		--entrypoint "/opt/workspace/auth/scripts/generate_test_keys.sh" \
 		frapsoft/openssl
 
 .PHONY: clean

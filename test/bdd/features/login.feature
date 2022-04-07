@@ -11,7 +11,7 @@ Feature: Wallet login
     Given the wallet is registered as an OIDC client
 
   Scenario: User authentication
-    When the wallet redirects the user to authenticate at hub-auth
+    When the wallet redirects the user to authenticate at auth
     And the user picks their third party OIDC provider
     And the user authenticates with the third party OIDC provider
     Then the user is redirected back to the wallet

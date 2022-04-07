@@ -15,18 +15,18 @@ RUN apk add --no-cache \
 	libtool \
 	bash \
 	make;
-ADD . src/github.com/trustbloc/hub-auth
-WORKDIR src/github.com/trustbloc/hub-auth
+ADD . src/github.com/trustbloc/auth
+WORKDIR src/github.com/trustbloc/auth
 ENV EXECUTABLES go git
 
-FROM golang as hub-auth
-LABEL org.opencontainers.image.source https://github.com/trustbloc/hub-auth
+FROM golang as auth
+LABEL org.opencontainers.image.source https://github.com/trustbloc/auth
 
 RUN make auth-rest
 
 
 FROM alpine:${ALPINE_VER} as base
-COPY --from=hub-auth /go/src/github.com/trustbloc/hub-auth/.build/bin/auth-rest /usr/local/bin
+COPY --from=auth /go/src/github.com/trustbloc/auth/.build/bin/auth-rest /usr/local/bin
 COPY ./.build/bin/auth-vue /usr/local/static/auth-vue
 ENV AUTH_REST_STATIC_FILES=/usr/local/static/auth-vue
 

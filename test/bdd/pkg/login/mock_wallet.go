@@ -26,7 +26,7 @@ import (
 	"github.com/ory/hydra-client-go/models"
 	"golang.org/x/oauth2"
 
-	"github.com/trustbloc/hub-auth/pkg/restapi/operation"
+	"github.com/trustbloc/auth/pkg/restapi/operation"
 )
 
 type MockWallet struct {
@@ -160,7 +160,7 @@ func (m *MockWallet) CreateAndPushSecretToHubAuth(endpoint string) error {
 
 	response, err := m.httpClient.Do(request)
 	if err != nil {
-		return fmt.Errorf("failed to push secret to hub-auth: %w", err)
+		return fmt.Errorf("failed to push secret to auth: %w", err)
 	}
 
 	defer func() {

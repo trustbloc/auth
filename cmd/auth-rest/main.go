@@ -9,7 +9,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/trustbloc/edge-core/pkg/log"
 
-	"github.com/trustbloc/hub-auth/cmd/auth-rest/startcmd"
+	"github.com/trustbloc/auth/cmd/auth-rest/startcmd"
 )
 
 var logger = log.New("auth-rest") //nolint:gochecknoglobals
