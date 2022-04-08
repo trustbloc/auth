@@ -4,25 +4,21 @@ Copyright SecureKey Technologies Inc. All Rights Reserved.
 SPDX-License-Identifier: Apache-2.0
 */
 
-import Vue from 'vue'
-import App from './App.vue'
-import VueRouter from "vue-router";
-import routes from "./router/index";
-import '@/assets/css/tailwind.css'
+import { createApp } from 'vue';
+import App from '@/App.vue';
+import router from '@/router';
+import { setupI18n } from '@/plugins/i18n';
+import '@/tailwind.css';
+import TheToastNotification from '@/components/TheToastNotification.vue';
 
-Vue.config.productionTip = false
+const i18n = setupI18n();
 
-const router = new VueRouter({
-    mode: 'history',
-    routes, // short for routes: routes
-    linkExactActiveClass: "nav-item active"
+const app = createApp({
+  ...App,
 });
 
-Vue.use(VueRouter);
+app.use(router);
+app.use(i18n);
+app.component('TheToastNotification', TheToastNotification);
 
-new Vue({
-    el: "#app",
-    render: h => h(App),
-    router
-});
-
+app.mount('#app');
