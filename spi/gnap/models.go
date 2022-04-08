@@ -84,11 +84,13 @@ type ResponseInteract struct {
 
 // AccessToken https://www.ietf.org/archive/id/draft-ietf-gnap-core-protocol-09.html#section-3.2.1
 type AccessToken struct {
-	Value     string        `json:"value"`
-	Label     string        `json:"label,omitempty"`
-	Access    []TokenAccess `json:"access"`
-	ExpiresIn int           `json:"expires_in,omitempty"`
-	Flags     []string      `json:"flags,omitempty"`
+	Value   string        `json:"value"`
+	Label   string        `json:"label"`
+	Manage  string        `json:"manage"`
+	Access  []TokenAccess `json:"access"`
+	Expires int64         `json:"expires_in"` // integer value in seconds.
+	Key     string        `json:"key"`
+	Flags   []AccessFlag  `json:"flags"`
 }
 
 // ContinueRequest https://www.ietf.org/archive/id/draft-ietf-gnap-core-protocol-09.html#section-5.1
@@ -117,3 +119,11 @@ type IntrospectResponse struct {
 	Key    *ClientKey    `json:"key,omitempty"`
 	Flags  []string      `json:"flags,omitempty"`
 }
+
+type AccessFlag string
+
+const (
+	Bearer  AccessFlag = "bearer"
+	Durable            = "durable"
+	Split              = "split"
+)

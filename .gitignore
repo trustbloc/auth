@@ -31,3 +31,4 @@ coverage.out
 *.log
 
 test/bdd/fixtures/keys/
+component/gnap/testdata/crypto/
