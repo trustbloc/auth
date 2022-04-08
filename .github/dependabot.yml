@@ -1,0 +1,146 @@
+# Copyright SecureKey Technologies Inc. All Rights Reserved.
+#
+# SPDX-License-Identifier: Apache-2.0
+
+# To get started with Dependabot version updates, you'll need to specify which
+# package ecosystems to update and where the package manifests are located.
+# Please see the documentation for all configuration options:
+# https://help.github.com/github/administering-a-repository/configuration-options-for-dependency-updates
+
+version: 2
+
+updates:
+  # Auth Vue package.json
+  - package-ecosystem: "npm"
+    directory: "/cmd/auth-vue"
+    schedule:
+      interval: "daily"
+      time: "04:00"
+      # Use Eastern Standard Time (UTC -05:00)
+      timezone: "America/Toronto"
+    open-pull-requests-limit: 1
+    commit-message:
+      prefix: "chore(deps): "
+    labels:
+      - "dependencies"
+      - "area: frontend"
+
+  # Root go.mod
+  - package-ecosystem: "gomod"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "tuesday"
+      time: "04:00"
+      timezone: "America/Toronto"
+    open-pull-requests-limit: 1
+    commit-message:
+      prefix: "chore(deps): "
+    labels:
+      - "dependencies"
+      - "area: backend"
+
+  # Auth Rest go.mod
+  - package-ecosystem: "gomod"
+    directory: "/cmd/auth-rest"
+    schedule:
+      interval: "weekly"
+      day: "wednesday"
+      time: "04:00"
+      timezone: "America/Toronto"
+    open-pull-requests-limit: 1
+    commit-message:
+      prefix: "chore(deps): "
+    labels:
+      - "dependencies"
+      - "area: backend"
+
+  # SPI GNAP go.mod
+  - package-ecosystem: "gomod"
+    directory: "/spi/gnap"
+    schedule:
+      interval: "weekly"
+      day: "thursday"
+      time: "04:00"
+      timezone: "America/Toronto"
+    open-pull-requests-limit: 1
+    commit-message:
+      prefix: "chore(deps): "
+    labels:
+      - "dependencies"
+      - "area: backend"
+
+  # BDD Test go.mod
+  - package-ecosystem: "gomod"
+    directory: "/test/bdd"
+    schedule:
+      interval: "weekly"
+      day: "friday"
+      time: "04:00"
+      timezone: "America/Toronto"
+    open-pull-requests-limit: 1
+    commit-message:
+      prefix: "chore(deps): "
+    labels:
+      - "dependencies"
+      - "area: backend"
+
+  # Login Consent Server go.mod
+  - package-ecosystem: "gomod"
+    directory: "/test/bdd/mock/loginconsent"
+    schedule:
+      interval: "weekly"
+      day: "saturday"
+      time: "04:00"
+      timezone: "America/Toronto"
+    open-pull-requests-limit: 1
+    commit-message:
+      prefix: "chore(deps): "
+    labels:
+      - "dependencies"
+      - "area: backend"
+
+  # Auth Rest Dockerfile
+  - package-ecosystem: "docker"
+    directory: "/images/auth-rest"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "05:00"
+      timezone: "America/Toronto"
+    open-pull-requests-limit: 1
+    commit-message:
+      prefix: "chore(deps): "
+    labels:
+      - "dependencies"
+      - "area: docker"
+
+  # Login Consent Server Dockerfile
+  - package-ecosystem: "docker"
+    directory: "/test/bdd/mock/loginconsent/image"
+    schedule:
+      interval: "weekly"
+      day: "tuesday"
+      time: "05:00"
+      timezone: "America/Toronto"
+    open-pull-requests-limit: 1
+    commit-message:
+      prefix: "chore(deps): "
+    labels:
+      - "dependencies"
+      - "area: docker"
+
+  # GitHub Actions
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "wednesday"
+      time: "05:00"
+      timezone: "America/Toronto"
+    open-pull-requests-limit: 1
+    commit-message:
+      prefix: "chore(deps): "
+    labels:
+      - "dependencies"
+      - "area: CI/CD"
