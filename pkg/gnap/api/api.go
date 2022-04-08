@@ -34,14 +34,26 @@ type InteractionHandler interface {
 	// PrepareLoginConsentFlow takes a set of requested access tokens and subject
 	// data, prepares a login & consent flow, and returns parameters for the user
 	// client to initiate the login & consent flow.
-	PrepareInteraction(accessRequest interface{}) (interface{}, error)
+	PrepareInteraction(clientInteract *gnap.RequestInteract) (*gnap.ResponseInteract, error)
 	// CompleteLoginConsentFlow takes a set of access requests that the user
 	// consented to, and the ID of the flow where this was performed, creates an
 	// interact_ref, saves the consent set under the interact_ref, and returns the
 	// interact_ref.
-	CompleteInteraction(flowID string, consentSet interface{}) (string, error)
+	CompleteInteraction(flowID string, consentSet *ConsentResult) (string, error)
 	// QueryInteraction returns the consent metadata and subject info saved under the interaction.
-	QueryInteraction(interactRef string) (interface{}, error)
+	QueryInteraction(interactRef string) (*ConsentResult, error)
 	// DeleteInteraction deletes the interaction under interactRef if it exists.
 	DeleteInteraction(interactRef string) error
+}
+
+// AccessMetadata holds a set of token access descriptors and subject data keys.
+type AccessMetadata struct {
+	Tokens      []*gnap.TokenRequest
+	SubjectKeys []string
+}
+
+// ConsentResult holds access token descriptors and subject data that were granted by a user consent interaction.
+type ConsentResult struct {
+	Tokens      []*gnap.TokenRequest
+	SubjectData map[string]string
 }

@@ -26,8 +26,11 @@ import (
 	tlsutils "github.com/trustbloc/edge-core/pkg/utils/tls"
 	"gopkg.in/yaml.v2"
 
+	"github.com/trustbloc/auth/pkg/gnap/accesspolicy"
+	"github.com/trustbloc/auth/pkg/gnap/interact/redirect"
 	"github.com/trustbloc/auth/pkg/restapi"
 	"github.com/trustbloc/auth/pkg/restapi/common/hydra"
+	"github.com/trustbloc/auth/pkg/restapi/gnap"
 	"github.com/trustbloc/auth/pkg/restapi/operation"
 )
 
@@ -440,6 +443,12 @@ func startAuthService(parameters *authRestParameters, srv server) error {
 		router.HandleFunc(handler.Path(), handler.Handle()).Methods(handler.Method())
 	}
 
+	// TODO: support creating multiple GNAP user interaction handlers
+	interact, err := redirect.New()
+	if err != nil {
+		return fmt.Errorf("initializing GNAP interaction handler: %w", err)
+	}
+
 	svc, err := restapi.New(&operation.Config{
 		TransientStoreProvider: provider,
 		StoreProvider:          provider,
@@ -463,6 +472,10 @@ func startAuthService(parameters *authRestParameters, srv server) error {
 		},
 		StartupTimeout: parameters.startupTimeout,
 		SecretsToken:   parameters.secretsAPIToken,
+	}, &gnap.Config{
+		BaseURL:            parameters.hostURL,
+		AccessPolicy:       &accesspolicy.AccessPolicy{},
+		InteractionHandler: interact,
 	})
 	if err != nil {
 		return err

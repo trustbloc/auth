@@ -15,6 +15,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/trustbloc/auth/pkg/gnap/accesspolicy"
+	"github.com/trustbloc/auth/pkg/gnap/interact/redirect"
 	"github.com/trustbloc/auth/spi/gnap"
 )
 
@@ -103,7 +105,7 @@ func TestOperation_authContinueHandler(t *testing.T) {
 	})
 
 	t.Run("access policy error", func(t *testing.T) {
-		o := &Operation{}
+		o := New(config(t))
 
 		rw := httptest.NewRecorder()
 
@@ -130,4 +132,17 @@ func TestOperation_introspectHandler(t *testing.T) {
 	o.introspectHandler(rw, req)
 
 	require.Equal(t, http.StatusOK, rw.Code)
+}
+
+func config(t *testing.T) *Config {
+	t.Helper()
+
+	interact, err := redirect.New()
+	require.NoError(t, err)
+
+	return &Config{
+		AccessPolicy:       &accesspolicy.AccessPolicy{},
+		BaseURL:            "example.com",
+		InteractionHandler: interact,
+	}
 }

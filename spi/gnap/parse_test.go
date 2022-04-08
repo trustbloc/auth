@@ -1,3 +1,9 @@
+/*
+Copyright SecureKey Technologies Inc. All Rights Reserved.
+
+SPDX-License-Identifier: Apache-2.0
+*/
+
 package gnap
 
 import (
@@ -71,7 +77,10 @@ func TestAuthRequest_MarshalUnmarshal(t *testing.T) {
 		"key": {
 			"proof": "foo",
 			"jwk": {
-				"foo":"bar"
+				"kty": "EC",
+				"crv": "P-256",
+				"x": "IAY6G0xR4kcVkc_KrIyPb1a50qMCMjHPjVfUunrVGvs",
+				"y": "qzOw6AnovPqnYn2l6MdEBYfVMPNEQTpMxrlcKRDenCk"
 			}
 		}
 	},

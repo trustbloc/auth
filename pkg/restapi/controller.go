@@ -15,7 +15,7 @@ import (
 )
 
 // New returns new controller instance.
-func New(config *operation.Config) (*Controller, error) {
+func New(config *operation.Config, gnapConfig *gnap.Config) (*Controller, error) {
 	var allHandlers []common.Handler
 
 	rpService, err := operation.New(config)
@@ -25,7 +25,7 @@ func New(config *operation.Config) (*Controller, error) {
 
 	allHandlers = append(allHandlers, rpService.GetRESTHandlers()...)
 
-	gnapService := gnap.New()
+	gnapService := gnap.New(gnapConfig)
 
 	allHandlers = append(allHandlers, gnapService.GetRESTHandlers()...)
 

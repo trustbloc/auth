@@ -7,6 +7,8 @@ SPDX-License-Identifier: Apache-2.0
 package rs
 
 import (
+	"crypto/ed25519"
+	"crypto/rand"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/json"
@@ -21,6 +23,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/hyperledger/aries-framework-go/pkg/doc/jose/jwk/jwksupport"
 	"github.com/stretchr/testify/require"
 
 	gnaprest "github.com/trustbloc/auth/pkg/restapi/gnap"
@@ -74,11 +77,8 @@ func TestRequestAccess(t *testing.T) {
 					Type:        "",
 					Raw:         nil,
 				}},
-				Key: &gnap.ClientKey{
-					Proof: "",
-					JWK:   nil,
-				},
-				Flags: []string{},
+				Key:   clientKey(t),
+				Flags: []gnap.AccessFlag{},
 			},
 		},
 		{
@@ -147,7 +147,7 @@ func TestRequestAccess(t *testing.T) {
 				Active: false,
 				Access: nil,
 				Key:    nil,
-				Flags:  []string{"mocking empty response"},
+				Flags:  []gnap.AccessFlag{"mocking empty response"},
 			},
 		},
 	}
@@ -183,7 +183,7 @@ func TestRequestAccess(t *testing.T) {
 			response, err := c.Introspect(tc.grantReq)
 			if tc.errMsg != "" {
 				if tc.name == "error gnap introspecting access with bad http client error" {
-					require.EqualError(t, err, fmt.Sprintf(tc.errMsg, url+gnaprest.AuthIntrospectPath))
+					require.Contains(t, err.Error(), fmt.Sprintf(tc.errMsg, url+gnaprest.AuthIntrospectPath))
 				} else {
 					require.EqualError(t, err, tc.errMsg)
 				}
@@ -401,4 +401,21 @@ type mockSigner struct {
 
 func (s *mockSigner) Sign(_ []byte) ([]byte, error) {
 	return s.SignatureVal, s.SignatureErr
+}
+
+func clientKey(t *testing.T) *gnap.ClientKey {
+	t.Helper()
+
+	pub, _, err := ed25519.GenerateKey(rand.Reader)
+	require.NoError(t, err)
+
+	k, err := jwksupport.JWKFromKey(pub)
+	require.NoError(t, err)
+
+	ck := gnap.ClientKey{
+		Proof: "httpsig",
+		JWK:   *k,
+	}
+
+	return &ck
 }

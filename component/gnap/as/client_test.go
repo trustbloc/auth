@@ -167,7 +167,7 @@ func TestRequestAccess(t *testing.T) {
 			response, err := c.RequestAccess(tc.grantReq)
 			if tc.errMsg != "" {
 				if tc.name == "error requesting gnap access with bad http client error" {
-					require.EqualError(t, err, fmt.Sprintf(tc.errMsg, url+gnaprest.AuthRequestPath))
+					require.Contains(t, err.Error(), fmt.Sprintf(tc.errMsg, url+gnaprest.AuthRequestPath))
 				} else {
 					require.EqualError(t, err, tc.errMsg)
 				}
@@ -279,7 +279,7 @@ func TestContinue(t *testing.T) {
 			response, err := c.Continue(tc.grantReq)
 			if tc.errMsg != "" {
 				if tc.name == "error continuing gnap access with bad http client error" {
-					require.EqualError(t, err, fmt.Sprintf(tc.errMsg, url+gnaprest.AuthContinuePath))
+					require.Contains(t, err.Error(), fmt.Sprintf(tc.errMsg, url+gnaprest.AuthContinuePath))
 				} else {
 					require.EqualError(t, err, tc.errMsg)
 				}
