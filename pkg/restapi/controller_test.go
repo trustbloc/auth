@@ -17,7 +17,10 @@ import (
 	mockstore "github.com/hyperledger/aries-framework-go/pkg/mock/storage"
 	"github.com/stretchr/testify/require"
 
+	"github.com/trustbloc/auth/pkg/gnap/accesspolicy"
+	"github.com/trustbloc/auth/pkg/internal/common/mockinteract"
 	"github.com/trustbloc/auth/pkg/internal/common/mockoidc"
+	"github.com/trustbloc/auth/pkg/restapi/gnap"
 	"github.com/trustbloc/auth/pkg/restapi/operation"
 )
 
@@ -25,7 +28,7 @@ func TestController_New(t *testing.T) {
 	t.Run("success", func(t *testing.T) {
 		config := config(t)
 
-		controller, err := New(config)
+		controller, err := New(config, gnapConfig(t))
 		require.NoError(t, err)
 		require.NotNil(t, controller)
 	})
@@ -36,7 +39,7 @@ func TestController_New(t *testing.T) {
 			ErrOpenStoreHandle: errors.New("test"),
 		}
 
-		_, err := New(config)
+		_, err := New(config, gnapConfig(t))
 		require.Error(t, err)
 	})
 }
@@ -44,7 +47,7 @@ func TestController_New(t *testing.T) {
 func TestController_GetOperations(t *testing.T) {
 	config := config(t)
 
-	controller, err := New(config)
+	controller, err := New(config, gnapConfig(t))
 	require.NoError(t, err)
 	require.NotNil(t, controller)
 
@@ -75,6 +78,16 @@ func config(t *testing.T) *operation.Config {
 			EncKey:  cookieKey(t),
 		},
 		StartupTimeout: 1,
+	}
+}
+
+func gnapConfig(t *testing.T) *gnap.Config {
+	t.Helper()
+
+	return &gnap.Config{
+		AccessPolicy:       &accesspolicy.AccessPolicy{},
+		BaseURL:            "example.com",
+		InteractionHandler: &mockinteract.InteractHandler{},
 	}
 }
 

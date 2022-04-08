@@ -14,6 +14,8 @@ import (
 	"github.com/hyperledger/aries-framework-go/pkg/common/log"
 
 	"github.com/trustbloc/auth/pkg/gnap/accesspolicy"
+	"github.com/trustbloc/auth/pkg/gnap/api"
+	"github.com/trustbloc/auth/pkg/gnap/authhandler"
 	"github.com/trustbloc/auth/pkg/internal/common/support"
 	"github.com/trustbloc/auth/pkg/restapi/common"
 	"github.com/trustbloc/auth/spi/gnap"
@@ -40,12 +42,25 @@ const (
 
 // Operation defines Auth Server GNAP handlers.
 type Operation struct {
-	accessPolicy accesspolicy.AccessPolicy
+	authHandler *authhandler.AuthHandler
+}
+
+// Config defines configuration for GNAP operations.
+type Config struct {
+	AccessPolicy       *accesspolicy.AccessPolicy
+	BaseURL            string
+	InteractionHandler api.InteractionHandler
 }
 
 // New creates GNAP operation handler.
-func New() *Operation {
-	return &Operation{}
+func New(config *Config) *Operation {
+	return &Operation{
+		authHandler: authhandler.New(&authhandler.Config{
+			AccessPolicy:       config.AccessPolicy,
+			ContinuePath:       config.BaseURL + AuthContinuePath,
+			InteractionHandler: config.InteractionHandler,
+		}),
+	}
 }
 
 // GetRESTHandlers get all controller API handler available for this service.
@@ -72,7 +87,7 @@ func (o *Operation) authRequestHandler(w http.ResponseWriter, req *http.Request)
 
 	v := httpsig.NewVerifier(req)
 
-	resp, err := o.accessPolicy.HandleAccessRequest(authRequest, v)
+	resp, err := o.authHandler.HandleAccessRequest(authRequest, v)
 	if err != nil {
 		logger.Errorf("access policy failed to handle access request: %s", err.Error())
 		w.WriteHeader(http.StatusUnauthorized)
@@ -115,7 +130,7 @@ func (o *Operation) authContinueHandler(w http.ResponseWriter, req *http.Request
 
 	v := httpsig.NewVerifier(req)
 
-	resp, err := o.accessPolicy.HandleContinueRequest(continueRequest, token, v)
+	resp, err := o.authHandler.HandleContinueRequest(continueRequest, token, v)
 	if err != nil {
 		logger.Errorf("access policy failed to handle continue request: %s", err.Error())
 		w.WriteHeader(http.StatusUnauthorized)

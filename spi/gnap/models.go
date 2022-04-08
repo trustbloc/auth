@@ -8,6 +8,8 @@ package gnap
 
 import (
 	"encoding/json"
+
+	"github.com/hyperledger/aries-framework-go/pkg/doc/jose/jwk"
 )
 
 // AuthRequest https://www.ietf.org/archive/id/draft-ietf-gnap-core-protocol-09.html#section-2
@@ -27,15 +29,15 @@ type RequestClient struct {
 
 // ClientKey https://www.ietf.org/archive/id/draft-ietf-gnap-core-protocol-09.html#section-7.1.1
 type ClientKey struct {
-	Proof string          `json:"proof"`
-	JWK   json.RawMessage `json:"jwk"`
+	Proof string  `json:"proof"`
+	JWK   jwk.JWK `json:"jwk"`
 }
 
 // TokenRequest https://www.ietf.org/archive/id/draft-ietf-gnap-core-protocol-09.html#section-2.1
 type TokenRequest struct {
 	Access []TokenAccess `json:"access"`
 	Label  string        `json:"label,omitempty"`
-	Flags  []string      `json:"flags,omitempty"`
+	Flags  []AccessFlag  `json:"flags,omitempty"`
 }
 
 // TokenAccess represents a GNAP token access descriptor, either as a string reference or as an object.
@@ -114,10 +116,11 @@ type IntrospectRequest struct {
 
 // IntrospectResponse https://www.ietf.org/archive/id/draft-ietf-gnap-resource-servers-01.html#section-3.3
 type IntrospectResponse struct {
-	Active bool          `json:"active"`
-	Access []TokenAccess `json:"access,omitempty"`
-	Key    *ClientKey    `json:"key,omitempty"`
-	Flags  []string      `json:"flags,omitempty"`
+	Active      bool              `json:"active"`
+	Access      []TokenAccess     `json:"access,omitempty"`
+	Key         *ClientKey        `json:"key,omitempty"`
+	Flags       []AccessFlag      `json:"flags,omitempty"`
+	SubjectData map[string]string `json:"subject_data,omitempty"`
 }
 
 type AccessFlag string
