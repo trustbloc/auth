@@ -11,13 +11,13 @@ const { t } = useI18n();
 </script>
 
 <template>
-  <div class="py-8 px-15 w-full text-center">
-    <div class="hidden mx-auto text-center text-neutrals-medium md:block">
+  <div class="py-8 w-full text-center px-15">
+    <div class="hidden mx-auto text-center md:block text-neutrals-medium">
       © {{ date }} TrustBloc ･ {{ t('Footer.privacyPolicy') }} ･
       {{ t('Footer.terms') }} ･
       <TheLocaleSwitcher />
     </div>
-    <div class="block text-neutrals-medium md:hidden">
+    <div class="block md:hidden text-neutrals-medium">
       <ul class="list-inside">
         <li>
           <span class="whitespace-nowrap">{{ t('Footer.privacyPolicy') }}</span>

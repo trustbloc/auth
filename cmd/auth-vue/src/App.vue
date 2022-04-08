@@ -18,7 +18,7 @@ loadI18nMessages(i18n, i18n.locale.value);
   <!-- <KeepAlive>
     <Suspense> -->
   <div
-    class="flex flex-col justify-center items-center px-6 min-h-screen font-sans bg-scroll bg-neutrals-softWhite bg-no-repeat bg-onboarding-sm md:bg-onboarding"
+    class="flex flex-col justify-center items-center px-6 min-h-screen font-sans bg-scroll bg-no-repeat bg-neutrals-softWhite bg-onboarding-sm md:bg-onboarding"
   >
     <RouterView />
     <TheFooter class="absolute bottom-0" />
