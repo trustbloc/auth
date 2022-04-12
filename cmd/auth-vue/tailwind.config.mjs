@@ -7,7 +7,7 @@ SPDX-License-Identifier: Apache-2.0
 const plugin = require('tailwindcss/plugin');
 
 export default {
-  content: ['./src/**/*.{html,vue}'],
+  content: ['./index.html', './src/**/*.{html,js,vue}'],
   theme: {
     colors: {
       transparent: 'transparent',

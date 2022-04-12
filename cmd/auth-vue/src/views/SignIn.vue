@@ -22,11 +22,11 @@ const { t } = useI18n();
     type="error"
   />
   <div
-    class="flex overflow-hidden flex-col justify-start items-center px-6 mx-6 w-full max-w-xl h-auto text-xl bg-gradient-dark rounded-xl sm:w-screen md:text-3xl"
+    class="flex overflow-hidden flex-col justify-start items-center px-6 mx-6 w-full max-w-xl h-auto text-xl rounded-xl sm:w-screen md:text-3xl bg-gradient-dark"
   >
     <IconLogo class="py-12" />
     <div class="items-center mb-10 text-center md:mb-8">
-      <span class="text-2xl font-bold text-neutrals-white md:text-4xl">
+      <span class="text-2xl font-bold md:text-4xl text-neutrals-white">
         {{ t('SignIn.heading') }}
       </span>
     </div>
@@ -38,7 +38,7 @@ const { t } = useI18n();
         v-for="(provider, index) in providers"
         v-else
         :key="index"
-        class="flex flex-wrap items-center w-full h-11 text-sm font-bold text-neutrals-dark bg-neutrals-softWhite rounded-md"
+        class="flex flex-wrap items-center w-full h-11 text-sm font-bold rounded-md text-neutrals-dark bg-neutrals-softWhite"
         @click="beginOIDCLogin(provider.id)"
         @keyup.enter="beginOIDCLogin(provider.id)"
       >
@@ -49,7 +49,7 @@ const { t } = useI18n();
       <p class="text-base font-normal text-neutrals-softWhite">
         {{ t('SignIn.redirect') }}
         <router-link
-          class="text-primary-blue whitespace-nowrap underline-blue"
+          class="whitespace-nowrap text-primary-blue underline-blue"
           :to="{ name: 'SignUp' }"
           >{{ t('SignIn.signup') }}
         </router-link>

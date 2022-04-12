@@ -4,16 +4,16 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 
-name: "auth ci"
+name: "Auth CI"
 
 env:
   GO_VERSION: 1.17
 
 on:
   push:
-    branches: [ main ]
+    branches: [main]
   pull_request:
-    branches: [ main ]
+    branches: [main]
 
 jobs:
   Checks:
@@ -60,8 +60,8 @@ jobs:
           go-version: ${{ env.GO_VERSION }}
       - name: Run BDD test
         run: |
-         echo '127.0.0.1 third.party.oidc.provider.example.com' | sudo tee -a /etc/hosts
-         make bdd-test
+          echo '127.0.0.1 third.party.oidc.provider.example.com' | sudo tee -a /etc/hosts
+          make bdd-test
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
