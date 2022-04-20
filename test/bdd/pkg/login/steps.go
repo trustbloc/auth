@@ -65,7 +65,7 @@ type Steps struct {
 	expectedUserData *UserClaims
 }
 
-func (s *Steps) RegisterSteps(gs *godog.Suite) {
+func (s *Steps) RegisterSteps(gs *godog.ScenarioContext) {
 	gs.Step("the wallet is registered as an OIDC client", s.registerWallet)
 	gs.Step("the wallet redirects the user to authenticate at auth", s.walletRedirectsUserToAuthenticate)
 	gs.Step("the user picks their third party OIDC provider", s.userSelectsThirdPartyOIDCProvider)

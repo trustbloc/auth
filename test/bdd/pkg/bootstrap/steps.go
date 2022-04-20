@@ -39,7 +39,7 @@ func NewSteps(ctx *bddctx.BDDContext) *Steps {
 	return &Steps{ctx: ctx}
 }
 
-func (s *Steps) RegisterSteps(gs *godog.Suite) {
+func (s *Steps) RegisterSteps(gs *godog.ScenarioContext) {
 	gs.Step("a wallet that has logged in", s.userLoggedIn)
 	gs.Step("the wallet executes an HTTP GET on the bootstrap endpoint", s.walletFetchesBootstrapData)
 	gs.Step("auth returns the SDS and KeyServer URLs", s.hubAuthReturnsSDSAndKeyServerURLs)
