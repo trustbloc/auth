@@ -33,7 +33,7 @@ func NewSteps(ctx *context.BDDContext) *Steps {
 }
 
 // RegisterSteps registers agent steps.
-func (e *Steps) RegisterSteps(s *godog.Suite) {
+func (e *Steps) RegisterSteps(s *godog.ScenarioContext) {
 	s.Step(`^HTTP GET is sent to "([^"]*)"$`, e.httpGet)
 	s.Step(`^The "([^"]*)" field in the response has the value "([^"]*)"$`, e.validateJSONResField)
 }

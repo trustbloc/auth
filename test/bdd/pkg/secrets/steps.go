@@ -35,7 +35,7 @@ type Steps struct {
 	updateSecretErr error
 }
 
-func (s *Steps) RegisterSteps(gs *godog.Suite) {
+func (s *Steps) RegisterSteps(gs *godog.ScenarioContext) {
 	gs.Step("a user logged in with their wallet", s.userLogin)
 	gs.Step("the wallet stores the secret in auth", s.walletStoresSecretInHubAuth)
 	gs.Step("the key server queries auth for the secret", s.keyServerFetchesSecret)
