@@ -66,10 +66,11 @@ func (p *Provider) GetOpenStores() []storage.Store {
 
 // MockStore represents a mock store.
 type MockStore struct {
-	Store  map[string][]byte
-	lock   sync.RWMutex
-	ErrPut error
-	ErrGet error
+	Store    map[string][]byte
+	lock     sync.RWMutex
+	ErrPut   error
+	ErrGet   error
+	ErrQuery error
 }
 
 // GetTags fetches all tags associated with the given key.
@@ -79,7 +80,7 @@ func (s *MockStore) GetTags(key string) ([]storage.Tag, error) {
 
 // Query returns all data that satisfies the expression. Expression format: TagName:TagValue.
 func (s *MockStore) Query(expression string, options ...storage.QueryOption) (storage.Iterator, error) {
-	panic("implement me")
+	return nil, s.ErrQuery
 }
 
 // Batch performs multiple Put and/or Delete operations in order.

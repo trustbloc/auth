@@ -25,7 +25,10 @@ func New(config *operation.Config, gnapConfig *gnap.Config) (*Controller, error)
 
 	allHandlers = append(allHandlers, rpService.GetRESTHandlers()...)
 
-	gnapService := gnap.New(gnapConfig)
+	gnapService, err := gnap.New(gnapConfig)
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize auth-rest gnap operations: %w", err)
+	}
 
 	allHandlers = append(allHandlers, gnapService.GetRESTHandlers()...)
 

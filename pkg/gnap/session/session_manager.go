@@ -8,11 +8,14 @@ package session
 
 import (
 	"crypto"
+	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/hyperledger/aries-framework-go/spi/storage"
 	_ "golang.org/x/crypto/sha3" // nolint:gci
 
 	"github.com/trustbloc/auth/pkg/gnap/api"
@@ -35,27 +38,32 @@ the session bound to the token, checks expiry, and returns the token's access
 descriptor, the client key, and stored subject information to the AccessPolicy.
 */
 type Manager struct {
-	store    map[string]*Session
-	keyFP2ID map[string]string
-	token2ID map[string]string
-	ctok2ID  map[string]string
+	store           storage.Store
+	sessionLifetime time.Duration
+}
+
+// Config startup config for SessionManager.
+type Config struct {
+	StoreProvider   storage.Provider
+	SessionLifetime time.Duration
 }
 
 // New creates a new client session Manager.
-func New() *Manager {
-	return &Manager{
-		store:    map[string]*Session{},
-		keyFP2ID: map[string]string{},
-		token2ID: map[string]string{},
-		ctok2ID:  map[string]string{},
+func New(config *Config) (*Manager, error) {
+	store, err := config.StoreProvider.OpenStore("gnap_session_store")
+	if err != nil {
+		return nil, err
 	}
+
+	return &Manager{
+		store:           store,
+		sessionLifetime: config.SessionLifetime,
+	}, nil
 }
 
 // TODO: how to handle retrieving a session by key if it expired and was deleted?
 
 /*
-Session holds a GNAP session.
-
 TODO: session contents
  - client ID
  - client key
@@ -63,23 +71,170 @@ TODO: session contents
  - access descriptors for bound tokens
  - bound subject data
  - expiry metadata
+ - interact_ref
+ - interaction flow ID
 
 TODO: session lookup keys
  - client ID
  - client key
- - bound tokens.
+ - bound tokens
+ - interact_ref
+ - interaction flow ID
 */
+
+// Session holds a GNAP session.
 type Session struct {
-	ClientID      string
-	ClientKey     *gnap.ClientKey
-	Tokens        []*gnap.AccessToken
-	ContinueToken *gnap.AccessToken
-	Requested     *api.AccessMetadata
-	SubjectData   map[string]string
-	Expires       time.Time
+	ClientID       string
+	ClientKey      *gnap.ClientKey
+	Tokens         []*gnap.AccessToken
+	ContinueToken  *gnap.AccessToken
+	Requested      *api.AccessMetadata
+	SubjectData    map[string]string
+	Expires        time.Time
+	InteractRef    string
+	InteractFlowID string
 }
 
 var errNotFound = errors.New("session not found")
+
+var errSessionExpired = errors.New("session expired")
+
+const (
+	keyFingerprintTag = "k"
+	tokenTagPrefix    = "t|"
+	interactRefTag    = "i"
+	interactFlowTag   = "f"
+	continueTokenTag  = "c"
+)
+
+// Save saves the given Session in the Manager's store.
+func (s *Manager) Save(session *Session) error { // nolint:funlen,gocyclo
+	// add expiry time
+	if s.sessionLifetime != 0 {
+		if session.Expires.IsZero() {
+			session.Expires = time.Now().Add(s.sessionLifetime)
+		} else if session.Expires.Before(time.Now()) {
+			if session.ClientID != "" {
+				_ = s.DeleteSession(session.ClientID) // nolint:errcheck
+			}
+
+			return errSessionExpired
+		}
+	}
+
+	data, err := json.Marshal(session)
+	if err != nil {
+		return fmt.Errorf("marshaling session: %w", err)
+	}
+
+	tags := []storage.Tag{}
+
+	if session.ClientKey != nil {
+		keyFingerprint, e := session.ClientKey.JWK.Thumbprint(crypto.SHA3_512)
+		if e != nil {
+			return fmt.Errorf("creating jwk thumbprint: %w", e)
+		}
+
+		tags = append(tags, storage.Tag{
+			Name:  keyFingerprintTag,
+			Value: base64.RawURLEncoding.EncodeToString(keyFingerprint),
+		})
+	}
+
+	if session.InteractRef != "" {
+		tags = append(tags, storage.Tag{
+			Name:  interactRefTag,
+			Value: session.InteractRef,
+		})
+	}
+
+	if session.InteractFlowID != "" {
+		tags = append(tags, storage.Tag{
+			Name:  interactFlowTag,
+			Value: session.InteractFlowID,
+		})
+	}
+
+	for _, token := range session.Tokens {
+		tags = append(tags, storage.Tag{
+			Name: tokenTagPrefix + token.Value,
+		})
+	}
+
+	if session.ContinueToken != nil {
+		tags = append(tags, storage.Tag{
+			Name:  continueTokenTag,
+			Value: session.ContinueToken.Value,
+		})
+	}
+
+	err = s.store.Put(session.ClientID, data, tags...)
+	if err != nil {
+		return fmt.Errorf("storing session: %w", err)
+	}
+
+	return nil
+}
+
+func (s *Manager) checkExpired(session *Session) error {
+	if s.sessionLifetime == 0 || session.Expires.IsZero() {
+		return nil
+	}
+
+	if session.Expires.Before(time.Now()) {
+		if session.ClientID != "" {
+			_ = s.DeleteSession(session.ClientID) // nolint:errcheck
+		}
+
+		return errSessionExpired
+	}
+
+	return nil
+}
+
+func (s *Manager) getByTag(tag storage.Tag) (*Session, error) {
+	tagString := tag.Name + ":" + tag.Value
+
+	it, err := s.store.Query(tagString)
+	if errors.Is(err, storage.ErrDataNotFound) {
+		return nil, errNotFound
+	} else if err != nil {
+		return nil, fmt.Errorf("querying session by tag: %w", err)
+	}
+
+	has, err := it.Next()
+	if err != nil {
+		return nil, fmt.Errorf("session query iterator: %w", err)
+	}
+
+	if !has {
+		return nil, errNotFound
+	}
+
+	data, err := it.Value()
+	if err != nil {
+		return nil, fmt.Errorf("session query value: %w", err)
+	}
+
+	err = it.Close()
+	if err != nil {
+		return nil, fmt.Errorf("closing session iterator: %w", err)
+	}
+
+	session := &Session{}
+
+	err = json.Unmarshal(data, session)
+	if err != nil {
+		return nil, fmt.Errorf("parsing session: %w", err)
+	}
+
+	err = s.checkExpired(session)
+	if err != nil {
+		return nil, err
+	}
+
+	return session, nil
+}
 
 // GetOrCreateByKey gets the client session with the given key, or creates a
 // fresh session with the given key if one doesn't exist.
@@ -89,31 +244,52 @@ func (s *Manager) GetOrCreateByKey(clientKey *gnap.ClientKey) (*Session, error) 
 		return nil, fmt.Errorf("creating jwk thumbprint: %w", err)
 	}
 
-	keyFP := string(keyFingerprint)
+	keyFP := base64.RawURLEncoding.EncodeToString(keyFingerprint)
 
-	id, exists := s.keyFP2ID[keyFP]
-	if exists {
-		return s.store[id], nil
+	session, err := s.getByTag(storage.Tag{
+		Name:  keyFingerprintTag,
+		Value: keyFP,
+	})
+	if err == nil {
+		return session, nil
+	} else if !errors.Is(err, errNotFound) {
+		return nil, err
 	}
 
-	id = uuid.New().String()
+	id := uuid.New().String()
 
-	session := &Session{
+	session = &Session{
 		ClientKey: clientKey,
 		ClientID:  id,
 	}
 
-	s.store[id] = session
-	s.keyFP2ID[keyFP] = id
+	err = s.Save(session)
+	if err != nil {
+		return nil, err
+	}
 
 	return session, nil
 }
 
 // GetByID gets the Session under the given client ID.
 func (s *Manager) GetByID(clientID string) (*Session, error) {
-	session, ok := s.store[clientID]
-	if !ok {
+	data, err := s.store.Get(clientID)
+	if errors.Is(err, storage.ErrDataNotFound) {
 		return nil, errNotFound
+	} else if err != nil {
+		return nil, fmt.Errorf("loading session: %w", err)
+	}
+
+	session := &Session{}
+
+	err = json.Unmarshal(data, session)
+	if err != nil {
+		return nil, fmt.Errorf("parsing session: %w", err)
+	}
+
+	err = s.checkExpired(session)
+	if err != nil {
+		return nil, err
 	}
 
 	return session, nil
@@ -121,27 +297,20 @@ func (s *Manager) GetByID(clientID string) (*Session, error) {
 
 // GetByAccessToken gets the Session that has the given token.
 func (s *Manager) GetByAccessToken(token string) (*Session, *gnap.AccessToken, error) {
-	id, ok := s.token2ID[token]
-	if !ok {
-		return nil, nil, errNotFound
-	}
-
-	session, ok := s.store[id]
-	if !ok {
-		return nil, nil, errNotFound
+	session, err := s.getByTag(storage.Tag{
+		Name: tokenTagPrefix + token,
+	})
+	if err != nil {
+		return nil, nil, err
 	}
 
 	var t *gnap.AccessToken
 
-	if session.ContinueToken != nil && session.ContinueToken.Value == token {
-		t = session.ContinueToken
-	} else {
-		for _, tok := range session.Tokens {
-			if tok.Value == token {
-				t = tok
+	for _, tok := range session.Tokens {
+		if tok.Value == token {
+			t = tok
 
-				break
-			}
+			break
 		}
 	}
 
@@ -150,14 +319,12 @@ func (s *Manager) GetByAccessToken(token string) (*Session, *gnap.AccessToken, e
 
 // GetByContinueToken gets the Session that has the given continuation token.
 func (s *Manager) GetByContinueToken(token string) (*Session, error) {
-	id, ok := s.ctok2ID[token]
-	if !ok {
-		return nil, errNotFound
-	}
-
-	session, ok := s.store[id]
-	if !ok {
-		return nil, errNotFound
+	session, err := s.getByTag(storage.Tag{
+		Name:  continueTokenTag,
+		Value: token,
+	})
+	if err != nil {
+		return nil, err
 	}
 
 	if session.ContinueToken == nil || session.ContinueToken.Value != token {
@@ -167,101 +334,34 @@ func (s *Manager) GetByContinueToken(token string) (*Session, error) {
 	return session, nil
 }
 
+// GetByInteractRef gets the Session under the given interact_ref.
+func (s *Manager) GetByInteractRef(interactRef string) (*Session, error) {
+	return s.getByTag(storage.Tag{
+		Name:  interactRefTag,
+		Value: interactRef,
+	})
+}
+
+// GetByInteractFlowID gets the Session under the given interaction flow ID.
+func (s *Manager) GetByInteractFlowID(interactFlowID string) (*Session, error) {
+	return s.getByTag(storage.Tag{
+		Name:  interactFlowTag,
+		Value: interactFlowID,
+	})
+}
+
 // DeleteSession deletes the session under the given client ID, if it exists.
 func (s *Manager) DeleteSession(clientID string) error {
-	session, ok := s.store[clientID]
-	if !ok {
-		return nil
-	}
-
-	if session.ClientKey != nil {
-		keyFingerprint, err := session.ClientKey.JWK.Thumbprint(crypto.SHA3_512)
-		if err != nil {
-			return fmt.Errorf("creating jwk thumbprint: %w", err)
-		}
-
-		keyFP := string(keyFingerprint)
-
-		delete(s.keyFP2ID, keyFP)
-	}
-
-	if session.ContinueToken != nil {
-		delete(s.ctok2ID, session.ContinueToken.Value)
-	}
-
-	for _, token := range session.Tokens {
-		if token == nil {
-			continue
-		}
-
-		delete(s.token2ID, token.Value)
-	}
-
-	delete(s.store, clientID)
-
-	return nil
+	return s.store.Delete(clientID)
 }
 
-// AddToken adds a token to a client session.
-func (s *Manager) AddToken(token *gnap.AccessToken, clientID string) error {
-	session, ok := s.store[clientID]
-	if !ok {
-		return errNotFound
-	}
-
-	session.Tokens = append(session.Tokens, token)
-
-	s.store[clientID] = session
-	s.token2ID[token.Value] = clientID
-
-	return nil
-}
-
-// SaveRequests saves the given token requests to a session.
-func (s *Manager) SaveRequests(req *api.AccessMetadata, clientID string) error {
-	session, ok := s.store[clientID]
-	if !ok {
-		return errNotFound
-	}
-
-	session.Requested = req
-
-	s.store[clientID] = session
-
-	return nil
-}
-
-// SaveSubjectData saves the given token requests to a session.
-func (s *Manager) SaveSubjectData(data map[string]string, clientID string) error {
-	session, ok := s.store[clientID]
-	if !ok {
-		return errNotFound
-	}
-
-	if session.SubjectData == nil {
-		session.SubjectData = map[string]string{}
+// AddSubjectData adds the given subject data to a session.
+func (s *Session) AddSubjectData(data map[string]string) {
+	if s.SubjectData == nil {
+		s.SubjectData = map[string]string{}
 	}
 
 	for k, v := range data {
-		session.SubjectData[k] = v
+		s.SubjectData[k] = v
 	}
-
-	s.store[clientID] = session
-
-	return nil
-}
-
-// ContinueToken sets the given token as the continuation token of a client session.
-func (s *Manager) ContinueToken(token *gnap.AccessToken, clientID string) error {
-	session, ok := s.store[clientID]
-	if !ok {
-		return errNotFound
-	}
-
-	session.ContinueToken = token
-
-	s.store[clientID] = session
-	s.ctok2ID[token.Value] = clientID
-
-	return nil
 }
