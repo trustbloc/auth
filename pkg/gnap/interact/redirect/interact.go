@@ -22,8 +22,8 @@ func New() (*InteractHandler, error) {
 // PrepareInteraction initializes a redirect-based login&consent interaction,
 // returning the redirect parameters to be sent to the client.
 func (l InteractHandler) PrepareInteraction(clientInteract *gnap.RequestInteract) (*gnap.ResponseInteract, error) {
-	// TODO implement me
-	panic("implement me")
+	// TODO integrate with third party OIDC sign-in provider
+	return &gnap.ResponseInteract{}, nil
 }
 
 // CompleteInteraction saves an interaction with the given consent data for

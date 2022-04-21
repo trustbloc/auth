@@ -7,7 +7,6 @@ SPDX-License-Identifier: Apache-2.0
 package httpsig
 
 import (
-	"errors"
 	"net/http"
 
 	"github.com/trustbloc/auth/spi/gnap"
@@ -25,5 +24,6 @@ func NewVerifier(req *http.Request) *Verifier {
 
 // Verify verifies that the Verifier's client request is signed by the client key, using http-signature verification.
 func (v *Verifier) Verify(key *gnap.ClientKey) error {
-	return errors.New("not implemented")
+	// TODO https://github.com/trustbloc/auth/issues/185
+	return nil
 }
