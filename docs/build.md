@@ -29,5 +29,6 @@ make bdd-test
 The following entries are required on your local `/etc/hosts` to enable BDD tests:
 
 ```
+127.0.0.1 auth.trustbloc.local
 127.0.0.1 third.party.oidc.provider.example.com
 ```

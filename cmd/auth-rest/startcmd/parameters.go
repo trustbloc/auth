@@ -14,6 +14,7 @@ import (
 
 type authRestParameters struct {
 	hostURL          string
+	externalURL      string
 	logLevel         string
 	databaseType     string
 	databaseURL      string

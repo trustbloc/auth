@@ -24,7 +24,7 @@ func TestOperation_GetRESTHandlers(t *testing.T) {
 	o := &Operation{}
 
 	h := o.GetRESTHandlers()
-	require.Len(t, h, 3)
+	require.Len(t, h, 4)
 }
 
 func TestOperation_authRequestHandler(t *testing.T) {
@@ -50,6 +50,20 @@ func TestOperation_authRequestHandler(t *testing.T) {
 		o.authRequestHandler(rw, req)
 
 		require.Equal(t, http.StatusUnauthorized, rw.Code)
+	})
+}
+
+func TestOperation_interactHandler(t *testing.T) {
+	t.Run("success", func(t *testing.T) {
+		o := &Operation{}
+
+		rw := httptest.NewRecorder()
+
+		req := httptest.NewRequest(http.MethodGet, InteractPath, nil)
+
+		o.interactHandler(rw, req)
+
+		require.Equal(t, http.StatusFound, rw.Code)
 	})
 }
 
@@ -137,7 +151,7 @@ func TestOperation_introspectHandler(t *testing.T) {
 func config(t *testing.T) *Config {
 	t.Helper()
 
-	interact, err := redirect.New()
+	interact, err := redirect.New(InteractPath)
 	require.NoError(t, err)
 
 	return &Config{

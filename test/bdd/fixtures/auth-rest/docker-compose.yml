@@ -12,6 +12,7 @@ services:
     image: ${AUTH_REST_IMAGE}:latest
     environment:
       - AUTH_REST_HOST_URL=0.0.0.0:8070
+      - AUTH_REST_EXTERNAL_URL=https://auth.trustbloc.local:8070
       - AUTH_REST_TLS_CACERTS=/etc/keys/tls/ec-cacert.pem
       - AUTH_REST_TLS_SYSTEMCERTPOOL=true
       - AUTH_REST_TLS_SERVE_CERT=/etc/keys/tls/ec-pubCert.pem

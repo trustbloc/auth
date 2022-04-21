@@ -21,7 +21,8 @@ subjectAltName = @alt_names
 [alt_names]
 DNS.1 = localhost
 DNS.2 = third.party.oidc.provider.example.com
-DNS.3 = auth.rest.hydra.example.com" >> "$tmp"
+DNS.3 = auth.trustbloc.local
+DNS.4 = auth.rest.hydra.example.com" >> "$tmp"
 
 #create CA
 openssl ecparam -name prime256v1 -genkey -noout -out test/bdd/fixtures/keys/tls/ec-cakey.pem
