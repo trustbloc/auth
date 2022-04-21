@@ -32,6 +32,8 @@ const (
 	AuthContinuePath = gnapBasePath + "/continue"
 	// AuthIntrospectPath endpoint for GNAP token introspection.
 	AuthIntrospectPath = gnapBasePath + "/introspect"
+	// InteractPath endpoint for GNAP interact.
+	InteractPath = gnapBasePath + "/interact"
 
 	// GNAP error response codes.
 	errInvalidRequest = "invalid_request"
@@ -43,6 +45,7 @@ const (
 // Operation defines Auth Server GNAP handlers.
 type Operation struct {
 	authHandler *authhandler.AuthHandler
+	uiEndpoint  string
 }
 
 // Config defines configuration for GNAP operations.
@@ -50,6 +53,7 @@ type Config struct {
 	AccessPolicy       *accesspolicy.AccessPolicy
 	BaseURL            string
 	InteractionHandler api.InteractionHandler
+	UIEndpoint         string
 }
 
 // New creates GNAP operation handler.
@@ -60,6 +64,7 @@ func New(config *Config) *Operation {
 			ContinuePath:       config.BaseURL + AuthContinuePath,
 			InteractionHandler: config.InteractionHandler,
 		}),
+		uiEndpoint: config.UIEndpoint,
 	}
 }
 
@@ -67,6 +72,8 @@ func New(config *Config) *Operation {
 func (o *Operation) GetRESTHandlers() []common.Handler {
 	return []common.Handler{
 		support.NewHTTPHandler(AuthRequestPath, http.MethodPost, o.authRequestHandler),
+		// TODO add txn_id to url path
+		support.NewHTTPHandler(InteractPath, http.MethodGet, o.interactHandler),
 		support.NewHTTPHandler(AuthContinuePath, http.MethodPost, o.authContinueHandler),
 		support.NewHTTPHandler(AuthIntrospectPath, http.MethodPost, o.introspectHandler),
 	}
@@ -99,6 +106,12 @@ func (o *Operation) authRequestHandler(w http.ResponseWriter, req *http.Request)
 	}
 
 	o.writeResponse(w, resp)
+}
+
+func (o *Operation) interactHandler(w http.ResponseWriter, req *http.Request) {
+	// TODO validate txn_id
+	// redirect to UI
+	http.Redirect(w, req, o.uiEndpoint, http.StatusFound)
 }
 
 func (o *Operation) authContinueHandler(w http.ResponseWriter, req *http.Request) {

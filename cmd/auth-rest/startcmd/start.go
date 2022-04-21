@@ -46,6 +46,11 @@ const (
 	hostURLFlagUsage     = "URL to run the auth-rest instance on. Format: HostName:Port."
 	hostURLEnvKey        = "AUTH_REST_HOST_URL"
 
+	externalURLFlagName  = "external-url"
+	externalURLEnvKey    = "AUTH_REST_EXTERNAL_URL"
+	externalURLFlagUsage = "URL that the auth-rest instance is exposed on. " +
+		" Alternatively, this can be set with the following environment variable: " + externalURLEnvKey
+
 	tlsSystemCertPoolFlagName  = "tls-systemcertpool"
 	tlsSystemCertPoolFlagUsage = "Use system certificate pool." +
 		" Possible values [true] [false]. Defaults to false if not set." +
@@ -250,6 +255,11 @@ func getAuthRestParameters(cmd *cobra.Command) (*authRestParameters, error) { //
 		return nil, err
 	}
 
+	externalURL, err := cmdutils.GetUserSetVarFromString(cmd, externalURLFlagName, externalURLEnvKey, true)
+	if err != nil {
+		return nil, err
+	}
+
 	tlsParams, err := getTLS(cmd)
 	if err != nil {
 		return nil, err
@@ -324,6 +334,7 @@ func getAuthRestParameters(cmd *cobra.Command) (*authRestParameters, error) { //
 
 	return &authRestParameters{
 		hostURL:          hostURL,
+		externalURL:      externalURL,
 		tlsParams:        tlsParams,
 		logLevel:         loggingLevel,
 		databaseType:     databaseType,
@@ -390,6 +401,7 @@ func getTLS(cmd *cobra.Command) (*tlsParams, error) {
 
 func createFlags(startCmd *cobra.Command) {
 	startCmd.Flags().StringP(hostURLFlagName, hostURLFlagShorthand, "", hostURLFlagUsage)
+	startCmd.Flags().StringP(externalURLFlagName, "", "", externalURLFlagUsage)
 	startCmd.Flags().StringP(tlsSystemCertPoolFlagName, "", "", tlsSystemCertPoolFlagUsage)
 	startCmd.Flags().StringArrayP(tlsCACertsFlagName, "", []string{}, tlsCACertsFlagUsage)
 	startCmd.Flags().StringP(tlsServeCertPathFlagName, "", "", tlsServeCertPathFlagUsage)
@@ -444,7 +456,7 @@ func startAuthService(parameters *authRestParameters, srv server) error {
 	}
 
 	// TODO: support creating multiple GNAP user interaction handlers
-	interact, err := redirect.New()
+	interact, err := redirect.New(parameters.externalURL + gnap.InteractPath)
 	if err != nil {
 		return fmt.Errorf("initializing GNAP interaction handler: %w", err)
 	}
@@ -476,6 +488,7 @@ func startAuthService(parameters *authRestParameters, srv server) error {
 		BaseURL:            parameters.hostURL,
 		AccessPolicy:       &accesspolicy.AccessPolicy{},
 		InteractionHandler: interact,
+		UIEndpoint:         uiEndpoint,
 	})
 	if err != nil {
 		return err

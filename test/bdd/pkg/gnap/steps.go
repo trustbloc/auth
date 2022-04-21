@@ -22,13 +22,15 @@ import (
 )
 
 const (
-	HUB_AUTH_HOST = "https://localhost:8070"
+	authServerURL       = "https://auth.trustbloc.local:8070"
+	expectedInteractURL = authServerURL + "/gnap/interact"
 )
 
 type Steps struct {
 	ctx        *bddctx.BDDContext
 	gnapClient *as.Client
 	pubKeyJWK  jwk.JWK
+	authResp   *gnap.AuthResponse
 }
 
 func NewSteps(ctx *bddctx.BDDContext) *Steps {
@@ -67,7 +69,7 @@ func (s *Steps) createGNAPClient() error {
 			PrivateKey: private,
 		},
 		httpClient,
-		HUB_AUTH_HOST,
+		authServerURL,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to gnap go-client: %w", err)
@@ -88,12 +90,19 @@ func (s *Steps) txnRequest() error {
 		},
 	}
 
-	_, err := s.gnapClient.RequestAccess(req)
+	authResp, err := s.gnapClient.RequestAccess(req)
 	if err != nil {
 		return fmt.Errorf("failed to gnap go-client: %w", err)
 	}
 
-	// TODO validate and save response data
+	if authResp.Interact.Redirect != expectedInteractURL {
+		return fmt.Errorf(
+			"invalid interact url: expected %s got %s",
+			expectedInteractURL, authResp.Interact.Redirect,
+		)
+	}
+
+	s.authResp = authResp
 
 	return nil
 }

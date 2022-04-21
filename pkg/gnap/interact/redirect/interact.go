@@ -12,18 +12,24 @@ import (
 )
 
 // InteractHandler handles GNAP redirect-based user login and consent.
-type InteractHandler struct{}
+type InteractHandler struct {
+	interactBasePath string
+}
 
 // New creates a GNAP redirect-based user login&consent interaction handler.
-func New() (*InteractHandler, error) {
-	return &InteractHandler{}, nil
+func New(interactBasePath string) (*InteractHandler, error) {
+	return &InteractHandler{
+		interactBasePath: interactBasePath,
+	}, nil
 }
 
 // PrepareInteraction initializes a redirect-based login&consent interaction,
 // returning the redirect parameters to be sent to the client.
 func (l InteractHandler) PrepareInteraction(clientInteract *gnap.RequestInteract) (*gnap.ResponseInteract, error) {
-	// TODO integrate with third party OIDC sign-in provider
-	return &gnap.ResponseInteract{}, nil
+	// TODO integrate session
+	return &gnap.ResponseInteract{
+		Redirect: l.interactBasePath,
+	}, nil
 }
 
 // CompleteInteraction saves an interaction with the given consent data for
