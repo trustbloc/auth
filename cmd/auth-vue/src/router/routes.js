@@ -4,21 +4,48 @@ Copyright SecureKey Technologies Inc. All Rights Reserved.
 SPDX-License-Identifier: Apache-2.0
 */
 
+import TheRoot from './TheRoot.vue';
+import supportedLocales from '@/config/supportedLocales';
+
 // Lazy load the component
 function load(name) {
   return () => import(`../views/${name}.vue`);
 }
 
+// Creates regex (en|fr)
+function getLocaleRegex() {
+  let reg = '';
+  supportedLocales.forEach((locale, index) => {
+    reg = `${reg}${locale.id}${
+      index !== supportedLocales.length - 1 ? '|' : ''
+    }`;
+  });
+  return `(${reg})`;
+}
+
 export default [
   {
-    path: '/sign-in',
-    name: 'SignIn',
-    component: load('SignIn'),
-  },
-  {
-    path: '/sign-up',
-    name: 'SignUp',
-    component: load('SignUp'),
+    path: `/:locale${getLocaleRegex()}?`,
+    component: TheRoot,
+    redirect: 'sign-up',
+    children: [
+      {
+        path: 'sign-in',
+        name: 'SignIn',
+        component: load('SignIn'),
+      },
+      {
+        path: 'sign-up',
+        name: 'SignUp',
+        component: load('SignUp'),
+      },
+      {
+        path: 'provider',
+        name: 'ProviderPopup',
+        component: load('ProviderPopup'),
+        props: (route) => ({ providerID: route.query.providerID }),
+      },
+    ],
   },
   // will match everything and put it under `$route.params.pathMatch`
   {

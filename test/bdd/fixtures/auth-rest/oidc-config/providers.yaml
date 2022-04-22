@@ -13,3 +13,11 @@ providers:
     signUpLogoURL: https://localhost:8070/static/images/signup_logo.svg
     signInLogoURL: https://localhost:8070/static/images/signin_logo.svg
     order: 1
+  mockbank1:
+    url: https://third.party.oidc.provider.example.com:5555/
+    clientID: auth1
+    clientSecret: auth-secret
+    name: Demo GNAP
+    signUpLogoURL: https://localhost:8070/static/images/signup_logo.svg
+    signInLogoURL: https://localhost:8070/static/images/signin_logo.svg
+    order: 2

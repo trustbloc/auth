@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"net/url"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -520,7 +521,12 @@ func uiHandler(
 	basePath string,
 	fileServer func(http.ResponseWriter, *http.Request, string)) func(http.ResponseWriter, *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == uiEndpoint {
+		// Constructing a regex to validate whether requested URL leads to a static asset (images, JSONs, etc) or not
+		// and serve Vue files appropriately (https://router.vuejs.org/guide/essentials/history-mode.html#html5-mode)
+		re := regexp.MustCompile(`(?m)^/(-|\w/?)*$`)
+		isNotAStaticAsset := re.MatchString(r.URL.Path[len(uiEndpoint):])
+
+		if isNotAStaticAsset || r.URL.Path == uiEndpoint {
 			fileServer(w, r, strings.ReplaceAll(basePath+"/index.html", "//", "/"))
 
 			return
