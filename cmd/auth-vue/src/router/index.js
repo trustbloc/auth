@@ -5,30 +5,11 @@ SPDX-License-Identifier: Apache-2.0
 */
 
 import { createRouter, createWebHistory } from 'vue-router';
-import TheRoot from './TheRoot.vue';
 import routes from './routes';
-import supportedLocales from '@/config/supportedLocales';
-
-// Creates regex (en|fr)
-function getLocaleRegex() {
-  let reg = '';
-  supportedLocales.forEach((locale, index) => {
-    reg = `${reg}${locale.id}${
-      index !== supportedLocales.length - 1 ? '|' : ''
-    }`;
-  });
-  return `(${reg})`;
-}
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
-  routes: [
-    {
-      path: `/:locale${getLocaleRegex()}?`,
-      component: TheRoot,
-      children: routes,
-    },
-  ],
+  routes,
 });
 
 router.beforeEach((to, from, next) => {

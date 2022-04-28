@@ -5,13 +5,58 @@
 -->
 
 <script setup>
+import { ref, onMounted } from 'vue';
+import axios from 'axios';
 import TheToastNotification from '@/components/TheToastNotification.vue';
 import IconLogo from '@/components/icons/IconLogo.vue';
 import IconSpinner from '@/components/icons/IconSpinner.vue';
-import useBreakpoints from '@/plugins/breakpoints.js';
 import { useI18n } from 'vue-i18n';
 
+const loading = ref(true);
+const providers = ref([]);
+const systemError = ref(false);
+const providerPopup = ref({ closed: false });
 const { t } = useI18n();
+
+onMounted(async () => {
+  try {
+    const rawProviders = await axios.get('/oauth2/providers');
+    providers.value = rawProviders.data.authProviders.sort(
+      (prov1, prov2) => prov1.order - prov2.order
+    );
+    loading.value = false;
+  } catch (e) {
+    systemError.value = true;
+    console.error('failed to fetch providers', e);
+  }
+});
+
+function openProviderPopup(url, title, w, h) {
+  var left = screen.width / 2 - w / 2;
+  var top = screen.height / 2 - h / 2;
+  return window.open(
+    url,
+    title,
+    'menubar=yes,status=yes, replace=true, width=' +
+      w +
+      ', height=' +
+      h +
+      ', top=' +
+      top +
+      ', left=' +
+      left
+  );
+}
+
+function initiateOIDCLogin(providerID) {
+  loading.value = true;
+  providerPopup.value = openProviderPopup(
+    `${import.meta.env.BASE_URL}provider?providerID=${providerID}`,
+    '',
+    700,
+    770
+  );
+}
 </script>
 
 <template>
@@ -37,12 +82,13 @@ const { t } = useI18n();
       <button
         v-for="(provider, index) in providers"
         v-else
+        :id="provider.id"
         :key="index"
         class="flex flex-wrap items-center w-full h-11 text-sm font-bold rounded-md text-neutrals-dark bg-neutrals-softWhite"
-        @click="beginOIDCLogin(provider.id)"
-        @keyup.enter="beginOIDCLogin(provider.id)"
+        @click="initiateOIDCLogin(provider.id)"
+        @keyup.enter="initiateOIDCLogin(provider.id)"
       >
-        <img :id="provider.id" :src="provider.signInLogoUrl" />
+        <img :src="provider.signInLogoUrl" />
       </button>
     </div>
     <div class="mb-12 text-center">
@@ -57,17 +103,3 @@ const { t } = useI18n();
     </div>
   </div>
 </template>
-
-<script>
-export default {
-  data() {
-    return {
-      providers: [],
-      statusMsg: '',
-      loading: true,
-      systemError: false,
-      breakpoints: useBreakpoints(),
-    };
-  },
-};
-</script>
