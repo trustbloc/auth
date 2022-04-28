@@ -9,16 +9,40 @@ package gnap
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
+	"github.com/hyperledger/aries-framework-go/component/storageutil/mem"
 	"github.com/stretchr/testify/require"
 
 	"github.com/trustbloc/auth/pkg/gnap/accesspolicy"
 	"github.com/trustbloc/auth/pkg/gnap/interact/redirect"
+	"github.com/trustbloc/auth/pkg/internal/common/mockstorage"
 	"github.com/trustbloc/auth/spi/gnap"
 )
+
+func TestNew(t *testing.T) {
+	t.Run("success", func(t *testing.T) {
+		o, err := New(config(t))
+		require.NoError(t, err)
+		require.NotNil(t, o)
+	})
+
+	t.Run("failure", func(t *testing.T) {
+		conf := config(t)
+
+		expectErr := errors.New("expected error")
+
+		conf.StoreProvider = &mockstorage.Provider{ErrOpenStoreHandle: expectErr}
+
+		o, err := New(conf)
+		require.Error(t, err)
+		require.ErrorIs(t, err, expectErr)
+		require.Nil(t, o)
+	})
+}
 
 func TestOperation_GetRESTHandlers(t *testing.T) {
 	o := &Operation{}
@@ -119,7 +143,8 @@ func TestOperation_authContinueHandler(t *testing.T) {
 	})
 
 	t.Run("access policy error", func(t *testing.T) {
-		o := New(config(t))
+		o, err := New(config(t))
+		require.NoError(t, err)
 
 		rw := httptest.NewRecorder()
 
@@ -155,6 +180,7 @@ func config(t *testing.T) *Config {
 	require.NoError(t, err)
 
 	return &Config{
+		StoreProvider:      mem.NewProvider(),
 		AccessPolicy:       &accesspolicy.AccessPolicy{},
 		BaseURL:            "example.com",
 		InteractionHandler: interact,

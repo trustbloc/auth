@@ -11,6 +11,7 @@ import (
 	"fmt"
 
 	"github.com/google/uuid"
+	"github.com/hyperledger/aries-framework-go/spi/storage"
 
 	"github.com/trustbloc/auth/pkg/gnap/accesspolicy"
 	"github.com/trustbloc/auth/pkg/gnap/api"
@@ -58,16 +59,22 @@ type Config struct {
 	AccessPolicy       *accesspolicy.AccessPolicy
 	ContinuePath       string
 	InteractionHandler api.InteractionHandler
+	StoreProvider      storage.Provider
 }
 
 // New returns new AuthHandler.
-func New(config *Config) *AuthHandler {
+func New(config *Config) (*AuthHandler, error) {
+	sessionHandler, err := session.New(&session.Config{StoreProvider: config.StoreProvider})
+	if err != nil {
+		return nil, err
+	}
+
 	return &AuthHandler{
 		continuePath: config.ContinuePath,
 		accessPolicy: config.AccessPolicy,
-		sessionStore: session.New(),
+		sessionStore: sessionHandler,
 		loginConsent: config.InteractionHandler,
-	}
+	}, nil
 }
 
 // HandleAccessRequest handles GNAP access requests.
@@ -111,15 +118,9 @@ func (h *AuthHandler) HandleAccessRequest( // nolint:funlen
 		Value: uuid.New().String(),
 	}
 
-	err = h.sessionStore.ContinueToken(&continueToken, s.ClientID)
-	if err != nil {
-		return nil, fmt.Errorf("saving continuation token to client session: %w", err)
-	}
+	s.ContinueToken = &continueToken
 
-	err = h.sessionStore.SaveRequests(permissions.NeedsConsent, s.ClientID)
-	if err != nil {
-		return nil, fmt.Errorf("saving access requests to session: %w", err)
-	}
+	s.Requested = permissions.NeedsConsent
 
 	// TODO: figure out what parameters to pass into api.InteractionHandler.PrepareInteraction()
 	// TODO: figure out where we save the client's finish redirect uri
@@ -127,6 +128,11 @@ func (h *AuthHandler) HandleAccessRequest( // nolint:funlen
 	interact, err := h.loginConsent.PrepareInteraction(req.Interact)
 	if err != nil {
 		return nil, fmt.Errorf("creating response interaction parameters: %w", err)
+	}
+
+	err = h.sessionStore.Save(s)
+	if err != nil {
+		return nil, err
 	}
 
 	resp := &gnap.AuthResponse{
@@ -162,10 +168,7 @@ func (h *AuthHandler) HandleContinueRequest(
 		return nil, err
 	}
 
-	err = h.sessionStore.SaveSubjectData(consent.SubjectData, s.ClientID)
-	if err != nil {
-		return nil, err
-	}
+	s.AddSubjectData(consent.SubjectData)
 
 	newTokens := []gnap.AccessToken{}
 
@@ -174,10 +177,12 @@ func (h *AuthHandler) HandleContinueRequest(
 
 		newTokens = append(newTokens, *tok)
 
-		err = h.sessionStore.AddToken(tok, s.ClientID)
-		if err != nil {
-			return nil, err
-		}
+		s.Tokens = append(s.Tokens, tok)
+	}
+
+	err = h.sessionStore.Save(s)
+	if err != nil {
+		return nil, err
 	}
 
 	resp := &gnap.AuthResponse{

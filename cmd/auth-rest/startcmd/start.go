@@ -486,6 +486,7 @@ func startAuthService(parameters *authRestParameters, srv server) error {
 		StartupTimeout: parameters.startupTimeout,
 		SecretsToken:   parameters.secretsAPIToken,
 	}, &gnap.Config{
+		StoreProvider:      provider,
 		BaseURL:            parameters.hostURL,
 		AccessPolicy:       &accesspolicy.AccessPolicy{},
 		InteractionHandler: interact,

@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/hyperledger/aries-framework-go/pkg/common/log"
+	"github.com/hyperledger/aries-framework-go/spi/storage"
 
 	"github.com/trustbloc/auth/pkg/gnap/accesspolicy"
 	"github.com/trustbloc/auth/pkg/gnap/api"
@@ -50,6 +51,7 @@ type Operation struct {
 
 // Config defines configuration for GNAP operations.
 type Config struct {
+	StoreProvider      storage.Provider
 	AccessPolicy       *accesspolicy.AccessPolicy
 	BaseURL            string
 	InteractionHandler api.InteractionHandler
@@ -57,15 +59,21 @@ type Config struct {
 }
 
 // New creates GNAP operation handler.
-func New(config *Config) *Operation {
-	return &Operation{
-		authHandler: authhandler.New(&authhandler.Config{
-			AccessPolicy:       config.AccessPolicy,
-			ContinuePath:       config.BaseURL + AuthContinuePath,
-			InteractionHandler: config.InteractionHandler,
-		}),
-		uiEndpoint: config.UIEndpoint,
+func New(config *Config) (*Operation, error) {
+	auth, err := authhandler.New(&authhandler.Config{
+		StoreProvider:      config.StoreProvider,
+		AccessPolicy:       config.AccessPolicy,
+		ContinuePath:       config.BaseURL + AuthContinuePath,
+		InteractionHandler: config.InteractionHandler,
+	})
+	if err != nil {
+		return nil, err
 	}
+
+	return &Operation{
+		authHandler: auth,
+		uiEndpoint:  config.UIEndpoint,
+	}, nil
 }
 
 // GetRESTHandlers get all controller API handler available for this service.

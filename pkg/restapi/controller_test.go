@@ -20,6 +20,7 @@ import (
 	"github.com/trustbloc/auth/pkg/gnap/accesspolicy"
 	"github.com/trustbloc/auth/pkg/internal/common/mockinteract"
 	"github.com/trustbloc/auth/pkg/internal/common/mockoidc"
+	"github.com/trustbloc/auth/pkg/internal/common/mockstorage"
 	"github.com/trustbloc/auth/pkg/restapi/gnap"
 	"github.com/trustbloc/auth/pkg/restapi/operation"
 )
@@ -34,13 +35,26 @@ func TestController_New(t *testing.T) {
 	})
 
 	t.Run("error if operations cannot start", func(t *testing.T) {
-		config := config(t)
-		config.TransientStoreProvider = &mockstore.MockStoreProvider{
+		conf := config(t)
+		conf.TransientStoreProvider = &mockstore.MockStoreProvider{
 			ErrOpenStoreHandle: errors.New("test"),
 		}
 
-		_, err := New(config, gnapConfig(t))
+		_, err := New(conf, gnapConfig(t))
 		require.Error(t, err)
+	})
+
+	t.Run("error if gnap operations cannot start", func(t *testing.T) {
+		conf := config(t)
+		gconf := gnapConfig(t)
+
+		expectErr := errors.New("expected error")
+
+		gconf.StoreProvider = &mockstorage.Provider{ErrOpenStoreHandle: expectErr}
+
+		_, err := New(conf, gconf)
+		require.Error(t, err)
+		require.ErrorIs(t, err, expectErr)
 	})
 }
 
@@ -85,6 +99,7 @@ func gnapConfig(t *testing.T) *gnap.Config {
 	t.Helper()
 
 	return &gnap.Config{
+		StoreProvider:      mem.NewProvider(),
 		AccessPolicy:       &accesspolicy.AccessPolicy{},
 		BaseURL:            "example.com",
 		InteractionHandler: &mockinteract.InteractHandler{},

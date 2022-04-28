@@ -9,25 +9,52 @@ package session
 import (
 	"crypto/ed25519"
 	"crypto/rand"
+	"errors"
 	"testing"
+	"time"
 
+	"github.com/google/uuid"
+	"github.com/hyperledger/aries-framework-go/component/storageutil/mem"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/jose/jwk"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/jose/jwk/jwksupport"
 	"github.com/stretchr/testify/require"
 
 	"github.com/trustbloc/auth/pkg/gnap/api"
+	"github.com/trustbloc/auth/pkg/internal/common/mockstorage"
 	"github.com/trustbloc/auth/spi/gnap"
 )
 
+func TestNew(t *testing.T) {
+	t.Run("success", func(t *testing.T) {
+		sm, err := New(config(t))
+		require.NoError(t, err)
+		require.NotNil(t, sm)
+	})
+
+	t.Run("failure", func(t *testing.T) {
+		conf := config(t)
+
+		expectErr := errors.New("expected error")
+
+		conf.StoreProvider = &mockstorage.Provider{ErrOpenStoreHandle: expectErr}
+
+		sm, err := New(conf)
+		require.Error(t, err)
+		require.ErrorIs(t, err, expectErr)
+		require.Nil(t, sm)
+	})
+}
+
 func TestManager(t *testing.T) {
 	t.Run("create / get by key", func(t *testing.T) {
-		sm := New()
+		sm, err := New(config(t))
+		require.NoError(t, err)
 
 		invalid := &gnap.ClientKey{
 			JWK: jwk.JWK{},
 		}
 
-		_, err := sm.GetOrCreateByKey(invalid)
+		_, err = sm.GetOrCreateByKey(invalid)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "creating jwk thumbprint")
 
@@ -45,9 +72,10 @@ func TestManager(t *testing.T) {
 	})
 
 	t.Run("get by ID", func(t *testing.T) {
-		sm := New()
+		sm, err := New(config(t))
+		require.NoError(t, err)
 
-		_, err := sm.GetByID("foo")
+		_, err = sm.GetByID("foo")
 		require.ErrorIs(t, err, errNotFound)
 
 		s, err := sm.GetOrCreateByKey(clientKey(t))
@@ -60,7 +88,8 @@ func TestManager(t *testing.T) {
 	})
 
 	t.Run("add&get token", func(t *testing.T) {
-		sm := New()
+		sm, err := New(config(t))
+		require.NoError(t, err)
 
 		s, err := sm.GetOrCreateByKey(clientKey(t))
 		require.NoError(t, err)
@@ -69,8 +98,9 @@ func TestManager(t *testing.T) {
 			Value: "foo",
 		}
 
-		err = sm.AddToken(tok, s.ClientID)
-		require.NoError(t, err)
+		s.Tokens = append(s.Tokens, tok)
+
+		require.NoError(t, sm.Save(s))
 
 		s2, tok2, err := sm.GetByAccessToken(tok.Value)
 		require.NoError(t, err)
@@ -82,7 +112,8 @@ func TestManager(t *testing.T) {
 	})
 
 	t.Run("set&get continuation token", func(t *testing.T) {
-		sm := New()
+		sm, err := New(config(t))
+		require.NoError(t, err)
 
 		s, err := sm.GetOrCreateByKey(clientKey(t))
 		require.NoError(t, err)
@@ -91,8 +122,9 @@ func TestManager(t *testing.T) {
 			Value: "foo",
 		}
 
-		err = sm.ContinueToken(tok, s.ClientID)
-		require.NoError(t, err)
+		s.ContinueToken = tok
+
+		require.NoError(t, sm.Save(s))
 
 		s2, err := sm.GetByContinueToken(tok.Value)
 		require.NoError(t, err)
@@ -102,7 +134,8 @@ func TestManager(t *testing.T) {
 	})
 
 	t.Run("set&get access request", func(t *testing.T) {
-		sm := New()
+		sm, err := New(config(t))
+		require.NoError(t, err)
 
 		s, err := sm.GetOrCreateByKey(clientKey(t))
 		require.NoError(t, err)
@@ -121,8 +154,9 @@ func TestManager(t *testing.T) {
 			SubjectKeys: []string{"foo"},
 		}
 
-		err = sm.SaveRequests(req, s.ClientID)
-		require.NoError(t, err)
+		s.Requested = req
+
+		require.NoError(t, sm.Save(s))
 
 		s, err = sm.GetByID(s.ClientID)
 		require.NoError(t, err)
@@ -130,7 +164,8 @@ func TestManager(t *testing.T) {
 	})
 
 	t.Run("set&get subject data", func(t *testing.T) {
-		sm := New()
+		sm, err := New(config(t))
+		require.NoError(t, err)
 
 		s, err := sm.GetOrCreateByKey(clientKey(t))
 		require.NoError(t, err)
@@ -140,8 +175,9 @@ func TestManager(t *testing.T) {
 			"baz": "baz 1",
 		}
 
-		err = sm.SaveSubjectData(sub, s.ClientID)
-		require.NoError(t, err)
+		s.AddSubjectData(sub)
+
+		require.NoError(t, sm.Save(s))
 
 		s, err = sm.GetByID(s.ClientID)
 		require.NoError(t, err)
@@ -152,8 +188,9 @@ func TestManager(t *testing.T) {
 			"qux": "wak",
 		}
 
-		err = sm.SaveSubjectData(sub2, s.ClientID)
-		require.NoError(t, err)
+		s.AddSubjectData(sub2)
+
+		require.NoError(t, sm.Save(s))
 
 		s, err = sm.GetByID(s.ClientID)
 		require.NoError(t, err)
@@ -168,7 +205,8 @@ func TestManager(t *testing.T) {
 	})
 
 	t.Run("create&delete session", func(t *testing.T) {
-		sm := New()
+		sm, err := New(config(t))
+		require.NoError(t, err)
 
 		s, err := sm.GetOrCreateByKey(clientKey(t))
 		require.NoError(t, err)
@@ -176,21 +214,16 @@ func TestManager(t *testing.T) {
 		err = sm.DeleteSession(s.ClientID)
 		require.NoError(t, err)
 
-		require.Empty(t, sm.store)
-		require.Empty(t, sm.keyFP2ID)
-		require.Empty(t, sm.token2ID)
+		_, err = sm.GetByID(s.ClientID)
+		require.ErrorIs(t, err, errNotFound)
 	})
 
 	t.Run("err not found", func(t *testing.T) {
-		sm := New()
+		sm, err := New(config(t))
+		require.NoError(t, err)
 
-		_, err := sm.GetByID("foo")
+		_, err = sm.GetByID("foo")
 		require.ErrorIs(t, err, errNotFound)
-
-		_, _, err = sm.GetByAccessToken("foo")
-		require.ErrorIs(t, err, errNotFound)
-
-		sm.token2ID["foo"] = "foo"
 
 		_, _, err = sm.GetByAccessToken("foo")
 		require.ErrorIs(t, err, errNotFound)
@@ -201,18 +234,75 @@ func TestManager(t *testing.T) {
 		_, err = sm.GetByID("foo")
 		require.ErrorIs(t, err, errNotFound)
 
-		err = sm.AddToken(nil, "foo")
+		_, err = sm.GetByInteractRef("foo")
 		require.ErrorIs(t, err, errNotFound)
 
-		err = sm.SaveRequests(nil, "foo")
-		require.ErrorIs(t, err, errNotFound)
-
-		err = sm.SaveSubjectData(nil, "foo")
-		require.ErrorIs(t, err, errNotFound)
-
-		err = sm.ContinueToken(nil, "foo")
+		_, err = sm.GetByInteractFlowID("foo")
 		require.ErrorIs(t, err, errNotFound)
 	})
+}
+
+func TestManager_Expiry(t *testing.T) {
+	// TODO tests for session expiry
+	t.Run("not expired", func(t *testing.T) {
+		sm, err := New(config(t))
+		require.NoError(t, err)
+
+		sm.sessionLifetime = time.Hour
+
+		foo := "foo"
+
+		s := &Session{
+			ClientID:       uuid.New().String(),
+			InteractRef:    foo,
+			InteractFlowID: foo,
+		}
+
+		err = sm.Save(s)
+		require.NoError(t, err)
+
+		s2, err := sm.GetByID(s.ClientID)
+		require.NoError(t, err)
+		require.Equal(t, s.ClientID, s2.ClientID)
+
+		s2, err = sm.GetByInteractRef(foo)
+		require.NoError(t, err)
+		require.Equal(t, s.ClientID, s2.ClientID)
+
+		s2, err = sm.GetByInteractFlowID(foo)
+		require.NoError(t, err)
+		require.Equal(t, s.ClientID, s2.ClientID)
+	})
+
+	t.Run("expiry test", func(t *testing.T) {
+		sm, err := New(config(t))
+		require.NoError(t, err)
+
+		sm.sessionLifetime = time.Millisecond * 5
+
+		s := &Session{
+			ClientID: uuid.New().String(),
+		}
+
+		err = sm.Save(s)
+		require.NoError(t, err)
+
+		timer := time.NewTimer(time.Millisecond * 10)
+
+		<-timer.C
+
+		_, err = sm.GetByID(s.ClientID)
+		require.Error(t, err)
+		require.ErrorIs(t, err, errSessionExpired)
+	})
+}
+
+func config(t *testing.T) *Config {
+	t.Helper()
+
+	return &Config{
+		StoreProvider: mem.NewProvider(),
+	}
 }
 
 func clientKey(t *testing.T) *gnap.ClientKey {

@@ -12,30 +12,56 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/hyperledger/aries-framework-go/component/storageutil/mem"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/jose/jwk/jwksupport"
+	"github.com/hyperledger/aries-framework-go/spi/storage"
 	"github.com/stretchr/testify/require"
 
 	"github.com/trustbloc/auth/pkg/gnap/accesspolicy"
 	"github.com/trustbloc/auth/pkg/gnap/api"
 	"github.com/trustbloc/auth/pkg/internal/common/mockinteract"
+	"github.com/trustbloc/auth/pkg/internal/common/mockstorage"
 	"github.com/trustbloc/auth/pkg/internal/common/mockverifier"
 	"github.com/trustbloc/auth/spi/gnap"
 )
 
+func TestNew(t *testing.T) {
+	t.Run("success", func(t *testing.T) {
+		h, err := New(config(t))
+		require.NoError(t, err)
+		require.NotNil(t, h)
+	})
+
+	t.Run("failure", func(t *testing.T) {
+		conf := config(t)
+
+		expectErr := errors.New("expected error")
+
+		conf.StoreProvider = &mockstorage.Provider{ErrOpenStoreHandle: expectErr}
+
+		h, err := New(conf)
+		require.Error(t, err)
+		require.ErrorIs(t, err, expectErr)
+		require.Nil(t, h)
+	})
+}
+
 func TestAuthHandler_HandleAccessRequest(t *testing.T) {
 	t.Run("missing client", func(t *testing.T) {
-		h := New(config(t))
+		h, err := New(config(t))
+		require.NoError(t, err)
 
 		req := &gnap.AuthRequest{}
 		v := &mockverifier.MockVerifier{}
 
-		_, err := h.HandleAccessRequest(req, v)
+		_, err = h.HandleAccessRequest(req, v)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "missing client")
 	})
 
 	t.Run("missing client reference", func(t *testing.T) {
-		h := New(config(t))
+		h, err := New(config(t))
+		require.NoError(t, err)
 
 		req := &gnap.AuthRequest{
 			Client: &gnap.RequestClient{
@@ -45,13 +71,14 @@ func TestAuthHandler_HandleAccessRequest(t *testing.T) {
 		}
 		v := &mockverifier.MockVerifier{}
 
-		_, err := h.HandleAccessRequest(req, v)
+		_, err = h.HandleAccessRequest(req, v)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "getting client session by client ID")
 	})
 
 	t.Run("getting session by client key", func(t *testing.T) {
-		h := New(config(t))
+		h, err := New(config(t))
+		require.NoError(t, err)
 
 		req := &gnap.AuthRequest{
 			Client: &gnap.RequestClient{
@@ -61,13 +88,14 @@ func TestAuthHandler_HandleAccessRequest(t *testing.T) {
 		}
 		v := &mockverifier.MockVerifier{}
 
-		_, err := h.HandleAccessRequest(req, v)
+		_, err = h.HandleAccessRequest(req, v)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "getting client session by key")
 	})
 
 	t.Run("request verification failure", func(t *testing.T) {
-		h := New(config(t))
+		h, err := New(config(t))
+		require.NoError(t, err)
 
 		expectedErr := errors.New("expected error")
 
@@ -81,14 +109,51 @@ func TestAuthHandler_HandleAccessRequest(t *testing.T) {
 			ErrVerify: expectedErr,
 		}
 
-		_, err := h.HandleAccessRequest(req, v)
+		_, err = h.HandleAccessRequest(req, v)
 		require.Error(t, err)
 		require.ErrorIs(t, err, expectedErr)
 		require.Contains(t, err.Error(), "verification failure")
 	})
 
+	t.Run("fail to save", func(t *testing.T) {
+		conf := config(t)
+
+		expectErr := errors.New("expected error")
+
+		conf.StoreProvider = &mockstorage.Provider{Store: &mockstorage.MockStore{
+			Store:    map[string][]byte{},
+			ErrQuery: storage.ErrDataNotFound,
+			ErrPut:   expectErr,
+		}}
+
+		h, err := New(conf)
+		require.NoError(t, err)
+
+		h.loginConsent = &mockinteract.InteractHandler{
+			PrepareVal: &gnap.ResponseInteract{
+				Redirect: "foo.com",
+				Finish:   "barbazqux",
+			},
+		}
+
+		req := &gnap.AuthRequest{
+			Client: &gnap.RequestClient{
+				IsReference: false,
+				Key:         clientKey(t),
+			},
+		}
+		v := &mockverifier.MockVerifier{}
+
+		resp, err := h.HandleAccessRequest(req, v)
+		require.Error(t, err)
+		require.ErrorIs(t, err, expectErr)
+
+		require.Nil(t, resp)
+	})
+
 	t.Run("success", func(t *testing.T) {
-		h := New(config(t))
+		h, err := New(config(t))
+		require.NoError(t, err)
 
 		h.loginConsent = &mockinteract.InteractHandler{
 			PrepareVal: &gnap.ResponseInteract{
@@ -114,23 +179,26 @@ func TestAuthHandler_HandleAccessRequest(t *testing.T) {
 
 func TestAuthHandler_HandleContinueRequest(t *testing.T) {
 	t.Run("missing session", func(t *testing.T) {
-		h := New(config(t))
+		h, err := New(config(t))
+		require.NoError(t, err)
 
-		_, err := h.HandleContinueRequest(nil, "", nil)
+		_, err = h.HandleContinueRequest(nil, "", nil)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "getting session for continue token")
 	})
 
 	t.Run("failed request verify", func(t *testing.T) {
-		h := New(config(t))
+		h, err := New(config(t))
+		require.NoError(t, err)
 
 		s, err := h.sessionStore.GetOrCreateByKey(clientKey(t))
 		require.NoError(t, err)
 
-		err = h.sessionStore.ContinueToken(&gnap.AccessToken{
+		s.ContinueToken = &gnap.AccessToken{
 			Value: "foo",
-		}, s.ClientID)
-		require.NoError(t, err)
+		}
+
+		require.NoError(t, h.sessionStore.Save(s))
 
 		expectErr := errors.New("expected error")
 
@@ -143,7 +211,8 @@ func TestAuthHandler_HandleContinueRequest(t *testing.T) {
 	})
 
 	t.Run("failed interaction query", func(t *testing.T) {
-		h := New(config(t))
+		h, err := New(config(t))
+		require.NoError(t, err)
 
 		expectErr := errors.New("expected error")
 
@@ -154,10 +223,11 @@ func TestAuthHandler_HandleContinueRequest(t *testing.T) {
 		s, err := h.sessionStore.GetOrCreateByKey(clientKey(t))
 		require.NoError(t, err)
 
-		err = h.sessionStore.ContinueToken(&gnap.AccessToken{
+		s.ContinueToken = &gnap.AccessToken{
 			Value: "foo",
-		}, s.ClientID)
-		require.NoError(t, err)
+		}
+
+		require.NoError(t, h.sessionStore.Save(s))
 
 		_, err = h.HandleContinueRequest(&gnap.ContinueRequest{}, "foo", &mockverifier.MockVerifier{})
 		require.Error(t, err)
@@ -165,7 +235,8 @@ func TestAuthHandler_HandleContinueRequest(t *testing.T) {
 	})
 
 	t.Run("success", func(t *testing.T) {
-		h := New(config(t))
+		h, err := New(config(t))
+		require.NoError(t, err)
 
 		h.loginConsent = &mockinteract.InteractHandler{
 			QueryVal: &api.ConsentResult{
@@ -186,10 +257,10 @@ func TestAuthHandler_HandleContinueRequest(t *testing.T) {
 		s, err := h.sessionStore.GetOrCreateByKey(clientKey(t))
 		require.NoError(t, err)
 
-		err = h.sessionStore.ContinueToken(&gnap.AccessToken{
+		s.ContinueToken = &gnap.AccessToken{
 			Value: "foo",
-		}, s.ClientID)
-		require.NoError(t, err)
+		}
+		require.NoError(t, h.sessionStore.Save(s))
 
 		resp, err := h.HandleContinueRequest(&gnap.ContinueRequest{}, "foo", &mockverifier.MockVerifier{})
 		require.NoError(t, err)
@@ -201,18 +272,20 @@ func TestAuthHandler_HandleContinueRequest(t *testing.T) {
 
 func TestAuthHandler_HandleIntrospection(t *testing.T) {
 	t.Run("missing rs", func(t *testing.T) {
-		h := New(config(t))
+		h, err := New(config(t))
+		require.NoError(t, err)
 
 		req := &gnap.IntrospectRequest{}
 		v := &mockverifier.MockVerifier{}
 
-		_, err := h.HandleIntrospection(req, v)
+		_, err = h.HandleIntrospection(req, v)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "missing rs")
 	})
 
 	t.Run("missing rs reference", func(t *testing.T) {
-		h := New(config(t))
+		h, err := New(config(t))
+		require.NoError(t, err)
 
 		req := &gnap.IntrospectRequest{
 			ResourceServer: &gnap.RequestClient{
@@ -222,13 +295,14 @@ func TestAuthHandler_HandleIntrospection(t *testing.T) {
 		}
 		v := &mockverifier.MockVerifier{}
 
-		_, err := h.HandleIntrospection(req, v)
+		_, err = h.HandleIntrospection(req, v)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "getting rs session by rs ID")
 	})
 
 	t.Run("getting session by rs key", func(t *testing.T) {
-		h := New(config(t))
+		h, err := New(config(t))
+		require.NoError(t, err)
 
 		req := &gnap.IntrospectRequest{
 			ResourceServer: &gnap.RequestClient{
@@ -238,13 +312,14 @@ func TestAuthHandler_HandleIntrospection(t *testing.T) {
 		}
 		v := &mockverifier.MockVerifier{}
 
-		_, err := h.HandleIntrospection(req, v)
+		_, err = h.HandleIntrospection(req, v)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "getting rs session by key")
 	})
 
 	t.Run("request verification failure", func(t *testing.T) {
-		h := New(config(t))
+		h, err := New(config(t))
+		require.NoError(t, err)
 
 		expectedErr := errors.New("expected error")
 
@@ -258,14 +333,15 @@ func TestAuthHandler_HandleIntrospection(t *testing.T) {
 			ErrVerify: expectedErr,
 		}
 
-		_, err := h.HandleIntrospection(req, v)
+		_, err = h.HandleIntrospection(req, v)
 		require.Error(t, err)
 		require.ErrorIs(t, err, expectedErr)
 		require.Contains(t, err.Error(), "verification failure")
 	})
 
 	t.Run("access token does not exist", func(t *testing.T) {
-		h := New(config(t))
+		h, err := New(config(t))
+		require.NoError(t, err)
 
 		req := &gnap.IntrospectRequest{
 			ResourceServer: &gnap.RequestClient{
@@ -281,7 +357,8 @@ func TestAuthHandler_HandleIntrospection(t *testing.T) {
 	})
 
 	t.Run("client used wrong request signing method", func(t *testing.T) {
-		h := New(config(t))
+		h, err := New(config(t))
+		require.NoError(t, err)
 
 		clientSession, err := h.sessionStore.GetOrCreateByKey(clientKey(t))
 		require.NoError(t, err)
@@ -296,8 +373,9 @@ func TestAuthHandler_HandleIntrospection(t *testing.T) {
 			},
 		})
 
-		err = h.sessionStore.AddToken(token, clientSession.ClientID)
-		require.NoError(t, err)
+		clientSession.Tokens = append(clientSession.Tokens, token)
+
+		require.NoError(t, h.sessionStore.Save(clientSession))
 
 		req := &gnap.IntrospectRequest{
 			ResourceServer: &gnap.RequestClient{
@@ -315,7 +393,8 @@ func TestAuthHandler_HandleIntrospection(t *testing.T) {
 	})
 
 	t.Run("success", func(t *testing.T) {
-		h := New(config(t))
+		h, err := New(config(t))
+		require.NoError(t, err)
 
 		clientVerKey := clientKey(t)
 
@@ -339,14 +418,13 @@ func TestAuthHandler_HandleIntrospection(t *testing.T) {
 			},
 		})
 
-		err = h.sessionStore.AddToken(token, clientSession.ClientID)
-		require.NoError(t, err)
-
-		err = h.sessionStore.SaveSubjectData(map[string]string{
+		clientSession.Tokens = append(clientSession.Tokens, token)
+		clientSession.AddSubjectData(map[string]string{
 			clientIDKey: clientIDVal,
 			"secret":    "blah blah",
-		}, clientSession.ClientID)
-		require.NoError(t, err)
+		})
+
+		require.NoError(t, h.sessionStore.Save(clientSession))
 
 		req := &gnap.IntrospectRequest{
 			ResourceServer: &gnap.RequestClient{
@@ -376,6 +454,7 @@ func config(t *testing.T) *Config {
 	t.Helper()
 
 	return &Config{
+		StoreProvider:      mem.NewProvider(),
 		AccessPolicy:       &accesspolicy.AccessPolicy{},
 		ContinuePath:       "example.com",
 		InteractionHandler: &mockinteract.InteractHandler{},
