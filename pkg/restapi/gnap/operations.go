@@ -119,7 +119,7 @@ func (o *Operation) authRequestHandler(w http.ResponseWriter, req *http.Request)
 func (o *Operation) interactHandler(w http.ResponseWriter, req *http.Request) {
 	// TODO validate txn_id
 	// redirect to UI
-	http.Redirect(w, req, o.uiEndpoint, http.StatusFound)
+	http.Redirect(w, req, o.uiEndpoint+"/sign-up", http.StatusFound)
 }
 
 func (o *Operation) authContinueHandler(w http.ResponseWriter, req *http.Request) {

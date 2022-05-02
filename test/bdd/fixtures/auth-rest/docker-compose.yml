@@ -20,7 +20,7 @@ services:
       - AUTH_REST_DATABASE_TYPE=mongodb
       - AUTH_REST_DATABASE_URL=mongodb://mongodb.example.com:27017
       - AUTH_REST_DATABASE_PREFIX=authrest_
-      - AUTH_REST_OIDC_CALLBACK=https://localhost:8070/oauth2/callback   # https://github.com/trustbloc/auth/issues/13
+      - AUTH_REST_OIDC_CALLBACK=https://auth.trustbloc.local:8070/oauth2/callback   # https://github.com/trustbloc/auth/issues/13
       - AUTH_REST_OIDC_PROVIDERS_CONFIG=/etc/oidc-config/providers.yaml
       - AUTH_REST_SDS_DOCS_URL=https://TODO.docs.sds.org              # onboard user: https://github.com/trustbloc/auth/issues/38
       - AUTH_REST_SDS_OPSKEYS_URL=https://TODO.keys.sds.org
@@ -58,8 +58,8 @@ services:
     environment:
       - DSN=mysql://authresthydra:authresthydra-secret-pw@tcp(mysql:3306)/authresthydra?max_conns=20&max_idle_conns=4
       - URLS_SELF_ISSUER=https://localhost:4444/
-      - URLS_CONSENT=https://localhost:8070/hydra/consent
-      - URLS_LOGIN=https://localhost:8070/hydra/login
+      - URLS_CONSENT=https://auth.trustbloc.local:8070/hydra/consent
+      - URLS_LOGIN=https://auth.trustbloc.local:8070/hydra/login
       - SECRETS_SYSTEM=testSecretsSystem
       - OIDC_SUBJECT_TYPES_SUPPORTED=public
       - OIDC_SUBJECT_TYPE_PAIRWISE_SALT=testSecretsSystem
