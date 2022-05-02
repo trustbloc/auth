@@ -11,6 +11,8 @@ import (
 	"crypto/rand"
 	"fmt"
 	"net/http"
+	"net/http/cookiejar"
+	"strings"
 
 	"github.com/cucumber/godog"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/jose/jwk"
@@ -24,6 +26,12 @@ import (
 const (
 	authServerURL       = "https://auth.trustbloc.local:8070"
 	expectedInteractURL = authServerURL + "/gnap/interact"
+
+	oidcProviderSelectorURL = authServerURL + "/oauth2/login"
+	oidcCallbackURLURL      = authServerURL + "/oauth2/callback"
+	authServerSignUpURL     = authServerURL + "/ui/sign-up"
+
+	mockOIDCProviderName = "mockbank1" // providers.yaml
 )
 
 type Steps struct {
@@ -31,6 +39,7 @@ type Steps struct {
 	gnapClient *as.Client
 	pubKeyJWK  jwk.JWK
 	authResp   *gnap.AuthResponse
+	browser    *http.Client
 }
 
 func NewSteps(ctx *bddctx.BDDContext) *Steps {
@@ -97,7 +106,7 @@ func (s *Steps) txnRequest() error {
 
 	if authResp.Interact.Redirect != expectedInteractURL {
 		return fmt.Errorf(
-			"invalid interact url: expected %s got %s",
+			"invalid interact url: expected=%s actual=%s",
 			expectedInteractURL, authResp.Interact.Redirect,
 		)
 	}
@@ -108,13 +117,51 @@ func (s *Steps) txnRequest() error {
 }
 
 func (s *Steps) interactRedirect() error {
-	// TODO get interact url
+	// initialise the browser
+	s.initBrowser()
 
-	// TODO use browser to redirect
+	// redirect to interact url
+	response, err := s.browser.Get(s.authResp.Interact.Redirect)
+	if err != nil {
+		return err
+	}
 
-	// TODO select provider
+	defer func() {
+		closeErr := response.Body.Close()
+		if closeErr != nil {
+			fmt.Printf("WARNING - failed to close http response body: %s\n", closeErr.Error())
+		}
+	}()
 
-	// TODO login to third party oidc
+	// validate the redirect url
+	if response.Request.URL.String() != authServerSignUpURL {
+		return fmt.Errorf(
+			"invalid ui redirect url: expected=%s actual=%s", authServerSignUpURL, response.Request.URL.String(),
+		)
+	}
+
+	// select provider
+	request := fmt.Sprintf("%s?provider=%s", oidcProviderSelectorURL, mockOIDCProviderName)
+
+	fmt.Println(request)
+
+	result, err := s.browser.Get(fmt.Sprintf("%s?provider=%s", oidcProviderSelectorURL, mockOIDCProviderName))
+	if err != nil {
+		return fmt.Errorf("failed to redirect to OIDC provider url %s: %w", request, err)
+	}
+
+	// login to third party oidc
+	loginResp, err := s.browser.Post(result.Request.URL.String(), "", nil)
+	if err != nil {
+		return err
+	}
+
+	if !strings.HasPrefix(loginResp.Request.URL.String(), oidcCallbackURLURL) {
+		return fmt.Errorf(
+			"invalid oidc callbackURL prefix expected=%s actual=%s",
+			oidcCallbackURLURL, loginResp.Request.URL.String(),
+		)
+	}
 
 	// TODO get the redirect back
 
@@ -127,6 +174,20 @@ func (s *Steps) continueRequest() error {
 	// TODO call continue API
 
 	// TODO validate acess token
+
+	return nil
+}
+
+func (s *Steps) initBrowser() error {
+	jar, err := cookiejar.New(nil)
+	if err != nil {
+		return fmt.Errorf("failed to init cookie jar: %w", err)
+	}
+
+	s.browser = &http.Client{
+		Jar:       jar,
+		Transport: &http.Transport{TLSClientConfig: s.ctx.TLSConfig()},
+	}
 
 	return nil
 }

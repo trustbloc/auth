@@ -22,7 +22,7 @@ import (
 )
 
 const (
-	AUTH_HOST                       = "https://localhost:8070"
+	AUTH_HOST                       = "https://auth.trustbloc.local:8070"
 	hubAuthHydraAdminURL            = "https://localhost:4445"
 	hubAuthOIDCProviderURL          = "https://localhost:4444/"
 	hubAuthOIDCProviderSelectionURL = AUTH_HOST + "/ui"
