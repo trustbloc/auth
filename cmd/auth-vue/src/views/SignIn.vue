@@ -16,7 +16,7 @@ const loading = ref(true);
 const providers = ref([]);
 const systemError = ref(false);
 const providerPopup = ref({ closed: false });
-const { t } = useI18n();
+const { t, locale } = useI18n();
 
 onMounted(async () => {
   try {
@@ -88,7 +88,7 @@ function initiateOIDCLogin(providerID) {
         @click="initiateOIDCLogin(provider.id)"
         @keyup.enter="initiateOIDCLogin(provider.id)"
       >
-        <img :src="provider.signInLogoUrl" />
+        <img :src="provider.signInIconUrl[locale]" />
       </button>
     </div>
     <div class="mb-12 text-center">

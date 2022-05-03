@@ -113,8 +113,8 @@ type OIDCProviderConfig struct {
 	ClientID        string
 	ClientSecret    string
 	Name            string
-	SignUpLogoURL   string
-	SignInLogoURL   string
+	SignUpIconURL   map[string]string
+	SignInIconURL   map[string]string
 	Order           int
 	SkipIssuerCheck bool
 	Scopes          []string
@@ -140,8 +140,8 @@ func New(config *Config) (*Operation, error) {
 
 	for k, v := range config.OIDC.Providers {
 		prov := authProvider{
-			ID: k, Name: v.Name, SignUpLogoURL: v.SignUpLogoURL,
-			SignInLogoURL: v.SignInLogoURL, Order: v.Order,
+			ID: k, Name: v.Name, SignUpIconURL: v.SignUpIconURL,
+			SignInIconURL: v.SignInIconURL, Order: v.Order,
 		}
 
 		authProviders = append(authProviders, prov)
