@@ -39,9 +39,9 @@ type authProviders struct {
 }
 
 type authProvider struct {
-	ID            string `json:"id"`
-	Name          string `json:"name"`
-	SignUpLogoURL string `json:"signUpLogoUrl"`
-	SignInLogoURL string `json:"signInLogoUrl"`
-	Order         int    `json:"order"`
+	ID            string            `json:"id"`
+	Name          string            `json:"name"`
+	SignUpIconURL map[string]string `json:"signUpIconUrl"`
+	SignInIconURL map[string]string `json:"signInIconUrl"`
+	Order         int               `json:"order"`
 }

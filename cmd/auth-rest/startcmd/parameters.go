@@ -53,15 +53,15 @@ type oidcProvidersConfig struct {
 }
 
 type oidcProviderConfig struct {
-	URL             string   `yaml:"url"`
-	ClientID        string   `yaml:"clientID"`
-	ClientSecret    string   `yaml:"clientSecret"`
-	Name            string   `yaml:"name"`
-	SignUpLogoURL   string   `yaml:"signUpLogoURL"`
-	SignInLogoURL   string   `yaml:"signInLogoURL"`
-	Order           int      `yaml:"order"`
-	SkipIssuerCheck bool     `yaml:"skipIssuerCheck"`
-	Scopes          []string `yaml:"scopes"`
+	URL             string            `yaml:"url"`
+	ClientID        string            `yaml:"clientID"`
+	ClientSecret    string            `yaml:"clientSecret"`
+	Name            string            `yaml:"name"`
+	SignUpIconURL   map[string]string `yaml:"signUpIconURL"`
+	SignInIconURL   map[string]string `yaml:"signInIconURL"`
+	Order           int               `yaml:"order"`
+	SkipIssuerCheck bool              `yaml:"skipIssuerCheck"`
+	Scopes          []string          `yaml:"scopes"`
 }
 
 type bootstrapParams struct {
