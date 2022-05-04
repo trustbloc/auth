@@ -103,7 +103,7 @@ func gnapConfig(t *testing.T) *gnap.Config {
 
 	return &gnap.Config{
 		StoreProvider:      mem.NewProvider(),
-		AccessPolicy:       &accesspolicy.AccessPolicy{},
+		AccessPolicyConfig: &accesspolicy.Config{},
 		BaseURL:            "example.com",
 		InteractionHandler: &mockinteract.InteractHandler{},
 		OIDC: &oidcmodel.Config{

@@ -86,8 +86,8 @@ TODO: session lookup keys
 type Session struct {
 	ClientID       string
 	ClientKey      *gnap.ClientKey
-	Tokens         []*gnap.AccessToken
-	ContinueToken  *gnap.AccessToken
+	Tokens         []*api.ExpiringToken
+	ContinueToken  *api.ExpiringToken
 	Requested      *api.AccessMetadata
 	SubjectData    map[string]string
 	Expires        time.Time
@@ -296,7 +296,7 @@ func (s *Manager) GetByID(clientID string) (*Session, error) {
 }
 
 // GetByAccessToken gets the Session that has the given token.
-func (s *Manager) GetByAccessToken(token string) (*Session, *gnap.AccessToken, error) {
+func (s *Manager) GetByAccessToken(token string) (*Session, *api.ExpiringToken, error) {
 	session, err := s.getByTag(storage.Tag{
 		Name: tokenTagPrefix + token,
 	})
@@ -304,7 +304,7 @@ func (s *Manager) GetByAccessToken(token string) (*Session, *gnap.AccessToken, e
 		return nil, nil, err
 	}
 
-	var t *gnap.AccessToken
+	var t *api.ExpiringToken
 
 	for _, tok := range session.Tokens {
 		if tok.Value == token {

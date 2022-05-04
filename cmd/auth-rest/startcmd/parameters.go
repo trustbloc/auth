@@ -28,6 +28,7 @@ type authRestParameters struct {
 	secretsAPIToken  string
 	staticImages     string
 	keys             *keyParameters
+	gnap             *gnapParameters
 }
 
 type tlsParams struct {
@@ -74,4 +75,8 @@ type bootstrapParams struct {
 type keyParameters struct {
 	sessionCookieAuthKey []byte
 	sessionCookieEncKey  []byte
+}
+
+type gnapParameters struct {
+	accessPolicyConfigPath string
 }

@@ -7,6 +7,8 @@ SPDX-License-Identifier: Apache-2.0
 package api
 
 import (
+	"time"
+
 	"github.com/trustbloc/auth/spi/gnap"
 )
 
@@ -48,8 +50,22 @@ type InteractionHandler interface {
 
 // AccessMetadata holds a set of token access descriptors and subject data keys.
 type AccessMetadata struct {
-	Tokens      []*gnap.TokenRequest
+	Tokens      []*ExpiringTokenRequest
 	SubjectKeys []string
+}
+
+// ExpiringTokenRequest holds a request for a token with a custom expiration
+// time. If this token is granted, the token's expiration time must be the
+// earliest of this value and the expiry determined by the token's lifetime.
+type ExpiringTokenRequest struct {
+	gnap.TokenRequest
+	Expires time.Time
+}
+
+// ExpiringToken holds a gnap.AccessToken annotated with the expiry time.
+type ExpiringToken struct {
+	gnap.AccessToken
+	Expires time.Time `json:"expiry"`
 }
 
 // ConsentResult holds access token descriptors and subject data that were granted by a user consent interaction.

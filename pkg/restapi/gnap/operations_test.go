@@ -381,7 +381,7 @@ func config(t *testing.T) *Config {
 
 	return &Config{
 		StoreProvider:      mem.NewProvider(),
-		AccessPolicy:       &accesspolicy.AccessPolicy{},
+		AccessPolicyConfig: &accesspolicy.Config{},
 		BaseURL:            "example.com",
 		InteractionHandler: interact,
 		OIDC: &oidcmodel.Config{

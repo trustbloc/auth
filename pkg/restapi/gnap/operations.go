@@ -77,7 +77,7 @@ type Operation struct {
 // Config defines configuration for GNAP operations.
 type Config struct {
 	StoreProvider      storage.Provider
-	AccessPolicy       *accesspolicy.AccessPolicy
+	AccessPolicyConfig *accesspolicy.Config
 	BaseURL            string
 	InteractionHandler api.InteractionHandler
 	UIEndpoint         string
@@ -100,7 +100,7 @@ func New(config *Config) (*Operation, error) {
 
 	auth, err := authhandler.New(&authhandler.Config{
 		StoreProvider:      config.StoreProvider,
-		AccessPolicy:       config.AccessPolicy,
+		AccessPolicyConfig: config.AccessPolicyConfig,
 		ContinuePath:       config.BaseURL + AuthContinuePath,
 		InteractionHandler: config.InteractionHandler,
 	})
