@@ -9,6 +9,7 @@ package authhandler
 import (
 	"crypto/ed25519"
 	"crypto/rand"
+	"encoding/json"
 	"errors"
 	"testing"
 
@@ -32,7 +33,24 @@ func TestNew(t *testing.T) {
 		require.NotNil(t, h)
 	})
 
-	t.Run("failure", func(t *testing.T) {
+	t.Run("fail to initialize access policy", func(t *testing.T) {
+		conf := config(t)
+
+		conf.AccessPolicyConfig = &accesspolicy.Config{
+			AccessTypes: []accesspolicy.TokenAccessConfig{{
+				Access: gnap.TokenAccess{
+					Type: "foo",
+					Raw:  []byte("foo bar baz"),
+				},
+			}},
+		}
+
+		h, err := New(conf)
+		require.Error(t, err)
+		require.Nil(t, h)
+	})
+
+	t.Run("fail to initialize session manager", func(t *testing.T) {
 		conf := config(t)
 
 		expectErr := errors.New("expected error")
@@ -194,9 +212,9 @@ func TestAuthHandler_HandleContinueRequest(t *testing.T) {
 		s, err := h.sessionStore.GetOrCreateByKey(clientKey(t))
 		require.NoError(t, err)
 
-		s.ContinueToken = &gnap.AccessToken{
+		s.ContinueToken = &api.ExpiringToken{AccessToken: gnap.AccessToken{
 			Value: "foo",
-		}
+		}}
 
 		require.NoError(t, h.sessionStore.Save(s))
 
@@ -223,9 +241,9 @@ func TestAuthHandler_HandleContinueRequest(t *testing.T) {
 		s, err := h.sessionStore.GetOrCreateByKey(clientKey(t))
 		require.NoError(t, err)
 
-		s.ContinueToken = &gnap.AccessToken{
+		s.ContinueToken = &api.ExpiringToken{AccessToken: gnap.AccessToken{
 			Value: "foo",
-		}
+		}}
 
 		require.NoError(t, h.sessionStore.Save(s))
 
@@ -257,9 +275,9 @@ func TestAuthHandler_HandleContinueRequest(t *testing.T) {
 		s, err := h.sessionStore.GetOrCreateByKey(clientKey(t))
 		require.NoError(t, err)
 
-		s.ContinueToken = &gnap.AccessToken{
+		s.ContinueToken = &api.ExpiringToken{AccessToken: gnap.AccessToken{
 			Value: "foo",
-		}
+		}}
 		require.NoError(t, h.sessionStore.Save(s))
 
 		resp, err := h.HandleContinueRequest(&gnap.ContinueRequest{}, "foo", &mockverifier.MockVerifier{})
@@ -373,7 +391,7 @@ func TestAuthHandler_HandleIntrospection(t *testing.T) {
 			},
 		})
 
-		clientSession.Tokens = append(clientSession.Tokens, token)
+		clientSession.Tokens = append(clientSession.Tokens, &api.ExpiringToken{AccessToken: *token})
 
 		require.NoError(t, h.sessionStore.Save(clientSession))
 
@@ -418,7 +436,7 @@ func TestAuthHandler_HandleIntrospection(t *testing.T) {
 			},
 		})
 
-		clientSession.Tokens = append(clientSession.Tokens, token)
+		clientSession.Tokens = append(clientSession.Tokens, &api.ExpiringToken{AccessToken: *token})
 		clientSession.AddSubjectData(map[string]string{
 			clientIDKey: clientIDVal,
 			"secret":    "blah blah",
@@ -453,9 +471,14 @@ func TestAuthHandler_HandleIntrospection(t *testing.T) {
 func config(t *testing.T) *Config {
 	t.Helper()
 
+	apConfig := &accesspolicy.Config{}
+
+	err := json.Unmarshal([]byte(accessPolicyConf), apConfig)
+	require.NoError(t, err)
+
 	return &Config{
 		StoreProvider:      mem.NewProvider(),
-		AccessPolicy:       &accesspolicy.AccessPolicy{},
+		AccessPolicyConfig: apConfig,
 		ContinuePath:       "example.com",
 		InteractionHandler: &mockinteract.InteractHandler{},
 	}
@@ -477,3 +500,26 @@ func clientKey(t *testing.T) *gnap.ClientKey {
 
 	return &ck
 }
+
+const (
+	accessPolicyConf = `{
+	"access-types": [{
+			"reference": "client-id",
+			"permission": "NeedsConsent",
+			"access": {
+				"type": "trustbloc.xyz/auth/type/client-id",
+				"subject-keys": ["client-id"],
+				"userid-key": "client-id"
+			}
+		}, {
+			"reference": "other-access",
+			"permission": "NeedsConsent",
+			"access": {
+				"type": "trustbloc.xyz/auth/type/other-access",
+				"actions": ["write"],
+				"datasets": ["foobase"]
+			}
+		} 
+	]
+}`
+)

@@ -94,9 +94,9 @@ func TestManager(t *testing.T) {
 		s, err := sm.GetOrCreateByKey(clientKey(t))
 		require.NoError(t, err)
 
-		tok := &gnap.AccessToken{
+		tok := &api.ExpiringToken{AccessToken: gnap.AccessToken{
 			Value: "foo",
-		}
+		}}
 
 		s.Tokens = append(s.Tokens, tok)
 
@@ -118,8 +118,10 @@ func TestManager(t *testing.T) {
 		s, err := sm.GetOrCreateByKey(clientKey(t))
 		require.NoError(t, err)
 
-		tok := &gnap.AccessToken{
-			Value: "foo",
+		tok := &api.ExpiringToken{
+			AccessToken: gnap.AccessToken{
+				Value: "foo",
+			},
 		}
 
 		s.ContinueToken = tok
@@ -141,12 +143,14 @@ func TestManager(t *testing.T) {
 		require.NoError(t, err)
 
 		req := &api.AccessMetadata{
-			Tokens: []*gnap.TokenRequest{
+			Tokens: []*api.ExpiringTokenRequest{
 				{
-					Access: []gnap.TokenAccess{
-						{
-							IsReference: true,
-							Ref:         "foo",
+					TokenRequest: gnap.TokenRequest{
+						Access: []gnap.TokenAccess{
+							{
+								IsReference: true,
+								Ref:         "foo",
+							},
 						},
 					},
 				},

@@ -9,6 +9,7 @@ package authhandler
 import (
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/hyperledger/aries-framework-go/spi/storage"
@@ -56,7 +57,7 @@ type AuthHandler struct {
 
 // Config holds AuthHandler constructor configuration.
 type Config struct {
-	AccessPolicy       *accesspolicy.AccessPolicy
+	AccessPolicyConfig *accesspolicy.Config
 	ContinuePath       string
 	InteractionHandler api.InteractionHandler
 	StoreProvider      storage.Provider
@@ -64,6 +65,11 @@ type Config struct {
 
 // New returns new AuthHandler.
 func New(config *Config) (*AuthHandler, error) {
+	accessPolicy, err := accesspolicy.New(config.AccessPolicyConfig)
+	if err != nil {
+		return nil, err
+	}
+
 	sessionHandler, err := session.New(&session.Config{StoreProvider: config.StoreProvider})
 	if err != nil {
 		return nil, err
@@ -71,7 +77,7 @@ func New(config *Config) (*AuthHandler, error) {
 
 	return &AuthHandler{
 		continuePath: config.ContinuePath,
-		accessPolicy: config.AccessPolicy,
+		accessPolicy: accessPolicy,
 		sessionStore: sessionHandler,
 		loginConsent: config.InteractionHandler,
 	}, nil
@@ -118,7 +124,7 @@ func (h *AuthHandler) HandleAccessRequest( // nolint:funlen
 		Value: uuid.New().String(),
 	}
 
-	s.ContinueToken = &continueToken
+	s.ContinueToken = &api.ExpiringToken{AccessToken: continueToken}
 
 	s.Requested = permissions.NeedsConsent
 
@@ -172,12 +178,23 @@ func (h *AuthHandler) HandleContinueRequest(
 
 	newTokens := []gnap.AccessToken{}
 
+	now := time.Now()
+
 	for _, tokenRequest := range consent.Tokens {
 		tok := CreateToken(tokenRequest)
 
 		newTokens = append(newTokens, *tok)
 
-		s.Tokens = append(s.Tokens, tok)
+		tokenExpires := now.Add(time.Duration(tok.Expires) * time.Second)
+
+		s.Tokens = append(s.Tokens, &api.ExpiringToken{
+			AccessToken: *tok,
+			Expires:     tokenExpires,
+		})
+
+		if tokenExpires.After(s.Expires) {
+			s.Expires = tokenExpires
+		}
 	}
 
 	err = h.sessionStore.Save(s)
@@ -226,7 +243,7 @@ func (h *AuthHandler) HandleIntrospection( // nolint:gocyclo
 	}
 
 	clientSession, clientToken, err := h.sessionStore.GetByAccessToken(req.AccessToken)
-	if err != nil || clientToken == nil {
+	if err != nil || clientToken == nil || (!clientToken.Expires.IsZero() && clientToken.Expires.Before(time.Now())) {
 		return &gnap.IntrospectResponse{Active: false}, nil // nolint:nilerr
 	}
 
@@ -234,7 +251,10 @@ func (h *AuthHandler) HandleIntrospection( // nolint:gocyclo
 		return &gnap.IntrospectResponse{Active: false}, nil
 	}
 
-	subjectKeys := h.accessPolicy.AllowedSubjectKeys(clientToken.Access)
+	subjectKeys, err := h.accessPolicy.AllowedSubjectKeys(clientToken.Access)
+	if err != nil {
+		err = fmt.Errorf("error fetching subject-data keys for requested token: %w", err)
+	}
 
 	resp := &gnap.IntrospectResponse{
 		Active:      true,
@@ -250,5 +270,5 @@ func (h *AuthHandler) HandleIntrospection( // nolint:gocyclo
 		}
 	}
 
-	return resp, nil
+	return resp, err
 }

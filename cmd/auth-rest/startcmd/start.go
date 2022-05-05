@@ -12,6 +12,7 @@ import (
 	"io/ioutil"
 	"net/http"
 	"net/url"
+	"path"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -197,6 +198,14 @@ const (
 	sessionCookieEncKeyEnvKey = "AUTH_REST_COOKIE_ENC_KEY"
 )
 
+// GNAP.
+const (
+	gnapAccessPolicyFlagName  = "gnap-access-policy"
+	gnapAccessPolicyFlagUsage = "Path to the GNAP access policy JSON config." +
+		" Alternatively, this can be set with the following environment variable: " + gnapAccessPolicyEnvKey
+	gnapAccessPolicyEnvKey = "GNAP_ACCESS_POLICY"
+)
+
 const (
 	// api.
 	uiEndpoint          = "/ui"
@@ -319,6 +328,8 @@ func getAuthRestParameters(cmd *cobra.Command) (*authRestParameters, error) { //
 		return nil, err
 	}
 
+	gnapParams := getGNAPParams(cmd)
+
 	secretsToken, err := cmdutils.GetUserSetVarFromString(cmd, secretsAPITokenFlagName, secretsAPITokenEnvKey, false)
 	if err != nil {
 		return nil, err
@@ -350,6 +361,7 @@ func getAuthRestParameters(cmd *cobra.Command) (*authRestParameters, error) { //
 		secretsAPIToken:  secretsToken,
 		keys:             keys,
 		staticImages:     oidcStaticImages,
+		gnap:             gnapParams,
 	}, nil
 }
 
@@ -427,6 +439,7 @@ func createFlags(startCmd *cobra.Command) {
 	startCmd.Flags().StringP(depTimeoutFlagName, "", "", depTimeoutFlagUsage)
 	startCmd.Flags().StringP(sessionCookieAuthKeyFlagName, "", "", sessionCookieAuthKeyFlagUsage)
 	startCmd.Flags().StringP(sessionCookieEncKeyFlagName, "", "", sessionCookieEncKeyFlagUsage)
+	startCmd.Flags().StringP(gnapAccessPolicyFlagName, "", "", gnapAccessPolicyFlagUsage)
 }
 
 // nolint:funlen
@@ -455,6 +468,11 @@ func startAuthService(parameters *authRestParameters, srv server) error {
 
 	for _, handler := range logspec.New().GetOperations() {
 		router.HandleFunc(handler.Path(), handler.Handle()).Methods(handler.Method())
+	}
+
+	gnapAPConfig, err := loadGNAPConfigs(parameters.gnap)
+	if err != nil {
+		return fmt.Errorf("loading GNAP configs: %w", err)
 	}
 
 	// TODO: support creating multiple GNAP user interaction handlers
@@ -489,7 +507,7 @@ func startAuthService(parameters *authRestParameters, srv server) error {
 	}, &gnap.Config{
 		StoreProvider:      provider,
 		BaseURL:            parameters.hostURL,
-		AccessPolicy:       &accesspolicy.AccessPolicy{},
+		AccessPolicyConfig: gnapAPConfig,
 		InteractionHandler: interact,
 		UIEndpoint:         uiEndpoint,
 		StartupTimeout:     parameters.startupTimeout,
@@ -522,6 +540,24 @@ Database prefix: %s`, parameters.hostURL, parameters.databaseType, parameters.da
 		parameters.tlsParams.serveKeyPath,
 		constructCORSHandler(router),
 	)
+}
+
+func loadGNAPConfigs(params *gnapParameters) (*accesspolicy.Config, error) {
+	conf := &accesspolicy.Config{}
+
+	if params.accessPolicyConfigPath != "" {
+		bytes, err := ioutil.ReadFile(path.Clean(params.accessPolicyConfigPath))
+		if err != nil {
+			return nil, err
+		}
+
+		err = json.Unmarshal(bytes, conf)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return conf, nil
 }
 
 func uiHandler(
@@ -653,6 +689,16 @@ func getDeviceCertParams(cmd *cobra.Command) (*deviceCertParams, error) {
 	}
 
 	return params, err
+}
+
+func getGNAPParams(cmd *cobra.Command) *gnapParameters {
+	params := &gnapParameters{}
+
+	apConfPath := cmdutils.GetUserSetOptionalVarFromString(cmd, gnapAccessPolicyFlagName, gnapAccessPolicyEnvKey)
+
+	params.accessPolicyConfigPath = apConfPath
+
+	return params
 }
 
 func getKeyParams(cmd *cobra.Command) (*keyParameters, error) {
