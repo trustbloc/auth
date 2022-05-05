@@ -9,7 +9,7 @@ package startcmd
 import (
 	"net/url"
 
-	"github.com/trustbloc/auth/pkg/restapi/operation"
+	oidcmodel "github.com/trustbloc/auth/pkg/restapi/common/oidc"
 )
 
 type authRestParameters struct {
@@ -45,7 +45,7 @@ type deviceCertParams struct {
 type oidcParams struct {
 	hydraURL    *url.URL
 	callbackURL string
-	providers   map[string]*operation.OIDCProviderConfig
+	providers   map[string]*oidcmodel.ProviderConfig
 }
 
 type oidcProvidersConfig struct {

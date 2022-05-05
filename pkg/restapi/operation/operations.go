@@ -34,6 +34,7 @@ import (
 	"github.com/trustbloc/auth/pkg/bootstrap/user"
 	"github.com/trustbloc/auth/pkg/internal/common/support"
 	"github.com/trustbloc/auth/pkg/restapi/common"
+	oidcmodel "github.com/trustbloc/auth/pkg/restapi/common/oidc"
 	"github.com/trustbloc/auth/pkg/restapi/common/store/cookie"
 )
 
@@ -67,7 +68,7 @@ type Operation struct {
 	client              httpClient
 	requestTokens       map[string]string
 	transientStore      storage.Store
-	oidcProvidersConfig map[string]*OIDCProviderConfig
+	oidcProvidersConfig map[string]*oidcmodel.ProviderConfig
 	cachedOIDCProviders map[string]oidcProvider
 	uiEndpoint          string
 	bootstrapStore      storage.Store
@@ -88,7 +89,7 @@ type Operation struct {
 type Config struct {
 	TLSConfig              *tls.Config
 	RequestTokens          map[string]string
-	OIDC                   *OIDCConfig
+	OIDC                   *oidcmodel.Config
 	UIEndpoint             string
 	TransientStoreProvider storage.Provider
 	StoreProvider          storage.Provider
@@ -99,25 +100,6 @@ type Config struct {
 	Cookies                *CookieConfig
 	StartupTimeout         uint64
 	SecretsToken           string
-}
-
-// OIDCConfig holds the OIDC configuration.
-type OIDCConfig struct {
-	CallbackURL string
-	Providers   map[string]*OIDCProviderConfig
-}
-
-// OIDCProviderConfig holds the configuration for a single OIDC provider.
-type OIDCProviderConfig struct {
-	URL             string
-	ClientID        string
-	ClientSecret    string
-	Name            string
-	SignUpIconURL   map[string]string
-	SignInIconURL   map[string]string
-	Order           int
-	SkipIssuerCheck bool
-	Scopes          []string
 }
 
 // CookieConfig holds cookie configuration.
@@ -970,7 +952,7 @@ func openStore(provider storage.Provider, name string) (storage.Store, error) {
 	return s, nil
 }
 
-func (o *Operation) initOIDCProvider(providerID string, config *OIDCProviderConfig) (oidcProvider, error) {
+func (o *Operation) initOIDCProvider(providerID string, config *oidcmodel.ProviderConfig) (oidcProvider, error) {
 	var idp *oidc.Provider
 
 	err := backoff.RetryNotify(
