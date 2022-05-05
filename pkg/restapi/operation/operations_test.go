@@ -39,6 +39,7 @@ import (
 	"github.com/trustbloc/auth/pkg/bootstrap/user"
 	"github.com/trustbloc/auth/pkg/internal/common/mockoidc"
 	"github.com/trustbloc/auth/pkg/internal/common/mockstorage"
+	oidcmodel "github.com/trustbloc/auth/pkg/restapi/common/oidc"
 	"github.com/trustbloc/auth/pkg/restapi/common/store/cookie"
 )
 
@@ -104,7 +105,7 @@ func TestOIDCLoginHandler(t *testing.T) {
 		svc.cachedOIDCProviders = map[string]oidcProvider{
 			provider: &mockOIDCProvider{},
 		}
-		svc.oidcProvidersConfig = map[string]*OIDCProviderConfig{provider: {}}
+		svc.oidcProvidersConfig = map[string]*oidcmodel.ProviderConfig{provider: {}}
 		w := httptest.NewRecorder()
 		svc.oidcLoginHandler(w, newOIDCLoginRequest(provider))
 		require.Equal(t, http.StatusFound, w.Code)
@@ -175,7 +176,7 @@ func TestOIDCLoginHandler(t *testing.T) {
 
 	t.Run("error if oidc provider is invalid", func(t *testing.T) {
 		config := config(t)
-		config.OIDC.Providers = map[string]*OIDCProviderConfig{
+		config.OIDC.Providers = map[string]*oidcmodel.ProviderConfig{
 			"test": {
 				URL: "INVALID",
 			},
@@ -1831,9 +1832,9 @@ func config(t *testing.T) *Config {
 	t.Helper()
 
 	return &Config{
-		OIDC: &OIDCConfig{
+		OIDC: &oidcmodel.Config{
 			CallbackURL: "http://test.com",
-			Providers: map[string]*OIDCProviderConfig{
+			Providers: map[string]*oidcmodel.ProviderConfig{
 				"mock1": {
 					URL:          mockoidc.StartProvider(t),
 					ClientID:     uuid.New().String(),

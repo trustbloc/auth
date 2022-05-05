@@ -21,6 +21,7 @@ import (
 	"github.com/trustbloc/auth/pkg/internal/common/mockinteract"
 	"github.com/trustbloc/auth/pkg/internal/common/mockoidc"
 	"github.com/trustbloc/auth/pkg/internal/common/mockstorage"
+	oidcmodel "github.com/trustbloc/auth/pkg/restapi/common/oidc"
 	"github.com/trustbloc/auth/pkg/restapi/gnap"
 	"github.com/trustbloc/auth/pkg/restapi/operation"
 )
@@ -75,9 +76,9 @@ func config(t *testing.T) *operation.Config {
 	path := mockoidc.StartProvider(t)
 
 	return &operation.Config{
-		OIDC: &operation.OIDCConfig{
+		OIDC: &oidcmodel.Config{
 			CallbackURL: "https://example.com/callback",
-			Providers: map[string]*operation.OIDCProviderConfig{
+			Providers: map[string]*oidcmodel.ProviderConfig{
 				"test": {
 					URL:          path,
 					ClientID:     uuid.New().String(),
@@ -98,11 +99,24 @@ func config(t *testing.T) *operation.Config {
 func gnapConfig(t *testing.T) *gnap.Config {
 	t.Helper()
 
+	path := mockoidc.StartProvider(t)
+
 	return &gnap.Config{
 		StoreProvider:      mem.NewProvider(),
 		AccessPolicy:       &accesspolicy.AccessPolicy{},
 		BaseURL:            "example.com",
 		InteractionHandler: &mockinteract.InteractHandler{},
+		OIDC: &oidcmodel.Config{
+			CallbackURL: "https://example.com/callback",
+			Providers: map[string]*oidcmodel.ProviderConfig{
+				"test": {
+					URL:          path,
+					ClientID:     uuid.New().String(),
+					ClientSecret: uuid.New().String(),
+				},
+			},
+		},
+		StartupTimeout: 1,
 	}
 }
 

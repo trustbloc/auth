@@ -31,6 +31,7 @@ import (
 	"github.com/trustbloc/auth/pkg/gnap/interact/redirect"
 	"github.com/trustbloc/auth/pkg/restapi"
 	"github.com/trustbloc/auth/pkg/restapi/common/hydra"
+	oidcmodel "github.com/trustbloc/auth/pkg/restapi/common/oidc"
 	"github.com/trustbloc/auth/pkg/restapi/gnap"
 	"github.com/trustbloc/auth/pkg/restapi/operation"
 )
@@ -466,7 +467,7 @@ func startAuthService(parameters *authRestParameters, srv server) error {
 		TransientStoreProvider: provider,
 		StoreProvider:          provider,
 		Hydra:                  hydra.NewClient(parameters.oidcParams.hydraURL, rootCAs),
-		OIDC: &operation.OIDCConfig{
+		OIDC: &oidcmodel.Config{
 			CallbackURL: parameters.oidcParams.callbackURL,
 			Providers:   parameters.oidcParams.providers,
 		},
@@ -491,6 +492,11 @@ func startAuthService(parameters *authRestParameters, srv server) error {
 		AccessPolicy:       &accesspolicy.AccessPolicy{},
 		InteractionHandler: interact,
 		UIEndpoint:         uiEndpoint,
+		StartupTimeout:     parameters.startupTimeout,
+		OIDC: &oidcmodel.Config{
+			CallbackURL: parameters.oidcParams.callbackURL,
+			Providers:   parameters.oidcParams.providers,
+		},
 	})
 	if err != nil {
 		return err
@@ -576,10 +582,10 @@ func getOIDCParams(cmd *cobra.Command) (*oidcParams, error) {
 		return nil, fmt.Errorf("failed to parse contents of %s: %w", oidcProvFile, err)
 	}
 
-	params.providers = make(map[string]*operation.OIDCProviderConfig, len(data.Providers))
+	params.providers = make(map[string]*oidcmodel.ProviderConfig, len(data.Providers))
 
 	for k, v := range data.Providers {
-		params.providers[k] = &operation.OIDCProviderConfig{
+		params.providers[k] = &oidcmodel.ProviderConfig{
 			URL:             v.URL,
 			ClientID:        v.ClientID,
 			ClientSecret:    v.ClientSecret,
