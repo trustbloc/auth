@@ -6,6 +6,10 @@ SPDX-License-Identifier: Apache-2.0
 
 package gnap
 
+type oidcClaims struct {
+	Sub string `json:"sub"`
+}
+
 type authProviders struct {
 	Providers []authProvider `json:"authProviders"`
 }
