@@ -18,6 +18,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/hyperledger/aries-framework-go/component/storageutil/mem"
+	mockstore "github.com/hyperledger/aries-framework-go/pkg/mock/storage"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/oauth2"
 
@@ -26,7 +27,6 @@ import (
 	"github.com/trustbloc/auth/pkg/internal/common/mockoidc"
 	"github.com/trustbloc/auth/pkg/internal/common/mockstorage"
 	oidcmodel "github.com/trustbloc/auth/pkg/restapi/common/oidc"
-	"github.com/trustbloc/auth/pkg/restapi/common/store/cookie"
 	"github.com/trustbloc/auth/spi/gnap"
 )
 
@@ -49,13 +49,22 @@ func TestNew(t *testing.T) {
 		require.ErrorIs(t, err, expectErr)
 		require.Nil(t, o)
 	})
+
+	t.Run("error if unable to open transient store", func(t *testing.T) {
+		config := config(t)
+		config.TransientStoreProvider = &mockstore.MockStoreProvider{
+			ErrOpenStoreHandle: errors.New("test"),
+		}
+		_, err := New(config)
+		require.Error(t, err)
+	})
 }
 
 func TestOperation_GetRESTHandlers(t *testing.T) {
 	o := &Operation{}
 
 	h := o.GetRESTHandlers()
-	require.Len(t, h, 5)
+	require.Len(t, h, 7)
 }
 
 func TestOperation_AuthProvidersHandler(t *testing.T) {
@@ -204,7 +213,6 @@ func TestOIDCLoginHandler(t *testing.T) {
 		config := config(t)
 		svc, err := New(config)
 		require.NoError(t, err)
-		svc.cookies = mockCookies()
 		svc.cachedOIDCProviders = map[string]oidcProvider{
 			provider: &mockOIDCProvider{},
 		}
@@ -220,23 +228,11 @@ func TestOIDCLoginHandler(t *testing.T) {
 		config := config(t)
 		svc, err := New(config)
 		require.NoError(t, err)
-		svc.cookies = mockCookies()
 		svc.cachedOIDCProviders = map[string]oidcProvider{
 			provider: &mockOIDCProvider{},
 		}
 		w := httptest.NewRecorder()
 		svc.oidcLoginHandler(w, newOIDCLoginRequest(provider))
-		require.Equal(t, http.StatusInternalServerError, w.Code)
-	})
-
-	t.Run("internal server error if cannot open cookie store", func(t *testing.T) {
-		svc, err := New(config(t))
-		require.NoError(t, err)
-		svc.cookies = &cookie.MockStore{
-			OpenErr: errors.New("test"),
-		}
-		w := httptest.NewRecorder()
-		svc.oidcLoginHandler(w, newOIDCLoginRequest("mock1"))
 		require.Equal(t, http.StatusInternalServerError, w.Code)
 	})
 
@@ -258,23 +254,24 @@ func TestOIDCLoginHandler(t *testing.T) {
 		require.Contains(t, result.Body.String(), "provider not supported")
 	})
 
-	t.Run("internal server error if cannot save cookies", func(t *testing.T) {
+	t.Run("store error", func(t *testing.T) {
 		provider := uuid.New().String()
 		config := config(t)
 		svc, err := New(config)
 		require.NoError(t, err)
-		svc.cookies = &cookie.MockStore{
-			Jar: &cookie.MockJar{
-				SaveErr: errors.New("test"),
-			},
-		}
 		svc.cachedOIDCProviders = map[string]oidcProvider{
 			provider: &mockOIDCProvider{},
 		}
-		w := httptest.NewRecorder()
-		svc.oidcLoginHandler(w, newOIDCLoginRequest(provider))
-		require.Equal(t, http.StatusInternalServerError, w.Code)
-		require.Contains(t, w.Body.String(), "failed to persist session cookies")
+		svc.oidcProvidersConfig = map[string]*oidcmodel.ProviderConfig{provider: {}}
+		svc.transientStore = &mockstore.MockStore{
+			ErrPut: errors.New("generic"),
+		}
+
+		result := httptest.NewRecorder()
+		svc.oidcLoginHandler(result, newOIDCLoginRequest(provider))
+
+		require.Contains(t, result.Body.String(), "failed to write state data to transient store")
+		require.Equal(t, http.StatusInternalServerError, result.Code)
 	})
 
 	t.Run("error if oidc provider is invalid", func(t *testing.T) {
@@ -287,7 +284,6 @@ func TestOIDCLoginHandler(t *testing.T) {
 
 		svc, err := New(config)
 		require.NoError(t, err)
-		svc.cookies = mockCookies()
 
 		w := httptest.NewRecorder()
 		svc.oidcLoginHandler(w, newOIDCLoginRequest("test"))
@@ -296,27 +292,205 @@ func TestOIDCLoginHandler(t *testing.T) {
 	})
 }
 
-func mockCookies(c ...cookieOpt) *cookie.MockStore {
-	t := make(map[string]string)
+func TestOIDCCallbackHandler(t *testing.T) {
+	t.Run("setup user", func(t *testing.T) {
+		provider := uuid.New().String()
+		state := uuid.New().String()
+		code := uuid.New().String()
+		config := config(t)
 
-	for i := range c {
-		c[i](t)
-	}
+		o, err := New(config)
+		require.NoError(t, err)
 
-	cookies := make(map[interface{}]interface{}, len(c))
+		o.cachedOIDCProviders = map[string]oidcProvider{
+			provider: &mockOIDCProvider{
+				name: provider,
+				oauth2Config: &mockOAuth2Config{
+					exchangeVal: &mockToken{
+						oauth2Claim: uuid.New().String(),
+					},
+				},
+				verifyVal: &mockToken{
+					oidcClaimsFunc: func(v interface{}) error {
+						c, ok := v.(*oidcClaims)
+						require.True(t, ok)
+						c.Sub = uuid.New().String()
 
-	for k, v := range t {
-		cookies[k] = v
-	}
+						return nil
+					},
+				},
+			},
+		}
 
-	return &cookie.MockStore{
-		Jar: &cookie.MockJar{
-			Cookies: cookies,
-		},
-	}
+		err = o.transientStore.Put(state, []byte(provider))
+		require.NoError(t, err)
+
+		result := httptest.NewRecorder()
+		o.oidcCallbackHandler(result, newOIDCCallback(state, code))
+		require.Equal(t, http.StatusFound, result.Code)
+		// TODO validate redirect url
+	})
+
+	t.Run("error missing state", func(t *testing.T) {
+		config := config(t)
+		svc, err := New(config)
+		require.NoError(t, err)
+		result := httptest.NewRecorder()
+		svc.oidcCallbackHandler(result, newOIDCCallback("", "code"))
+		require.Equal(t, http.StatusBadRequest, result.Code)
+	})
+
+	t.Run("invalid state", func(t *testing.T) {
+		state := uuid.New().String()
+		mismatch := "mismatch"
+		require.NotEqual(t, state, mismatch)
+		svc, err := New(config(t))
+		require.NoError(t, err)
+
+		result := httptest.NewRecorder()
+		svc.oidcCallbackHandler(result, newOIDCCallback(state, "code"))
+		require.Equal(t, http.StatusBadRequest, result.Code)
+		require.Contains(t, result.Body.String(), "failed to get state data to transient store")
+	})
+
+	t.Run("error missing code", func(t *testing.T) {
+		config := config(t)
+		svc, err := New(config)
+		require.NoError(t, err)
+		result := httptest.NewRecorder()
+		svc.oidcCallbackHandler(result, newOIDCCallback("state", ""))
+		require.Equal(t, http.StatusBadRequest, result.Code)
+	})
+
+	t.Run("bad request if oidc provider is not supported (should not happen)", func(t *testing.T) {
+		svc, err := New(config(t))
+		require.NoError(t, err)
+
+		err = svc.transientStore.Put("state", []byte("invalid"))
+		require.NoError(t, err)
+
+		result := httptest.NewRecorder()
+		svc.oidcCallbackHandler(result, newOIDCCallback("state", "code"))
+
+		require.Equal(t, http.StatusBadRequest, result.Code)
+		require.Contains(t, result.Body.String(), "provider not supported")
+	})
+
+	t.Run("error exchanging auth code", func(t *testing.T) {
+		provider := uuid.New().String()
+		state := uuid.New().String()
+		config := config(t)
+		config.TransientStoreProvider = &mockstore.MockStoreProvider{Store: &mockstore.MockStore{
+			Store: map[string]mockstore.DBEntry{
+				state: {Value: []byte(state)},
+			},
+		}}
+		svc, err := New(config)
+		require.NoError(t, err)
+
+		err = svc.transientStore.Put(state, []byte(provider))
+		require.NoError(t, err)
+
+		svc.cachedOIDCProviders = map[string]oidcProvider{
+			provider: &mockOIDCProvider{
+				oauth2Config: &mockOAuth2Config{
+					exchangeErr: errors.New("test"),
+				},
+			},
+		}
+		result := httptest.NewRecorder()
+		svc.oidcCallbackHandler(result, newOIDCCallback(state, "code"))
+		require.Equal(t, http.StatusBadGateway, result.Code)
+		require.Contains(t, result.Body.String(), "failed to exchange oauth2 code for token")
+	})
+
+	t.Run("error missing id_token", func(t *testing.T) {
+		provider := uuid.New().String()
+		state := uuid.New().String()
+		config := config(t)
+		config.TransientStoreProvider = &mockstore.MockStoreProvider{Store: &mockstore.MockStore{
+			Store: map[string]mockstore.DBEntry{
+				state: {Value: []byte(state)},
+			},
+		}}
+		svc, err := New(config)
+		require.NoError(t, err)
+
+		err = svc.transientStore.Put(state, []byte(provider))
+		require.NoError(t, err)
+
+		svc.cachedOIDCProviders = map[string]oidcProvider{
+			provider: &mockOIDCProvider{
+				name: provider,
+				oauth2Config: &mockOAuth2Config{
+					exchangeVal: &mockToken{},
+				},
+				verifyVal: &mockToken{},
+			},
+		}
+		result := httptest.NewRecorder()
+		svc.oidcCallbackHandler(result, newOIDCCallback(state, "code"))
+		require.Equal(t, http.StatusBadGateway, result.Code)
+	})
+
+	t.Run("error id_token verification", func(t *testing.T) {
+		provider := uuid.New().String()
+		state := uuid.New().String()
+		config := config(t)
+		config.TransientStoreProvider = &mockstore.MockStoreProvider{Store: &mockstore.MockStore{
+			Store: map[string]mockstore.DBEntry{
+				state: {Value: []byte(state)},
+			},
+		}}
+		svc, err := New(config)
+		require.NoError(t, err)
+
+		err = svc.transientStore.Put(state, []byte(provider))
+		require.NoError(t, err)
+
+		svc.cachedOIDCProviders = map[string]oidcProvider{
+			provider: &mockOIDCProvider{
+				name: provider,
+				oauth2Config: &mockOAuth2Config{
+					exchangeVal: &mockToken{oauth2Claim: "id_token"},
+				},
+				verifyErr: errors.New("test"),
+			},
+		}
+		result := httptest.NewRecorder()
+		svc.oidcCallbackHandler(result, newOIDCCallback(state, "code"))
+		require.Equal(t, http.StatusForbidden, result.Code)
+	})
+
+	t.Run("error scanning id_token claims", func(t *testing.T) {
+		provider := uuid.New().String()
+		state := uuid.New().String()
+		config := config(t)
+		config.TransientStoreProvider = &mockstore.MockStoreProvider{Store: &mockstore.MockStore{
+			Store: map[string]mockstore.DBEntry{
+				state: {Value: []byte(state)},
+			},
+		}}
+		svc, err := New(config)
+		require.NoError(t, err)
+
+		err = svc.transientStore.Put(state, []byte(provider))
+		require.NoError(t, err)
+
+		svc.cachedOIDCProviders = map[string]oidcProvider{
+			provider: &mockOIDCProvider{
+				name: provider,
+				oauth2Config: &mockOAuth2Config{
+					exchangeVal: &mockToken{oauth2Claim: "id_token"},
+				},
+				verifyVal: &mockToken{oidcClaimsErr: errors.New("test")},
+			},
+		}
+		result := httptest.NewRecorder()
+		svc.oidcCallbackHandler(result, newOIDCCallback(state, "code"))
+		require.Equal(t, http.StatusInternalServerError, result.Code)
+	})
 }
-
-type cookieOpt func(map[string]string)
 
 type mockOIDCProvider struct {
 	name         string
@@ -373,6 +547,33 @@ func newOIDCLoginRequest(provider string) *http.Request {
 	return httptest.NewRequest(http.MethodGet, fmt.Sprintf("http://example.com/oauth2/login?provider=%s", provider), nil)
 }
 
+func newOIDCCallback(state, code string) *http.Request {
+	return httptest.NewRequest(http.MethodGet,
+		fmt.Sprintf("http://example.com/oauth2/callback?state=%s&code=%s", state, code), nil)
+}
+
+type mockToken struct {
+	oauth2Claim    interface{}
+	oidcClaimsFunc func(v interface{}) error
+	oidcClaimsErr  error
+}
+
+func (m *mockToken) Extra(_ string) interface{} {
+	if m.oauth2Claim != nil {
+		return m.oauth2Claim
+	}
+
+	return nil
+}
+
+func (m *mockToken) Claims(v interface{}) error {
+	if m.oidcClaimsFunc != nil {
+		return m.oidcClaimsFunc(v)
+	}
+
+	return m.oidcClaimsErr
+}
+
 func config(t *testing.T) *Config {
 	t.Helper()
 
@@ -399,6 +600,7 @@ func config(t *testing.T) *Config {
 				},
 			},
 		},
-		StartupTimeout: 1,
+		TransientStoreProvider: mem.NewProvider(),
+		StartupTimeout:         1,
 	}
 }

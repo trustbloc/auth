@@ -116,7 +116,8 @@ func gnapConfig(t *testing.T) *gnap.Config {
 				},
 			},
 		},
-		StartupTimeout: 1,
+		StartupTimeout:         1,
+		TransientStoreProvider: mem.NewProvider(),
 	}
 }
 

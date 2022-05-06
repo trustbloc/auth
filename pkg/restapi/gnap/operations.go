@@ -29,7 +29,6 @@ import (
 	"github.com/trustbloc/auth/pkg/internal/common/support"
 	"github.com/trustbloc/auth/pkg/restapi/common"
 	oidcmodel "github.com/trustbloc/auth/pkg/restapi/common/oidc"
-	"github.com/trustbloc/auth/pkg/restapi/common/store/cookie"
 	"github.com/trustbloc/auth/spi/gnap"
 	"github.com/trustbloc/auth/spi/gnap/clientverifier/httpsig"
 )
@@ -45,8 +44,12 @@ const (
 	// AuthIntrospectPath endpoint for GNAP token introspection.
 	AuthIntrospectPath = gnapBasePath + "/introspect"
 	// InteractPath endpoint for GNAP interact.
-	InteractPath      = gnapBasePath + "/interact"
+	InteractPath = gnapBasePath + "/interact"
+
+	// oidc api handlers.
 	authProvidersPath = "/oidc/providers"
+	oidcLoginPath     = "/oidc/login"
+	oidcCallbackPath  = "/oidc/callback"
 
 	// GNAP error response codes.
 	errInvalidRequest = "invalid_request"
@@ -54,8 +57,7 @@ const (
 
 	// api path params.
 	providerQueryParam = "provider"
-	stateCookie        = "oauth2_state"
-	providerCookie     = "oauth2_provider"
+	transientStoreName = "gnap_transient"
 )
 
 // TODO: figure out what logic should go in the access policy vs operation handlers.
@@ -65,24 +67,25 @@ type Operation struct {
 	authHandler         *authhandler.AuthHandler
 	uiEndpoint          string
 	authProviders       []authProvider
-	cookies             cookie.Store
 	oidcProvidersConfig map[string]*oidcmodel.ProviderConfig
 	cachedOIDCProviders map[string]oidcProvider
 	cachedOIDCProvLock  sync.RWMutex
 	tlsConfig           *tls.Config
 	callbackURL         string
 	timeout             uint64
+	transientStore      storage.Store
 }
 
 // Config defines configuration for GNAP operations.
 type Config struct {
-	StoreProvider      storage.Provider
-	AccessPolicyConfig *accesspolicy.Config
-	BaseURL            string
-	InteractionHandler api.InteractionHandler
-	UIEndpoint         string
-	OIDC               *oidcmodel.Config
-	StartupTimeout     uint64
+	StoreProvider          storage.Provider
+	AccessPolicyConfig     *accesspolicy.Config
+	BaseURL                string
+	InteractionHandler     api.InteractionHandler
+	UIEndpoint             string
+	OIDC                   *oidcmodel.Config
+	StartupTimeout         uint64
+	TransientStoreProvider storage.Provider
 }
 
 // New creates GNAP operation handler.
@@ -108,6 +111,11 @@ func New(config *Config) (*Operation, error) {
 		return nil, err
 	}
 
+	transientStore, err := createStore(config.TransientStoreProvider)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create transient store: %w", err)
+	}
+
 	return &Operation{
 		authHandler:         auth,
 		uiEndpoint:          config.UIEndpoint,
@@ -115,6 +123,7 @@ func New(config *Config) (*Operation, error) {
 		oidcProvidersConfig: config.OIDC.Providers,
 		cachedOIDCProviders: make(map[string]oidcProvider),
 		timeout:             config.StartupTimeout,
+		transientStore:      transientStore,
 	}, nil
 }
 
@@ -126,7 +135,10 @@ func (o *Operation) GetRESTHandlers() []common.Handler {
 		support.NewHTTPHandler(InteractPath, http.MethodGet, o.interactHandler),
 		support.NewHTTPHandler(AuthContinuePath, http.MethodPost, o.authContinueHandler),
 		support.NewHTTPHandler(AuthIntrospectPath, http.MethodPost, o.introspectHandler),
+
 		support.NewHTTPHandler(authProvidersPath, http.MethodGet, o.authProvidersHandler),
+		support.NewHTTPHandler(oidcLoginPath, http.MethodGet, o.oidcLoginHandler),
+		support.NewHTTPHandler(oidcCallbackPath, http.MethodGet, o.oidcCallbackHandler),
 	}
 }
 
@@ -156,11 +168,13 @@ func (o *Operation) authRequestHandler(w http.ResponseWriter, req *http.Request)
 		return
 	}
 
+	// TODO store client redirect url and interactTxnID
+
 	o.writeResponse(w, resp)
 }
 
 func (o *Operation) interactHandler(w http.ResponseWriter, req *http.Request) {
-	// TODO validate txn_id
+	// TODO validate interactTxnID and append interactTxnID to the query param for ui-session management
 	// redirect to UI
 	http.Redirect(w, req, o.uiEndpoint+"/sign-up", http.StatusFound)
 }
@@ -172,6 +186,8 @@ func (o *Operation) authProvidersHandler(w http.ResponseWriter, _ *http.Request)
 func (o *Operation) oidcLoginHandler(w http.ResponseWriter, r *http.Request) {
 	logger.Debugf("handling request: %s", r.URL.String())
 
+	// TODO validate interactTxnID for the UI session
+
 	providerID := r.URL.Query().Get(providerQueryParam)
 	if providerID == "" {
 		o.writeErrorResponse(w, http.StatusBadRequest, "missing provider")
@@ -182,25 +198,6 @@ func (o *Operation) oidcLoginHandler(w http.ResponseWriter, r *http.Request) {
 	provider, err := o.getProvider(providerID)
 	if err != nil {
 		o.writeErrorResponse(w, http.StatusBadRequest, "get provider: %s", err.Error())
-
-		return
-	}
-
-	state := uuid.New().String()
-
-	jar, err := o.cookies.Open(r)
-	if err != nil {
-		o.writeErrorResponse(w, http.StatusInternalServerError, "failed to open session cookies: %s", err.Error())
-
-		return
-	}
-
-	jar.Set(stateCookie, state)
-	jar.Set(providerCookie, provider.Name())
-
-	err = jar.Save(r, w)
-	if err != nil {
-		o.writeErrorResponse(w, http.StatusInternalServerError, "failed to persist session cookies: %w", err.Error())
 
 		return
 	}
@@ -219,6 +216,17 @@ func (o *Operation) oidcLoginHandler(w http.ResponseWriter, r *http.Request) {
 		scopes = append(scopes, "profile", "email")
 	}
 
+	state := uuid.New().String()
+
+	// TODO store interactTxnID (need this during oidcCallback)
+	err = o.transientStore.Put(state, []byte(providerID))
+	if err != nil {
+		o.writeErrorResponse(w,
+			http.StatusInternalServerError, fmt.Sprintf("failed to write state data to transient store: %s", err))
+
+		return
+	}
+
 	authOption := oauth2.SetAuthURLParam(providerQueryParam, providerID)
 	redirectURL := provider.OAuth2Config(
 		scopes...,
@@ -226,6 +234,80 @@ func (o *Operation) oidcLoginHandler(w http.ResponseWriter, r *http.Request) {
 
 	http.Redirect(w, r, redirectURL, http.StatusFound)
 
+	logger.Debugf("redirected to: %s", redirectURL)
+}
+
+func (o *Operation) oidcCallbackHandler(w http.ResponseWriter, r *http.Request) { // nolint:funlen
+	state := r.URL.Query().Get("state")
+	if state == "" {
+		o.writeErrorResponse(w, http.StatusBadRequest, "missing state")
+
+		return
+	}
+
+	code := r.URL.Query().Get("code")
+	if code == "" {
+		o.writeErrorResponse(w, http.StatusBadRequest, "missing code")
+
+		return
+	}
+
+	// get state and provider details from transient store
+	// TODO get interactTxnID
+	data, err := o.transientStore.Get(state)
+	if err != nil {
+		o.writeErrorResponse(w,
+			http.StatusBadRequest, fmt.Sprintf("failed to get state data to transient store: %s", err))
+
+		return
+	}
+
+	providerID := string(data)
+
+	provider, err := o.getProvider(providerID)
+	if err != nil {
+		o.writeErrorResponse(w, http.StatusBadRequest, "get provider : %s", err.Error())
+
+		return
+	}
+
+	oauthToken, err := provider.OAuth2Config().Exchange(r.Context(), code)
+	if err != nil {
+		o.writeErrorResponse(w, http.StatusBadGateway,
+			fmt.Sprintf("failed to exchange oauth2 code for token : %s", err))
+
+		return
+	}
+
+	rawIDToken, ok := oauthToken.Extra("id_token").(string)
+	if !ok {
+		o.writeErrorResponse(w, http.StatusBadGateway, "missing id_token")
+
+		return
+	}
+
+	oidcToken, err := provider.Verify(r.Context(), rawIDToken)
+	if err != nil {
+		o.writeErrorResponse(w, http.StatusForbidden, fmt.Sprintf("failed to verify id_token : %s", err))
+
+		return
+	}
+
+	claims := &oidcClaims{}
+
+	err = oidcToken.Claims(claims)
+	if err != nil {
+		o.writeErrorResponse(w, http.StatusInternalServerError,
+			fmt.Sprintf("failed to extract claims from id_token : %s", err))
+
+		return
+	}
+
+	// TODO from interactTxnID, get client finish url
+	redirectURL := ""
+
+	// redirect to consumer url
+	http.Redirect(w, r, redirectURL, http.StatusFound)
 	logger.Debugf("redirected to: %s", redirectURL)
 }
 
@@ -371,4 +453,13 @@ func (o *Operation) initOIDCProvider(providerID string, config *oidcmodel.Provid
 			TLSClientConfig: o.tlsConfig,
 		}},
 	}, nil
+}
+
+func createStore(p storage.Provider) (storage.Store, error) {
+	s, err := p.OpenStore(transientStoreName)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open store [%s] : %w", transientStoreName, err)
+	}
+
+	return s, nil
 }

@@ -515,6 +515,7 @@ func startAuthService(parameters *authRestParameters, srv server) error {
 			CallbackURL: parameters.oidcParams.callbackURL,
 			Providers:   parameters.oidcParams.providers,
 		},
+		TransientStoreProvider: provider,
 	})
 	if err != nil {
 		return err
