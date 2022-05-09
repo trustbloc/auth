@@ -32,7 +32,7 @@ hydra clients create \
     --response-types code,id_token \
     --scope openid,profile,email \
     --skip-tls-verify \
-    --callbacks https://auth.trustbloc.local:8070/oauth2/callback
+    --callbacks https://auth.trustbloc.local:8070/oidc/callback
 # TODO it would be great to check the exit status of the hydra command
 #  https://github.com/trustbloc/auth/issues/67
 echo "Finished creating oidc client for gnap flow!"

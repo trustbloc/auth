@@ -516,6 +516,7 @@ func startAuthService(parameters *authRestParameters, srv server) error {
 			Providers:   parameters.oidcParams.providers,
 		},
 		TransientStoreProvider: provider,
+		TLSConfig:              &tls.Config{RootCAs: rootCAs}, //nolint:gosec
 	})
 	if err != nil {
 		return err
