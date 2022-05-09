@@ -86,6 +86,7 @@ type Config struct {
 	OIDC                   *oidcmodel.Config
 	StartupTimeout         uint64
 	TransientStoreProvider storage.Provider
+	TLSConfig              *tls.Config
 }
 
 // New creates GNAP operation handler.
@@ -124,6 +125,7 @@ func New(config *Config) (*Operation, error) {
 		cachedOIDCProviders: make(map[string]oidcProvider),
 		timeout:             config.StartupTimeout,
 		transientStore:      transientStore,
+		tlsConfig:           config.TLSConfig,
 	}, nil
 }
 

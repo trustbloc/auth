@@ -20,7 +20,7 @@ const { t, locale } = useI18n();
 
 onMounted(async () => {
   try {
-    const rawProviders = await axios.get('/oauth2/providers');
+    const rawProviders = await axios.get('/oidc/providers');
     providers.value = rawProviders.data.authProviders.sort(
       (prov1, prov2) => prov1.order - prov2.order
     );

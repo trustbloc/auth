@@ -10,7 +10,7 @@ const props = defineProps({
 });
 
 onMounted(() => {
-  window.location.href = `/oauth2/login?provider=${props.providerID}`;
+  window.location.href = `/oidc/login?provider=${props.providerID}`;
 });
 </script>
 

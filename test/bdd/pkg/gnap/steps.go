@@ -27,8 +27,8 @@ const (
 	authServerURL       = "https://auth.trustbloc.local:8070"
 	expectedInteractURL = authServerURL + "/gnap/interact"
 
-	oidcProviderSelectorURL = authServerURL + "/oauth2/login"
-	oidcCallbackURLURL      = authServerURL + "/oauth2/callback"
+	oidcProviderSelectorURL = authServerURL + "/oidc/login"
+	oidcCallbackURLURL      = authServerURL + "/oidc/callback"
 	authServerSignUpURL     = authServerURL + "/ui/sign-up"
 
 	mockOIDCProviderName = "mockbank1" // providers.yaml
@@ -156,14 +156,13 @@ func (s *Steps) interactRedirect() error {
 		return err
 	}
 
-	if !strings.HasPrefix(loginResp.Request.URL.String(), oidcCallbackURLURL) {
+	// TODO validate the client finishURL
+	if !strings.HasPrefix(loginResp.Request.URL.String(), authServerURL) {
 		return fmt.Errorf(
 			"invalid oidc callbackURL prefix expected=%s actual=%s",
 			oidcCallbackURLURL, loginResp.Request.URL.String(),
 		)
 	}
-
-	// TODO get the redirect back
 
 	return nil
 }
