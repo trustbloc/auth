@@ -29,4 +29,5 @@ type TokenAccessConfig struct {
 	Access     gnap.TokenAccess `json:"access"`
 	Ref        string           `json:"reference"`
 	Permission string           `json:"permission"`
+	Expiry     int              `json:"expires-in"`
 }

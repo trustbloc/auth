@@ -476,7 +476,10 @@ func startAuthService(parameters *authRestParameters, srv server) error {
 	}
 
 	// TODO: support creating multiple GNAP user interaction handlers
-	interact, err := redirect.New(parameters.externalURL + gnap.InteractPath)
+	interact, err := redirect.New(&redirect.Config{
+		StoreProvider:    provider,
+		InteractBasePath: parameters.externalURL + gnap.InteractPath,
+	})
 	if err != nil {
 		return fmt.Errorf("initializing GNAP interaction handler: %w", err)
 	}

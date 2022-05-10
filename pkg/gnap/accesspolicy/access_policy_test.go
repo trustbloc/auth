@@ -23,6 +23,7 @@ const (
 	"access-types": [{
 			"reference": "foo",
 			"permission": "NeedsConsent",
+			"expires-in": 360,
 			"access": {
 				"type": "trustbloc.xyz/auth/type/foo",
 				"subject-keys": ["client-id", "preferred-name"],
@@ -43,6 +44,7 @@ const (
 		}, {
 			"reference": "audit-writer",
 			"permission": "NeedsConsent",
+			"expires-in": 600,
 			"access": {
 				"type": "trustbloc.xyz/auth/type/audit-write",
 				"subject-keys": ["client-id"],

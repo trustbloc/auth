@@ -12,6 +12,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
@@ -57,7 +58,12 @@ const (
 
 	// api path params.
 	providerQueryParam = "provider"
+	txnQueryParam      = "txnID"
+
 	transientStoreName = "gnap_transient"
+
+	// client redirect query params.
+	interactRefQueryParam = "interact_ref"
 )
 
 // TODO: figure out what logic should go in the access policy vs operation handlers.
@@ -65,6 +71,7 @@ const (
 // Operation defines Auth Server GNAP handlers.
 type Operation struct {
 	authHandler         *authhandler.AuthHandler
+	interactionHandler  api.InteractionHandler
 	uiEndpoint          string
 	authProviders       []authProvider
 	oidcProvidersConfig map[string]*oidcmodel.ProviderConfig
@@ -126,6 +133,7 @@ func New(config *Config) (*Operation, error) {
 		timeout:             config.StartupTimeout,
 		transientStore:      transientStore,
 		tlsConfig:           config.TLSConfig,
+		interactionHandler:  config.InteractionHandler,
 	}, nil
 }
 
@@ -144,7 +152,7 @@ func (o *Operation) GetRESTHandlers() []common.Handler {
 	}
 }
 
-func (o *Operation) authRequestHandler(w http.ResponseWriter, req *http.Request) {
+func (o *Operation) authRequestHandler(w http.ResponseWriter, req *http.Request) { // nolint: dupl
 	authRequest := &gnap.AuthRequest{}
 
 	if err := json.NewDecoder(req.Body).Decode(authRequest); err != nil {
@@ -170,8 +178,6 @@ func (o *Operation) authRequestHandler(w http.ResponseWriter, req *http.Request)
 		return
 	}
 
-	// TODO store client redirect url and interactTxnID
-
 	o.writeResponse(w, resp)
 }
 
@@ -185,14 +191,24 @@ func (o *Operation) authProvidersHandler(w http.ResponseWriter, _ *http.Request)
 	o.writeResponse(w, &authProviders{Providers: o.authProviders})
 }
 
-func (o *Operation) oidcLoginHandler(w http.ResponseWriter, r *http.Request) {
-	logger.Debugf("handling request: %s", r.URL.String())
+type oidcTransientData struct {
+	Provider string `json:"provider,omitempty"`
+	TxnID    string `json:"txnID,omitempty"`
+}
 
-	// TODO validate interactTxnID for the UI session
+func (o *Operation) oidcLoginHandler(w http.ResponseWriter, r *http.Request) { // nolint: funlen
+	logger.Debugf("handling request: %s", r.URL.String())
 
 	providerID := r.URL.Query().Get(providerQueryParam)
 	if providerID == "" {
 		o.writeErrorResponse(w, http.StatusBadRequest, "missing provider")
+
+		return
+	}
+
+	interactTxnID := r.URL.Query().Get(txnQueryParam)
+	if interactTxnID == "" {
+		o.writeErrorResponse(w, http.StatusBadRequest, "missing transaction ID")
 
 		return
 	}
@@ -220,8 +236,20 @@ func (o *Operation) oidcLoginHandler(w http.ResponseWriter, r *http.Request) {
 
 	state := uuid.New().String()
 
-	// TODO store interactTxnID (need this during oidcCallback)
-	err = o.transientStore.Put(state, []byte(providerID))
+	data := &oidcTransientData{
+		Provider: providerID,
+		TxnID:    interactTxnID,
+	}
+
+	dataBytes, err := json.Marshal(data)
+	if err != nil {
+		o.writeErrorResponse(w, http.StatusInternalServerError,
+			fmt.Sprintf("failed to marshal oidc txn data : %s", err))
+
+		return
+	}
+
+	err = o.transientStore.Put(state, dataBytes)
 	if err != nil {
 		o.writeErrorResponse(w,
 			http.StatusInternalServerError, fmt.Sprintf("failed to write state data to transient store: %s", err))
@@ -239,7 +267,7 @@ func (o *Operation) oidcLoginHandler(w http.ResponseWriter, r *http.Request) {
 	logger.Debugf("redirected to: %s", redirectURL)
 }
 
-func (o *Operation) oidcCallbackHandler(w http.ResponseWriter, r *http.Request) { // nolint:funlen
+func (o *Operation) oidcCallbackHandler(w http.ResponseWriter, r *http.Request) { // nolint:funlen,gocyclo
 	state := r.URL.Query().Get("state")
 	if state == "" {
 		o.writeErrorResponse(w, http.StatusBadRequest, "missing state")
@@ -255,8 +283,7 @@ func (o *Operation) oidcCallbackHandler(w http.ResponseWriter, r *http.Request) 
 	}
 
 	// get state and provider details from transient store
-	// TODO get interactTxnID
-	data, err := o.transientStore.Get(state)
+	dataBytes, err := o.transientStore.Get(state)
 	if err != nil {
 		o.writeErrorResponse(w,
 			http.StatusBadRequest, fmt.Sprintf("failed to get state data to transient store: %s", err))
@@ -264,7 +291,17 @@ func (o *Operation) oidcCallbackHandler(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	providerID := string(data)
+	data := &oidcTransientData{}
+
+	err = json.Unmarshal(dataBytes, data)
+	if err != nil {
+		o.writeErrorResponse(w, http.StatusInternalServerError,
+			fmt.Sprintf("failed to parse oidc txn data : %s", err))
+
+		return
+	}
+
+	providerID := data.Provider
 
 	provider, err := o.getProvider(providerID)
 	if err != nil {
@@ -305,12 +342,36 @@ func (o *Operation) oidcCallbackHandler(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	// TODO from interactTxnID, get client finish url
-	redirectURL := ""
+	interactRef, clientInteract, err := o.interactionHandler.CompleteInteraction(data.TxnID, &api.ConsentResult{
+		SubjectData: map[string]string{
+			"sub": claims.Sub,
+		},
+	})
+	if err != nil {
+		o.writeErrorResponse(w, http.StatusInternalServerError,
+			fmt.Sprintf("failed to complete GNAP interaction : %s", err))
+
+		return
+	}
+
+	clientURI, err := url.Parse(clientInteract.Finish.URI)
+	if err != nil {
+		o.writeErrorResponse(w, http.StatusBadRequest, "client provided invalid redirect URI : %s", err.Error())
+
+		return
+	}
+
+	// TODO: add interaction hash as query param here
+
+	q := clientURI.Query()
+
+	q.Add(interactRefQueryParam, interactRef)
+
+	clientURI.RawQuery = q.Encode()
 
 	// redirect to consumer url
-	http.Redirect(w, r, redirectURL, http.StatusFound)
-	logger.Debugf("redirected to: %s", redirectURL)
+	http.Redirect(w, r, clientURI.String(), http.StatusFound)
+	logger.Debugf("redirected to: %s", clientURI.String())
 }
 
 func (o *Operation) authContinueHandler(w http.ResponseWriter, req *http.Request) {
@@ -356,8 +417,33 @@ func (o *Operation) authContinueHandler(w http.ResponseWriter, req *http.Request
 	o.writeResponse(w, resp)
 }
 
-func (o *Operation) introspectHandler(w http.ResponseWriter, req *http.Request) {
-	o.writeResponse(w, nil)
+func (o *Operation) introspectHandler(w http.ResponseWriter, req *http.Request) { // nolint: dupl
+	introspectRequest := &gnap.IntrospectRequest{}
+
+	if err := json.NewDecoder(req.Body).Decode(introspectRequest); err != nil {
+		logger.Errorf("failed to parse gnap introspection request: %s", err.Error())
+		w.WriteHeader(http.StatusBadRequest)
+		o.writeResponse(w, &gnap.ErrorResponse{
+			Error: errInvalidRequest,
+		})
+
+		return
+	}
+
+	v := httpsig.NewVerifier(req)
+
+	resp, err := o.authHandler.HandleIntrospection(introspectRequest, v)
+	if err != nil {
+		logger.Errorf("failed to handle gnap introspection request: %s", err.Error())
+		w.WriteHeader(http.StatusUnauthorized)
+		o.writeResponse(w, &gnap.ErrorResponse{
+			Error: errRequestDenied,
+		})
+
+		return
+	}
+
+	o.writeResponse(w, resp)
 }
 
 // WriteResponse writes interface value to response.

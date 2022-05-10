@@ -128,10 +128,8 @@ func (h *AuthHandler) HandleAccessRequest( // nolint:funlen
 
 	s.Requested = permissions.NeedsConsent
 
-	// TODO: figure out what parameters to pass into api.InteractionHandler.PrepareInteraction()
-	// TODO: figure out where we save the client's finish redirect uri
 	// TODO: support selecting one of multiple interaction handlers
-	interact, err := h.loginConsent.PrepareInteraction(req.Interact)
+	interact, err := h.loginConsent.PrepareInteraction(req.Interact, permissions.NeedsConsent.Tokens)
 	if err != nil {
 		return nil, fmt.Errorf("creating response interaction parameters: %w", err)
 	}
@@ -154,7 +152,7 @@ func (h *AuthHandler) HandleAccessRequest( // nolint:funlen
 }
 
 // HandleContinueRequest handles GNAP continue requests.
-func (h *AuthHandler) HandleContinueRequest(
+func (h *AuthHandler) HandleContinueRequest( // nolint: funlen
 	req *gnap.ContinueRequest,
 	continueToken string,
 	reqVerifier api.Verifier,
@@ -181,14 +179,23 @@ func (h *AuthHandler) HandleContinueRequest(
 	now := time.Now()
 
 	for _, tokenRequest := range consent.Tokens {
-		tok := CreateToken(tokenRequest)
+		tok := gnap.AccessToken{
+			Value:  uuid.New().String(),
+			Label:  tokenRequest.Label,
+			Access: tokenRequest.Access,
+			Flags:  tokenRequest.Flags,
+		}
 
-		newTokens = append(newTokens, *tok)
+		tokenExpires := tokenRequest.Expires
 
-		tokenExpires := now.Add(time.Duration(tok.Expires) * time.Second)
+		lifetime := tokenExpires.Sub(now)
+
+		tok.Expires = int64(lifetime / time.Second)
+
+		newTokens = append(newTokens, tok)
 
 		s.Tokens = append(s.Tokens, &api.ExpiringToken{
-			AccessToken: *tok,
+			AccessToken: tok,
 			Expires:     tokenExpires,
 		})
 
@@ -198,6 +205,11 @@ func (h *AuthHandler) HandleContinueRequest(
 	}
 
 	err = h.sessionStore.Save(s)
+	if err != nil {
+		return nil, err
+	}
+
+	err = h.loginConsent.DeleteInteraction(req.InteractRef)
 	if err != nil {
 		return nil, err
 	}
