@@ -79,7 +79,7 @@ func (c *Client) RequestAccess(req *gnap.AuthRequest) (*gnap.AuthResponse, error
 
 	url := c.gnapAuthServerURL + gnaprest.AuthRequestPath
 
-	httpReq, err := http.NewRequest(http.MethodPost, url, requestReader)
+	httpReq, err := http.NewRequest(http.MethodPost, url, requestReader) // nolint:noctx
 	if err != nil {
 		return nil, fmt.Errorf("requestAccess: failed to build http request: %w", err)
 	}
@@ -122,7 +122,7 @@ func (c *Client) RequestAccess(req *gnap.AuthRequest) (*gnap.AuthResponse, error
 }
 
 // Continue gnap auth request containing interact_ref.
-func (c *Client) Continue(req *gnap.ContinueRequest) (*gnap.AuthResponse, error) {
+func (c *Client) Continue(req *gnap.ContinueRequest, token string) (*gnap.AuthResponse, error) {
 	if req == nil {
 		return nil, fmt.Errorf("continue: empty request")
 	}
@@ -150,6 +150,7 @@ func (c *Client) Continue(req *gnap.ContinueRequest) (*gnap.AuthResponse, error)
 	httpReq.Header.Add("Content-Type", contentType)
 	// httpReq.Header.Add("Signature-Input", "TODO") // TODO update signature input
 	httpReq.Header.Add("Signature", base64.URLEncoding.EncodeToString(sig))
+	httpReq.Header.Add("Authorization", "GNAP "+token)
 
 	r, err := c.httpClient.Do(httpReq)
 	if err != nil {

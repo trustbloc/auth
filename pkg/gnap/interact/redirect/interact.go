@@ -41,8 +41,8 @@ func (l InteractHandler) CompleteInteraction(flowID string, consentSet *api.Cons
 
 // QueryInteraction fetches the interaction under the given interact_ref.
 func (l InteractHandler) QueryInteraction(interactRef string) (*api.ConsentResult, error) {
-	// TODO implement me
-	panic("implement me")
+	// TODO implement query interaction
+	return &api.ConsentResult{}, nil
 }
 
 // DeleteInteraction deletes the interaction under the given interact_ref.

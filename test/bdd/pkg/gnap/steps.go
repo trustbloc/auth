@@ -15,9 +15,11 @@ import (
 	"strings"
 
 	"github.com/cucumber/godog"
+	"github.com/google/uuid"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/jose/jwk"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/jose/jwk/jwksupport"
 	"github.com/trustbloc/auth/component/gnap/as"
+	"github.com/trustbloc/auth/component/gnap/rs"
 	"github.com/trustbloc/auth/spi/gnap"
 
 	bddctx "github.com/trustbloc/auth/test/bdd/pkg/context"
@@ -35,11 +37,12 @@ const (
 )
 
 type Steps struct {
-	ctx        *bddctx.BDDContext
-	gnapClient *as.Client
-	pubKeyJWK  jwk.JWK
-	authResp   *gnap.AuthResponse
-	browser    *http.Client
+	ctx          *bddctx.BDDContext
+	gnapClient   *as.Client
+	gnapRSClient *rs.Client
+	pubKeyJWK    jwk.JWK
+	authResp     *gnap.AuthResponse
+	browser      *http.Client
 }
 
 func NewSteps(ctx *bddctx.BDDContext) *Steps {
@@ -53,6 +56,7 @@ func (s *Steps) RegisterSteps(gs *godog.ScenarioContext) {
 	gs.Step(`^the client calls the tx request with httpsign and gets back a redirect interaction$`, s.txnRequest)
 	gs.Step(`^client redirects to the interaction URL, user logs into the external oidc provider and the client receives a redirect back$`, s.interactRedirect)
 	gs.Step(`^client calls continue API and gets back the access token$`, s.continueRequest)
+	gs.Step(`^resource server validates the gnap access token$`, s.introspection)
 }
 
 func (s *Steps) createGNAPClient() error {
@@ -81,10 +85,23 @@ func (s *Steps) createGNAPClient() error {
 		authServerURL,
 	)
 	if err != nil {
-		return fmt.Errorf("failed to gnap go-client: %w", err)
+		return fmt.Errorf("failed to create gnap as go-client: %w", err)
+	}
+
+	// create gnap rs client
+	gnapRSClient, err := rs.NewClient(
+		&Signer{
+			PrivateKey: private,
+		},
+		httpClient,
+		authServerURL,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to create gnap rs go-client: %w", err)
 	}
 
 	s.gnapClient = gnapClient
+	s.gnapRSClient = gnapRSClient
 	s.pubKeyJWK = *pubKeyJWK
 
 	return nil
@@ -168,11 +185,31 @@ func (s *Steps) interactRedirect() error {
 }
 
 func (s *Steps) continueRequest() error {
-	// TODO get continue req API url
+	req := &gnap.ContinueRequest{
+		InteractRef: uuid.NewString(),
+	}
 
-	// TODO call continue API
+	authResp, err := s.gnapClient.Continue(req, s.authResp.Continue.AccessToken.Value)
+	if err != nil {
+		return fmt.Errorf("failed to call continue request: %w", err)
+	}
 
 	// TODO validate acess token
+
+	s.authResp = authResp
+
+	return nil
+}
+
+func (s *Steps) introspection() error {
+	req := &gnap.IntrospectRequest{}
+
+	_, err := s.gnapRSClient.Introspect(req)
+	if err != nil {
+		return fmt.Errorf("failed to call continue request: %w", err)
+	}
+
+	// TODO validate introspection data
 
 	return nil
 }
