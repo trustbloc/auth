@@ -506,7 +506,7 @@ func startAuthService(parameters *authRestParameters, srv server) error {
 		SecretsToken:   parameters.secretsAPIToken,
 	}, &gnap.Config{
 		StoreProvider:      provider,
-		BaseURL:            parameters.hostURL,
+		BaseURL:            parameters.externalURL,
 		AccessPolicyConfig: gnapAPConfig,
 		InteractionHandler: interact,
 		UIEndpoint:         uiEndpoint,

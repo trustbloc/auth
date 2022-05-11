@@ -13,3 +13,4 @@ Feature: Grant Negotiation and Authorization Protocol(GNAP) flow (https://www.ie
     Then the client calls the tx request with httpsign and gets back a redirect interaction
     Then client redirects to the interaction URL, user logs into the external oidc provider and the client receives a redirect back
     And client calls continue API and gets back the access token
+    And resource server validates the gnap access token

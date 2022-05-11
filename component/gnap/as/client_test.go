@@ -21,6 +21,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
 	gnaprest "github.com/trustbloc/auth/pkg/restapi/gnap"
@@ -276,7 +277,7 @@ func TestContinue(t *testing.T) {
 			c, err := NewClient(tc.signer, httpClient, url)
 			require.NoError(t, err)
 
-			response, err := c.Continue(tc.grantReq)
+			response, err := c.Continue(tc.grantReq, uuid.NewString())
 			if tc.errMsg != "" {
 				if tc.name == "error continuing gnap access with bad http client error" {
 					require.Contains(t, err.Error(), fmt.Sprintf(tc.errMsg, url+gnaprest.AuthContinuePath))
