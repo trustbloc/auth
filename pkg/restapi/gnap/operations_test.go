@@ -9,21 +9,27 @@ package gnap
 import (
 	"bytes"
 	"context"
+	"crypto/ed25519"
+	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"testing"
 
 	"github.com/google/uuid"
 	"github.com/hyperledger/aries-framework-go/component/storageutil/mem"
+	"github.com/hyperledger/aries-framework-go/pkg/doc/jose/jwk/jwksupport"
 	mockstore "github.com/hyperledger/aries-framework-go/pkg/mock/storage"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/oauth2"
 
 	"github.com/trustbloc/auth/pkg/gnap/accesspolicy"
+	"github.com/trustbloc/auth/pkg/gnap/api"
 	"github.com/trustbloc/auth/pkg/gnap/interact/redirect"
+	"github.com/trustbloc/auth/pkg/internal/common/mockinteract"
 	"github.com/trustbloc/auth/pkg/internal/common/mockoidc"
 	"github.com/trustbloc/auth/pkg/internal/common/mockstorage"
 	oidcmodel "github.com/trustbloc/auth/pkg/restapi/common/oidc"
@@ -98,7 +104,7 @@ func TestOperation_authRequestHandler(t *testing.T) {
 		require.Equal(t, http.StatusBadRequest, rw.Code)
 	})
 
-	t.Run("access policy error", func(t *testing.T) {
+	t.Run("auth handler error", func(t *testing.T) {
 		o := &Operation{}
 
 		rw := httptest.NewRecorder()
@@ -108,6 +114,29 @@ func TestOperation_authRequestHandler(t *testing.T) {
 		o.authRequestHandler(rw, req)
 
 		require.Equal(t, http.StatusUnauthorized, rw.Code)
+	})
+
+	t.Run("success", func(t *testing.T) {
+		o, err := New(config(t))
+		require.NoError(t, err)
+
+		authReq := &gnap.AuthRequest{
+			Client: &gnap.RequestClient{
+				IsReference: false,
+				Key:         clientKey(t),
+			},
+		}
+
+		authReqBytes, err := json.Marshal(authReq)
+		require.NoError(t, err)
+
+		rw := httptest.NewRecorder()
+
+		req := httptest.NewRequest(http.MethodPost, AuthRequestPath, bytes.NewReader(authReqBytes))
+
+		o.authRequestHandler(rw, req)
+
+		require.Equal(t, http.StatusOK, rw.Code)
 	})
 }
 
@@ -176,7 +205,7 @@ func TestOperation_authContinueHandler(t *testing.T) {
 		require.Equal(t, errInvalidRequest, resp.Error)
 	})
 
-	t.Run("access policy error", func(t *testing.T) {
+	t.Run("auth handler error", func(t *testing.T) {
 		o, err := New(config(t))
 		require.NoError(t, err)
 
@@ -196,15 +225,60 @@ func TestOperation_authContinueHandler(t *testing.T) {
 }
 
 func TestOperation_introspectHandler(t *testing.T) {
-	o := &Operation{}
+	t.Run("fail to parse empty request body", func(t *testing.T) {
+		o := &Operation{}
 
-	rw := httptest.NewRecorder()
+		rw := httptest.NewRecorder()
 
-	req := httptest.NewRequest(http.MethodPost, AuthContinuePath, bytes.NewReader([]byte("{}")))
+		req := httptest.NewRequest(http.MethodPost, AuthRequestPath, nil)
 
-	o.introspectHandler(rw, req)
+		o.introspectHandler(rw, req)
 
-	require.Equal(t, http.StatusOK, rw.Code)
+		require.Equal(t, http.StatusBadRequest, rw.Code)
+	})
+
+	t.Run("auth handler error", func(t *testing.T) {
+		o := &Operation{}
+
+		rw := httptest.NewRecorder()
+
+		req := httptest.NewRequest(http.MethodPost, AuthRequestPath, bytes.NewReader([]byte("{}")))
+
+		o.introspectHandler(rw, req)
+
+		require.Equal(t, http.StatusUnauthorized, rw.Code)
+	})
+
+	t.Run("requested token does not exist", func(t *testing.T) {
+		o, err := New(config(t))
+		require.NoError(t, err)
+
+		intReq := &gnap.IntrospectRequest{
+			AccessToken: "invalid token",
+			Proof:       "httpsig",
+			ResourceServer: &gnap.RequestClient{
+				Key: clientKey(t),
+			},
+		}
+
+		intReqBytes, err := json.Marshal(intReq)
+		require.NoError(t, err)
+
+		rw := httptest.NewRecorder()
+
+		req := httptest.NewRequest(http.MethodPost, AuthIntrospectPath, bytes.NewReader(intReqBytes))
+
+		o.introspectHandler(rw, req)
+
+		require.Equal(t, http.StatusOK, rw.Code)
+
+		resp := &gnap.IntrospectResponse{}
+
+		err = json.Unmarshal(rw.Body.Bytes(), resp)
+		require.NoError(t, err)
+
+		require.False(t, resp.Active)
+	})
 }
 
 func TestOIDCLoginHandler(t *testing.T) {
@@ -218,7 +292,7 @@ func TestOIDCLoginHandler(t *testing.T) {
 		}
 		svc.oidcProvidersConfig = map[string]*oidcmodel.ProviderConfig{provider: {}}
 		w := httptest.NewRecorder()
-		svc.oidcLoginHandler(w, newOIDCLoginRequest(provider))
+		svc.oidcLoginHandler(w, newOIDCLoginRequest(provider, "foo"))
 		require.Equal(t, http.StatusFound, w.Code)
 		require.NotEmpty(t, w.Header().Get("location"))
 	})
@@ -232,7 +306,7 @@ func TestOIDCLoginHandler(t *testing.T) {
 			provider: &mockOIDCProvider{},
 		}
 		w := httptest.NewRecorder()
-		svc.oidcLoginHandler(w, newOIDCLoginRequest(provider))
+		svc.oidcLoginHandler(w, newOIDCLoginRequest(provider, "foo"))
 		require.Equal(t, http.StatusInternalServerError, w.Code)
 	})
 
@@ -241,7 +315,16 @@ func TestOIDCLoginHandler(t *testing.T) {
 		svc, err := New(config)
 		require.NoError(t, err)
 		w := httptest.NewRecorder()
-		svc.oidcLoginHandler(w, newOIDCLoginRequest(""))
+		svc.oidcLoginHandler(w, newOIDCLoginRequest("", ""))
+		require.Equal(t, http.StatusBadRequest, w.Code)
+	})
+
+	t.Run("bad request if txn ID is missing", func(t *testing.T) {
+		config := config(t)
+		svc, err := New(config)
+		require.NoError(t, err)
+		w := httptest.NewRecorder()
+		svc.oidcLoginHandler(w, newOIDCLoginRequest("foo", ""))
 		require.Equal(t, http.StatusBadRequest, w.Code)
 	})
 
@@ -249,7 +332,7 @@ func TestOIDCLoginHandler(t *testing.T) {
 		svc, err := New(config(t))
 		require.NoError(t, err)
 		result := httptest.NewRecorder()
-		svc.oidcLoginHandler(result, newOIDCLoginRequest("unsupported"))
+		svc.oidcLoginHandler(result, newOIDCLoginRequest("unsupported", "foo"))
 		require.Equal(t, http.StatusBadRequest, result.Code)
 		require.Contains(t, result.Body.String(), "provider not supported")
 	})
@@ -268,7 +351,7 @@ func TestOIDCLoginHandler(t *testing.T) {
 		}
 
 		result := httptest.NewRecorder()
-		svc.oidcLoginHandler(result, newOIDCLoginRequest(provider))
+		svc.oidcLoginHandler(result, newOIDCLoginRequest(provider, "foo"))
 
 		require.Contains(t, result.Body.String(), "failed to write state data to transient store")
 		require.Equal(t, http.StatusInternalServerError, result.Code)
@@ -286,7 +369,7 @@ func TestOIDCLoginHandler(t *testing.T) {
 		require.NoError(t, err)
 
 		w := httptest.NewRecorder()
-		svc.oidcLoginHandler(w, newOIDCLoginRequest("test"))
+		svc.oidcLoginHandler(w, newOIDCLoginRequest("test", "foo"))
 		require.Equal(t, http.StatusBadRequest, w.Code)
 		require.Contains(t, w.Body.String(), "failed to init oidc provider")
 	})
@@ -322,7 +405,40 @@ func TestOIDCCallbackHandler(t *testing.T) {
 			},
 		}
 
-		err = o.transientStore.Put(state, []byte(provider))
+		respInteract, err := o.interactionHandler.PrepareInteraction(&gnap.RequestInteract{
+			Start: []string{"redirect"},
+			Finish: gnap.RequestFinish{
+				Method: "redirect",
+				URI:    "example.foo/client-redirect",
+			},
+		}, []*api.ExpiringTokenRequest{
+			{
+				TokenRequest: gnap.TokenRequest{
+					Access: []gnap.TokenAccess{
+						{
+							IsReference: true,
+							Ref:         "client-id",
+						},
+					},
+				},
+			},
+		})
+		require.NoError(t, err)
+
+		redirURL, err := url.Parse(respInteract.Redirect)
+		require.NoError(t, err)
+
+		txnID := redirURL.Query().Get("txnID")
+
+		data := &oidcTransientData{
+			Provider: provider,
+			TxnID:    txnID,
+		}
+
+		dataBytes, err := json.Marshal(data)
+		require.NoError(t, err)
+
+		err = o.transientStore.Put(state, dataBytes)
 		require.NoError(t, err)
 
 		result := httptest.NewRecorder()
@@ -362,11 +478,34 @@ func TestOIDCCallbackHandler(t *testing.T) {
 		require.Equal(t, http.StatusBadRequest, result.Code)
 	})
 
+	t.Run("internal server error if transient data is invalid", func(t *testing.T) {
+		svc, err := New(config(t))
+		require.NoError(t, err)
+
+		dataBytes := []byte("foo bar baz")
+
+		err = svc.transientStore.Put("state", dataBytes)
+		require.NoError(t, err)
+
+		result := httptest.NewRecorder()
+		svc.oidcCallbackHandler(result, newOIDCCallback("state", "code"))
+
+		require.Equal(t, http.StatusInternalServerError, result.Code)
+		require.Contains(t, result.Body.String(), "failed to parse")
+	})
+
 	t.Run("bad request if oidc provider is not supported (should not happen)", func(t *testing.T) {
 		svc, err := New(config(t))
 		require.NoError(t, err)
 
-		err = svc.transientStore.Put("state", []byte("invalid"))
+		data := &oidcTransientData{
+			Provider: "invalid",
+		}
+
+		dataBytes, err := json.Marshal(data)
+		require.NoError(t, err)
+
+		err = svc.transientStore.Put("state", dataBytes)
 		require.NoError(t, err)
 
 		result := httptest.NewRecorder()
@@ -388,7 +527,14 @@ func TestOIDCCallbackHandler(t *testing.T) {
 		svc, err := New(config)
 		require.NoError(t, err)
 
-		err = svc.transientStore.Put(state, []byte(provider))
+		data := &oidcTransientData{
+			Provider: provider,
+		}
+
+		dataBytes, err := json.Marshal(data)
+		require.NoError(t, err)
+
+		err = svc.transientStore.Put(state, dataBytes)
 		require.NoError(t, err)
 
 		svc.cachedOIDCProviders = map[string]oidcProvider{
@@ -416,7 +562,14 @@ func TestOIDCCallbackHandler(t *testing.T) {
 		svc, err := New(config)
 		require.NoError(t, err)
 
-		err = svc.transientStore.Put(state, []byte(provider))
+		data := &oidcTransientData{
+			Provider: provider,
+		}
+
+		dataBytes, err := json.Marshal(data)
+		require.NoError(t, err)
+
+		err = svc.transientStore.Put(state, dataBytes)
 		require.NoError(t, err)
 
 		svc.cachedOIDCProviders = map[string]oidcProvider{
@@ -445,7 +598,14 @@ func TestOIDCCallbackHandler(t *testing.T) {
 		svc, err := New(config)
 		require.NoError(t, err)
 
-		err = svc.transientStore.Put(state, []byte(provider))
+		data := &oidcTransientData{
+			Provider: provider,
+		}
+
+		dataBytes, err := json.Marshal(data)
+		require.NoError(t, err)
+
+		err = svc.transientStore.Put(state, dataBytes)
 		require.NoError(t, err)
 
 		svc.cachedOIDCProviders = map[string]oidcProvider{
@@ -474,7 +634,14 @@ func TestOIDCCallbackHandler(t *testing.T) {
 		svc, err := New(config)
 		require.NoError(t, err)
 
-		err = svc.transientStore.Put(state, []byte(provider))
+		data := &oidcTransientData{
+			Provider: provider,
+		}
+
+		dataBytes, err := json.Marshal(data)
+		require.NoError(t, err)
+
+		err = svc.transientStore.Put(state, dataBytes)
 		require.NoError(t, err)
 
 		svc.cachedOIDCProviders = map[string]oidcProvider{
@@ -490,6 +657,299 @@ func TestOIDCCallbackHandler(t *testing.T) {
 		svc.oidcCallbackHandler(result, newOIDCCallback(state, "code"))
 		require.Equal(t, http.StatusInternalServerError, result.Code)
 	})
+
+	t.Run("fail to complete interaction", func(t *testing.T) {
+		provider := uuid.New().String()
+		state := uuid.New().String()
+		code := uuid.New().String()
+		config := config(t)
+
+		expectErr := errors.New("expected error")
+
+		config.InteractionHandler = &mockinteract.InteractHandler{
+			CompleteErr: expectErr,
+		}
+
+		o, err := New(config)
+		require.NoError(t, err)
+
+		o.cachedOIDCProviders = map[string]oidcProvider{
+			provider: &mockOIDCProvider{
+				name: provider,
+				oauth2Config: &mockOAuth2Config{
+					exchangeVal: &mockToken{
+						oauth2Claim: uuid.New().String(),
+					},
+				},
+				verifyVal: &mockToken{
+					oidcClaimsFunc: func(v interface{}) error {
+						c, ok := v.(*oidcClaims)
+						require.True(t, ok)
+						c.Sub = uuid.New().String()
+
+						return nil
+					},
+				},
+			},
+		}
+
+		data := &oidcTransientData{
+			Provider: provider,
+			TxnID:    "foo",
+		}
+
+		dataBytes, err := json.Marshal(data)
+		require.NoError(t, err)
+
+		err = o.transientStore.Put(state, dataBytes)
+		require.NoError(t, err)
+
+		result := httptest.NewRecorder()
+		o.oidcCallbackHandler(result, newOIDCCallback(state, code))
+		require.Equal(t, http.StatusInternalServerError, result.Code)
+
+		require.Contains(t, result.Body.String(), "failed to complete GNAP interaction")
+	})
+
+	t.Run("bad client redirect URI", func(t *testing.T) {
+		provider := uuid.New().String()
+		state := uuid.New().String()
+		code := uuid.New().String()
+		config := config(t)
+
+		o, err := New(config)
+		require.NoError(t, err)
+
+		o.cachedOIDCProviders = map[string]oidcProvider{
+			provider: &mockOIDCProvider{
+				name: provider,
+				oauth2Config: &mockOAuth2Config{
+					exchangeVal: &mockToken{
+						oauth2Claim: uuid.New().String(),
+					},
+				},
+				verifyVal: &mockToken{
+					oidcClaimsFunc: func(v interface{}) error {
+						c, ok := v.(*oidcClaims)
+						require.True(t, ok)
+						c.Sub = uuid.New().String()
+
+						return nil
+					},
+				},
+			},
+		}
+
+		respInteract, err := o.interactionHandler.PrepareInteraction(&gnap.RequestInteract{
+			Start: []string{"redirect"},
+			Finish: gnap.RequestFinish{
+				Method: "redirect",
+				URI:    "^$#^*#%$^&#$%#T^ UTTER GIBBERISH",
+			},
+		}, []*api.ExpiringTokenRequest{
+			{
+				TokenRequest: gnap.TokenRequest{
+					Access: []gnap.TokenAccess{
+						{
+							IsReference: true,
+							Ref:         "client-id",
+						},
+					},
+				},
+			},
+		})
+		require.NoError(t, err)
+
+		redirURL, err := url.Parse(respInteract.Redirect)
+		require.NoError(t, err)
+
+		txnID := redirURL.Query().Get("txnID")
+
+		data := &oidcTransientData{
+			Provider: provider,
+			TxnID:    txnID,
+		}
+
+		dataBytes, err := json.Marshal(data)
+		require.NoError(t, err)
+
+		err = o.transientStore.Put(state, dataBytes)
+		require.NoError(t, err)
+
+		result := httptest.NewRecorder()
+		o.oidcCallbackHandler(result, newOIDCCallback(state, code))
+		require.Equal(t, http.StatusBadRequest, result.Code)
+		require.Contains(t, result.Body.String(), "client provided invalid redirect URI")
+	})
+}
+
+func Test_Full_Flow(t *testing.T) {
+	o, err := New(config(t))
+	require.NoError(t, err)
+
+	authResp := &gnap.AuthResponse{}
+
+	var (
+		txnID       string
+		interactRef string
+		state       string
+	)
+
+	{
+		authReq := &gnap.AuthRequest{
+			Client: &gnap.RequestClient{
+				IsReference: false,
+				Key:         clientKey(t),
+			},
+			AccessToken: []*gnap.TokenRequest{
+				{
+					Access: []gnap.TokenAccess{
+						{
+							IsReference: true,
+							Ref:         "client-id",
+						},
+					},
+				},
+			},
+			Interact: &gnap.RequestInteract{
+				Start: []string{"redirect"},
+				Finish: gnap.RequestFinish{
+					Method: "redirect",
+					URI:    "example.com/client-ui",
+				},
+			},
+		}
+
+		authReqBytes, err := json.Marshal(authReq)
+		require.NoError(t, err)
+
+		rw := httptest.NewRecorder()
+
+		req := httptest.NewRequest(http.MethodPost, AuthRequestPath, bytes.NewReader(authReqBytes))
+
+		o.authRequestHandler(rw, req)
+
+		require.Equal(t, http.StatusOK, rw.Code)
+
+		require.NoError(t, json.Unmarshal(rw.Body.Bytes(), authResp))
+
+		redirectURL, err := url.Parse(authResp.Interact.Redirect)
+		require.NoError(t, err)
+
+		txnID = redirectURL.Query().Get("txnID")
+	}
+
+	provider := uuid.New().String()
+
+	subjectID := "mock-subject-id"
+
+	o.cachedOIDCProviders = map[string]oidcProvider{provider: &mockOIDCProvider{
+		oauth2Config: &mockOAuth2Config{
+			authCodeFunc: func(state string, opts ...oauth2.AuthCodeOption) string {
+				return "example.com/oauth2?state=" + state
+			},
+			exchangeVal: &mockToken{
+				oauth2Claim: "mock-id-token",
+			},
+		},
+		verifyVal: &mockToken{
+			oidcClaimsFunc: func(v interface{}) error {
+				claims, ok := v.(*oidcClaims)
+				if !ok {
+					return nil
+				}
+
+				claims.Sub = subjectID
+
+				return nil
+			},
+		},
+	}}
+	o.oidcProvidersConfig = map[string]*oidcmodel.ProviderConfig{provider: {}}
+
+	{
+		rw := httptest.NewRecorder()
+
+		o.oidcLoginHandler(rw, newOIDCLoginRequest(provider, txnID))
+		require.Equal(t, http.StatusFound, rw.Code)
+		redirectURL, err := url.Parse(rw.Header().Get("location"))
+		require.NoError(t, err)
+
+		state = redirectURL.Query().Get("state")
+	}
+
+	{
+		code := uuid.New().String()
+
+		rw := httptest.NewRecorder()
+
+		o.oidcCallbackHandler(rw, newOIDCCallback(state, code))
+
+		require.Equal(t, http.StatusFound, rw.Code)
+
+		redirectURL, err := url.Parse(rw.Header().Get("location"))
+		require.NoError(t, err)
+
+		interactRef = redirectURL.Query().Get("interact_ref")
+		require.NotEqual(t, "", interactRef)
+	}
+
+	contResp := &gnap.AuthResponse{}
+
+	{
+		contReq := &gnap.ContinueRequest{
+			InteractRef: interactRef,
+		}
+
+		contReqBytes, err := json.Marshal(contReq)
+		require.NoError(t, err)
+
+		rw := httptest.NewRecorder()
+
+		req := httptest.NewRequest(http.MethodPost, AuthRequestPath, bytes.NewReader(contReqBytes))
+		req.Header.Add("Authorization", "GNAP "+authResp.Continue.AccessToken.Value)
+
+		o.authContinueHandler(rw, req)
+
+		require.Equal(t, http.StatusOK, rw.Code)
+
+		require.NoError(t, json.Unmarshal(rw.Body.Bytes(), contResp))
+	}
+
+	require.Len(t, contResp.AccessToken, 1)
+
+	{
+		intReq := &gnap.IntrospectRequest{
+			AccessToken: contResp.AccessToken[0].Value,
+			Proof:       "httpsig",
+			ResourceServer: &gnap.RequestClient{
+				Key: clientKey(t),
+			},
+		}
+
+		intReqBytes, err := json.Marshal(intReq)
+		require.NoError(t, err)
+
+		rw := httptest.NewRecorder()
+
+		req := httptest.NewRequest(http.MethodPost, AuthIntrospectPath, bytes.NewReader(intReqBytes))
+
+		o.introspectHandler(rw, req)
+
+		require.Equal(t, http.StatusOK, rw.Code)
+
+		resp := &gnap.IntrospectResponse{}
+
+		err = json.Unmarshal(rw.Body.Bytes(), resp)
+		require.NoError(t, err)
+
+		require.True(t, resp.Active)
+
+		resultID := resp.SubjectData["sub"]
+
+		// introspection returns the user's OIDC 'sub' ID value
+		require.Equal(t, subjectID, resultID)
+	}
 }
 
 type mockOIDCProvider struct {
@@ -543,8 +1003,10 @@ func (m *mockOAuth2Config) Exchange(
 	return m.exchangeVal, m.exchangeErr
 }
 
-func newOIDCLoginRequest(provider string) *http.Request {
-	return httptest.NewRequest(http.MethodGet, fmt.Sprintf("http://example.com/oauth2/login?provider=%s", provider), nil)
+func newOIDCLoginRequest(provider, txnID string) *http.Request {
+	return httptest.NewRequest(http.MethodGet,
+		fmt.Sprintf("http://example.com/oauth2/login?provider=%s&txnID=%s", provider, txnID),
+		nil)
 }
 
 func newOIDCCallback(state, code string) *http.Request {
@@ -577,12 +1039,22 @@ func (m *mockToken) Claims(v interface{}) error {
 func config(t *testing.T) *Config {
 	t.Helper()
 
-	interact, err := redirect.New(InteractPath)
+	storeProv := mem.NewProvider()
+
+	interact, err := redirect.New(&redirect.Config{
+		StoreProvider:    storeProv,
+		InteractBasePath: InteractPath,
+	})
+	require.NoError(t, err)
+
+	apConfig := &accesspolicy.Config{}
+
+	err = json.Unmarshal([]byte(accessPolicyConf), apConfig)
 	require.NoError(t, err)
 
 	return &Config{
-		StoreProvider:      mem.NewProvider(),
-		AccessPolicyConfig: &accesspolicy.Config{},
+		StoreProvider:      storeProv,
+		AccessPolicyConfig: apConfig,
 		BaseURL:            "example.com",
 		InteractionHandler: interact,
 		OIDC: &oidcmodel.Config{
@@ -604,3 +1076,45 @@ func config(t *testing.T) *Config {
 		StartupTimeout:         1,
 	}
 }
+
+func clientKey(t *testing.T) *gnap.ClientKey {
+	t.Helper()
+
+	pub, _, err := ed25519.GenerateKey(rand.Reader)
+	require.NoError(t, err)
+
+	k, err := jwksupport.JWKFromKey(pub)
+	require.NoError(t, err)
+
+	ck := gnap.ClientKey{
+		Proof: "httpsig",
+		JWK:   *k,
+	}
+
+	return &ck
+}
+
+const (
+	accessPolicyConf = `{
+	"access-types": [{
+			"reference": "client-id",
+			"permission": "NeedsConsent",
+			"expires-in": 600,
+			"access": {
+				"type": "trustbloc.xyz/auth/type/client-id",
+				"subject-keys": ["sub"],
+				"userid-key": "sub"
+			}
+		}, {
+			"reference": "other-access",
+			"permission": "NeedsConsent",
+			"expires-in": 300,
+			"access": {
+				"type": "trustbloc.xyz/auth/type/other-access",
+				"actions": ["write"],
+				"datasets": ["foobase"]
+			}
+		} 
+	]
+}`
+)

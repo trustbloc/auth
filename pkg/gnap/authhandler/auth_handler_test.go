@@ -169,6 +169,29 @@ func TestAuthHandler_HandleAccessRequest(t *testing.T) {
 		require.Nil(t, resp)
 	})
 
+	t.Run("fail to prepare interaction", func(t *testing.T) {
+		h, err := New(config(t))
+		require.NoError(t, err)
+
+		expectErr := errors.New("expected error")
+
+		h.loginConsent = &mockinteract.InteractHandler{
+			PrepareErr: expectErr,
+		}
+
+		req := &gnap.AuthRequest{
+			Client: &gnap.RequestClient{
+				IsReference: false,
+				Key:         clientKey(t),
+			},
+		}
+		v := &mockverifier.MockVerifier{}
+
+		resp, err := h.HandleAccessRequest(req, v)
+		require.ErrorIs(t, err, expectErr)
+		require.Nil(t, resp)
+	})
+
 	t.Run("success", func(t *testing.T) {
 		h, err := New(config(t))
 		require.NoError(t, err)
@@ -258,15 +281,17 @@ func TestAuthHandler_HandleContinueRequest(t *testing.T) {
 
 		h.loginConsent = &mockinteract.InteractHandler{
 			QueryVal: &api.ConsentResult{
-				Tokens: []*gnap.TokenRequest{
+				Tokens: []*api.ExpiringTokenRequest{
 					{
-						Access: []gnap.TokenAccess{
-							{
-								IsReference: true,
-								Ref:         "foo",
+						TokenRequest: gnap.TokenRequest{
+							Access: []gnap.TokenAccess{
+								{
+									IsReference: true,
+									Ref:         "foo",
+								},
 							},
+							Label: "foo",
 						},
-						Label: "foo",
 					},
 				},
 			},
@@ -381,12 +406,14 @@ func TestAuthHandler_HandleIntrospection(t *testing.T) {
 		clientSession, err := h.sessionStore.GetOrCreateByKey(clientKey(t))
 		require.NoError(t, err)
 
-		token := CreateToken(&gnap.TokenRequest{
-			Label: "foo",
-			Access: []gnap.TokenAccess{
-				{
-					IsReference: true,
-					Ref:         "foo",
+		token := CreateToken(&api.ExpiringTokenRequest{
+			TokenRequest: gnap.TokenRequest{
+				Label: "foo",
+				Access: []gnap.TokenAccess{
+					{
+						IsReference: true,
+						Ref:         "foo",
+					},
 				},
 			},
 		})
@@ -422,16 +449,18 @@ func TestAuthHandler_HandleIntrospection(t *testing.T) {
 		clientIDKey := "client-id"
 		clientIDVal := "123abc123"
 
-		token := CreateToken(&gnap.TokenRequest{
-			Label: "foo",
-			Access: []gnap.TokenAccess{
-				{
-					IsReference: true,
-					Ref:         clientIDKey,
-				},
-				{
-					IsReference: true,
-					Ref:         "other-access",
+		token := CreateToken(&api.ExpiringTokenRequest{
+			TokenRequest: gnap.TokenRequest{
+				Label: "foo",
+				Access: []gnap.TokenAccess{
+					{
+						IsReference: true,
+						Ref:         clientIDKey,
+					},
+					{
+						IsReference: true,
+						Ref:         "other-access",
+					},
 				},
 			},
 		})

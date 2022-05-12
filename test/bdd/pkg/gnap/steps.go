@@ -12,10 +12,10 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/cookiejar"
+	"net/url"
 	"strings"
 
 	"github.com/cucumber/godog"
-	"github.com/google/uuid"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/jose/jwk"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/jose/jwk/jwksupport"
 	"github.com/trustbloc/auth/component/gnap/as"
@@ -42,6 +42,7 @@ type Steps struct {
 	gnapRSClient *rs.Client
 	pubKeyJWK    jwk.JWK
 	authResp     *gnap.AuthResponse
+	interactRef  string
 	browser      *http.Client
 }
 
@@ -107,11 +108,31 @@ func (s *Steps) createGNAPClient() error {
 	return nil
 }
 
+const mockClientFinishURI = "https://mock.client.example.com/"
+
 func (s *Steps) txnRequest() error {
 	req := &gnap.AuthRequest{
 		Client: &gnap.RequestClient{
 			Key: &gnap.ClientKey{
-				JWK: s.pubKeyJWK,
+				Proof: "httpsig",
+				JWK:   s.pubKeyJWK,
+			},
+		},
+		AccessToken: []*gnap.TokenRequest{
+			{
+				Access: []gnap.TokenAccess{
+					{
+						IsReference: true,
+						Ref:         "example-token-type",
+					},
+				},
+			},
+		},
+		Interact: &gnap.RequestInteract{
+			Start: []string{"redirect"},
+			Finish: gnap.RequestFinish{
+				Method: "redirect",
+				URI:    mockClientFinishURI,
 			},
 		},
 	}
@@ -121,10 +142,18 @@ func (s *Steps) txnRequest() error {
 		return fmt.Errorf("failed to gnap go-client: %w", err)
 	}
 
-	if authResp.Interact.Redirect != expectedInteractURL {
+	actualURL, err := url.Parse(authResp.Interact.Redirect)
+	if err != nil {
+		return fmt.Errorf("parsing interact redirect url: %w", err)
+	}
+
+	// clear query, then compare
+	actualURL.RawQuery = ""
+
+	if actualURL.String() != expectedInteractURL {
 		return fmt.Errorf(
 			"invalid interact url: expected=%s actual=%s",
-			expectedInteractURL, authResp.Interact.Redirect,
+			expectedInteractURL, actualURL.String(),
 		)
 	}
 
@@ -135,7 +164,17 @@ func (s *Steps) txnRequest() error {
 
 func (s *Steps) interactRedirect() error {
 	// initialise the browser
-	s.initBrowser()
+	err := s.initBrowser()
+	if err != nil {
+		return err
+	}
+
+	interactURL, err := url.Parse(s.authResp.Interact.Redirect)
+	if err != nil {
+		return err
+	}
+
+	txnID := interactURL.Query().Get("txnID")
 
 	// redirect to interact url
 	response, err := s.browser.Get(s.authResp.Interact.Redirect)
@@ -158,13 +197,29 @@ func (s *Steps) interactRedirect() error {
 	}
 
 	// select provider
-	request := fmt.Sprintf("%s?provider=%s", oidcProviderSelectorURL, mockOIDCProviderName)
+	request := fmt.Sprintf("%s?provider=%s&txnID=%s", oidcProviderSelectorURL, mockOIDCProviderName, txnID)
 
-	fmt.Println(request)
+	s.browser.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+		return http.ErrUseLastResponse
+	}
 
-	result, err := s.browser.Get(fmt.Sprintf("%s?provider=%s", oidcProviderSelectorURL, mockOIDCProviderName))
+	result, err := s.browser.Get(request)
 	if err != nil {
 		return fmt.Errorf("failed to redirect to OIDC provider url %s: %w", request, err)
+	}
+
+	request = result.Header.Get("Location")
+
+	result, err = s.browser.Get(request)
+	if err != nil {
+		return fmt.Errorf("failed to redirect to OIDC provider url %s: %w", request, err)
+	}
+
+	request = result.Header.Get("Location")
+
+	result, err = s.browser.Get(request)
+	if err != nil {
+		return fmt.Errorf("failed to redirect to login url %s: %w", request, err)
 	}
 
 	// login to third party oidc
@@ -173,20 +228,56 @@ func (s *Steps) interactRedirect() error {
 		return err
 	}
 
-	// TODO validate the client finishURL
-	if !strings.HasPrefix(loginResp.Request.URL.String(), authServerURL) {
-		return fmt.Errorf(
-			"invalid oidc callbackURL prefix expected=%s actual=%s",
-			oidcCallbackURLURL, loginResp.Request.URL.String(),
-		)
+	request = loginResp.Header.Get("Location")
+
+	result, err = s.browser.Get(request)
+	if err != nil {
+		return fmt.Errorf("failed to redirect to post-login oauth url %s: %w", request, err)
 	}
+
+	request = result.Header.Get("Location")
+
+	result, err = s.browser.Get(request)
+	if err != nil {
+		return fmt.Errorf("failed to redirect to consent url %s: %w", request, err)
+	}
+
+	request = result.Header.Get("Location")
+
+	result, err = s.browser.Get(request)
+	if err != nil {
+		return fmt.Errorf("failed to redirect to post-consent oauth url %s: %w", request, err)
+	}
+
+	request = result.Header.Get("Location")
+
+	result, err = s.browser.Get(request)
+	if err != nil {
+		return fmt.Errorf("failed to redirect to auth callback url %s: %w", request, err)
+	}
+
+	clientRedirect := result.Header.Get("Location")
+
+	// TODO validate the client finishURL
+	if !strings.HasPrefix(clientRedirect, mockClientFinishURI) {
+		return fmt.Errorf(
+			"invalid client finish redirect prefix expected=%s actual=%s",
+			mockClientFinishURI, clientRedirect)
+	}
+
+	crURL, err := url.Parse(clientRedirect)
+	if err != nil {
+		return err
+	}
+
+	s.interactRef = crURL.Query().Get("interact_ref")
 
 	return nil
 }
 
 func (s *Steps) continueRequest() error {
 	req := &gnap.ContinueRequest{
-		InteractRef: uuid.NewString(),
+		InteractRef: s.interactRef,
 	}
 
 	authResp, err := s.gnapClient.Continue(req, s.authResp.Continue.AccessToken.Value)
@@ -194,7 +285,7 @@ func (s *Steps) continueRequest() error {
 		return fmt.Errorf("failed to call continue request: %w", err)
 	}
 
-	// TODO validate acess token
+	// TODO validate access token
 
 	s.authResp = authResp
 
@@ -202,14 +293,30 @@ func (s *Steps) continueRequest() error {
 }
 
 func (s *Steps) introspection() error {
-	req := &gnap.IntrospectRequest{}
+	tok := s.authResp.AccessToken[0]
 
-	_, err := s.gnapRSClient.Introspect(req)
+	req := &gnap.IntrospectRequest{
+		ResourceServer: &gnap.RequestClient{
+			Key: &gnap.ClientKey{
+				JWK: s.pubKeyJWK,
+			},
+		},
+		Proof:       "httpsig",
+		AccessToken: tok.Value,
+	}
+
+	fmt.Printf("token: %#v\n", tok)
+
+	resp, err := s.gnapRSClient.Introspect(req)
 	if err != nil {
-		return fmt.Errorf("failed to call continue request: %w", err)
+		return fmt.Errorf("failed to call introspect request: %w", err)
 	}
 
 	// TODO validate introspection data
+
+	if !resp.Active {
+		return fmt.Errorf("access token should be active")
+	}
 
 	return nil
 }

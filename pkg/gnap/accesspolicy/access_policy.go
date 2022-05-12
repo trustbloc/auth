@@ -25,6 +25,8 @@ type AccessPolicy struct {
 	accessDescriptors map[string]tokenAccessMap
 	// basePermissions holds the base permission of given TokenAccess.Type values, if no other permission is granted.
 	basePermissions map[string]permissionLevel
+	// lifetime number of seconds that a given token access should be valid for.
+	lifetime map[string]int
 }
 
 // New initializes an AccessPolicy.
@@ -33,6 +35,7 @@ func New(config *Config) (*AccessPolicy, error) {
 		refToType:         map[string]string{},
 		accessDescriptors: map[string]tokenAccessMap{},
 		basePermissions:   map[string]permissionLevel{},
+		lifetime:          map[string]int{},
 	}
 
 	for _, accessType := range config.AccessTypes {
@@ -50,6 +53,8 @@ func New(config *Config) (*AccessPolicy, error) {
 		if accessType.Ref != "" {
 			ap.refToType[accessType.Ref] = typeStr
 		}
+
+		ap.lifetime[typeStr] = accessType.Expiry
 
 		switch accessType.Permission {
 		case PermissionAlwaysAllowed:
@@ -225,14 +230,19 @@ func (ap *AccessPolicy) defaultTokenAccessPermission(access gnap.TokenAccess, ac
 	// if the given TokenAccess wasn't a subset of a granted token's access,
 	// we use the AccessPolicy's default permissions
 	defaultPermission := permissionDenied
+	defaultLifetime := 0
 
 	for defaultType, defaultAccess := range ap.accessDescriptors {
 		ok := isTokenAccessSubset(defaultAccess, accessMap)
 		if ok {
 			perm := ap.basePermissions[defaultType]
+			lifetime := ap.lifetime[defaultType]
 
 			if perm > defaultPermission {
 				defaultPermission = perm
+				defaultLifetime = lifetime
+			} else if perm == defaultPermission && defaultLifetime < lifetime {
+				defaultLifetime = lifetime
 			}
 		}
 	}
@@ -243,7 +253,7 @@ func (ap *AccessPolicy) defaultTokenAccessPermission(access gnap.TokenAccess, ac
 
 	return defaultPermission, &expirableTokenAccess{
 		TokenAccess: access,
-		expiry:      time.Time{},
+		expiry:      time.Now().Add(time.Second * time.Duration(defaultLifetime)),
 	}, nil
 }
 

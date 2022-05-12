@@ -23,13 +23,19 @@ type InteractHandler struct {
 }
 
 // PrepareInteraction mock.
-func (l *InteractHandler) PrepareInteraction(clientInteract *gnap.RequestInteract) (*gnap.ResponseInteract, error) {
+func (l *InteractHandler) PrepareInteraction(
+	clientInteract *gnap.RequestInteract,
+	requestedTokens []*api.ExpiringTokenRequest,
+) (*gnap.ResponseInteract, error) {
 	return l.PrepareVal, l.PrepareErr
 }
 
 // CompleteInteraction mock.
-func (l *InteractHandler) CompleteInteraction(flowID string, consentSet *api.ConsentResult) (string, error) {
-	return l.CompleteVal, l.CompleteErr
+func (l *InteractHandler) CompleteInteraction(
+	flowID string,
+	consentSet *api.ConsentResult,
+) (string, *gnap.RequestInteract, error) {
+	return l.CompleteVal, nil, l.CompleteErr
 }
 
 // QueryInteraction mock.
