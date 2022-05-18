@@ -6,12 +6,12 @@ SPDX-License-Identifier: Apache-2.0
 
 package gnap
 
+import (
+	"net/http"
+)
+
 // Signer api for GNAP http signatures.
 type Signer interface {
-	Sign(msg []byte) ([]byte, error)
-}
-
-// Verifier api for GNAP http signatures verification.
-type Verifier interface {
-	Verify(msg, sig []byte) error
+	ProofType() string
+	Sign(request *http.Request, requestBody []byte) (*http.Request, error)
 }

@@ -7,6 +7,9 @@ SPDX-License-Identifier: Apache-2.0
 package as
 
 import (
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/json"
@@ -22,6 +25,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/hyperledger/aries-framework-go/pkg/doc/jose/jwk"
+	"github.com/square/go-jose/v3"
 	"github.com/stretchr/testify/require"
 
 	gnaprest "github.com/trustbloc/auth/pkg/restapi/gnap"
@@ -35,15 +40,15 @@ const (
 
 func TestGNAPAuthClient(t *testing.T) {
 	c, err := NewClient(nil, nil, "")
-	require.EqualError(t, err, "gnap auth client: missing signer")
+	require.EqualError(t, err, "missing signer")
 	require.Empty(t, c)
 
 	c, err = NewClient(&mockSigner{}, nil, "")
-	require.EqualError(t, err, "gnap auth client: missing http client")
+	require.EqualError(t, err, "missing http client")
 	require.Empty(t, c)
 
 	c, err = NewClient(&mockSigner{}, &http.Client{}, "")
-	require.EqualError(t, err, "gnap auth client: missing Authorization Server URL")
+	require.EqualError(t, err, "missing Authorization Server URL")
 	require.Empty(t, c)
 
 	c, err = NewClient(&mockSigner{}, &http.Client{}, "https://auth/server/url")
@@ -55,6 +60,7 @@ func TestRequestAccess(t *testing.T) {
 	tests := []struct {
 		name      string
 		signer    gnap.Signer
+		privKey   *jwk.JWK
 		tokenVal  string
 		grantReq  *gnap.AuthRequest
 		grantResp *gnap.AuthResponse
@@ -63,74 +69,83 @@ func TestRequestAccess(t *testing.T) {
 		{
 			name:     "success requesting gnap access",
 			signer:   &mockSigner{SignatureVal: []byte("signature")},
+			privKey:  privKey(t),
 			tokenVal: "test Success Value",
 			grantReq: &gnap.AuthRequest{
 				AccessToken: []*gnap.TokenRequest{},
-				Client:      &gnap.RequestClient{},
-				Interact:    &gnap.RequestInteract{},
+				Client: &gnap.RequestClient{
+					Key: clientKey(t),
+				},
+				Interact: &gnap.RequestInteract{},
 			},
 			grantResp: &gnap.AuthResponse{AccessToken: []gnap.AccessToken{{Value: "test Success Value"}}},
 		},
 		{
 			name:     "error requesting gnap access with invalid server URL",
 			signer:   &mockSigner{SignatureVal: []byte("signature")},
+			privKey:  privKey(t),
 			tokenVal: "test Success Value",
 			grantReq: &gnap.AuthRequest{
 				AccessToken: []*gnap.TokenRequest{},
 				Client:      &gnap.RequestClient{},
 				Interact:    &gnap.RequestInteract{},
 			},
-			errMsg: "requestAccess: failed to build http request: parse \"\\u007fbad url/gnap/auth\": net/url: " +
+			errMsg: "failed to build http request: parse \"\\u007fbad url/gnap/auth\": net/url: " +
 				"invalid control character in URL",
 		},
 		{
 			name:     "error requesting gnap access with empty request",
 			signer:   &mockSigner{SignatureVal: []byte("signature")},
+			privKey:  privKey(t),
 			tokenVal: "test Success Value",
 			grantReq: nil,
-			errMsg:   "requestAccess: empty request",
+			errMsg:   "empty request",
 		},
 		{
 			name:     "error requesting gnap access with invalid signer",
 			signer:   &mockSigner{SignatureErr: fmt.Errorf("signing error")},
+			privKey:  privKey(t),
 			tokenVal: "test Success Value",
 			grantReq: &gnap.AuthRequest{
 				AccessToken: []*gnap.TokenRequest{},
 				Client:      &gnap.RequestClient{},
 				Interact:    &gnap.RequestInteract{},
 			},
-			errMsg: "requestAccess: signature error: signing error",
+			errMsg: "signature error: signing error",
 		},
 		{
-			name:   "error requesting gnap access with http server returning 501 error",
-			signer: &mockSigner{SignatureVal: []byte("signature")},
+			name:    "error requesting gnap access with http server returning 501 error",
+			signer:  &mockSigner{SignatureVal: []byte("signature")},
+			privKey: privKey(t),
 			grantReq: &gnap.AuthRequest{
 				AccessToken: []*gnap.TokenRequest{},
 				Client:      &gnap.RequestClient{},
 				Interact:    &gnap.RequestInteract{},
 			},
-			errMsg: "requestAccess: Auth server replied with invalid Status [/gnap/auth]: 501 Not Implemented",
+			errMsg: "auth server replied with invalid status [/gnap/auth]: 501 Not Implemented",
 		},
 		{
-			name:   "error requesting gnap access with bad http client error",
-			signer: &mockSigner{SignatureVal: []byte("signature")},
+			name:    "error requesting gnap access with bad http client error",
+			signer:  &mockSigner{SignatureVal: []byte("signature")},
+			privKey: privKey(t),
 			grantReq: &gnap.AuthRequest{
 				AccessToken: []*gnap.TokenRequest{},
 				Client:      &gnap.RequestClient{},
 				Interact:    &gnap.RequestInteract{},
 			},
-			errMsg: "requestAccess: failed to post HTTP request to [/gnap/auth]: Post \"%s\": x509:" +
+			errMsg: "failed to post HTTP request to [/gnap/auth]: Post \"%s\": x509:" +
 				" certificate signed by unknown authority",
 		},
 		{
-			name:   "error requesting gnap access with bad response unmarshall",
-			signer: &mockSigner{SignatureVal: []byte("signature")},
+			name:    "error requesting gnap access with bad response unmarshall",
+			signer:  &mockSigner{SignatureVal: []byte("signature")},
+			privKey: privKey(t),
 			grantReq: &gnap.AuthRequest{
 				AccessToken: []*gnap.TokenRequest{},
 				Client:      &gnap.RequestClient{},
 				Interact:    &gnap.RequestInteract{},
 			},
-			errMsg: "requestAccess: read response not properly formatted [/gnap/auth, unexpected end of JSON input]",
+			errMsg: "read response not properly formatted [/gnap/auth, unexpected end of JSON input]",
 			grantResp: &gnap.AuthResponse{
 				InstanceID: "mocking empty response",
 			},
@@ -187,14 +202,17 @@ func TestContinue(t *testing.T) {
 	tests := []struct {
 		name      string
 		signer    gnap.Signer
+		privKey   *jwk.JWK
 		tokenVal  string
 		grantReq  *gnap.ContinueRequest
+		client    *gnap.RequestClient
 		grantResp *gnap.AuthResponse
 		errMsg    string
 	}{
 		{
 			name:     "success continuing gnap access",
 			signer:   &mockSigner{SignatureVal: []byte("signature")},
+			privKey:  privKey(t),
 			tokenVal: "test Success Value",
 			grantReq: &gnap.ContinueRequest{
 				InteractRef: "",
@@ -204,45 +222,51 @@ func TestContinue(t *testing.T) {
 		{
 			name:     "error continuing gnap access with invalid server URL",
 			signer:   &mockSigner{SignatureVal: []byte("signature")},
+			privKey:  privKey(t),
 			tokenVal: "test Success Value",
 			grantReq: &gnap.ContinueRequest{
 				InteractRef: "",
 			},
-			errMsg: "continue: failed to build http request: parse \"\\u007fbad url/gnap/continue\": net/url: " +
+			errMsg: "failed to build http request: parse \"\\u007fbad url/gnap/continue\": net/url: " +
 				"invalid control character in URL",
 		},
 		{
 			name:     "error continuing gnap access with empty request",
 			signer:   &mockSigner{SignatureVal: []byte("signature")},
+			privKey:  privKey(t),
 			tokenVal: "test Success Value",
 			grantReq: nil,
-			errMsg:   "continue: empty request",
+			errMsg:   "empty request",
 		},
 		{
 			name:     "error requesting gnap access with invalid signer",
 			signer:   &mockSigner{SignatureErr: fmt.Errorf("signing error")},
+			privKey:  privKey(t),
 			tokenVal: "test Success Value",
 			grantReq: &gnap.ContinueRequest{InteractRef: ""},
-			errMsg:   "continue: signature error: signing error",
+			errMsg:   "signature error: signing error",
 		},
 		{
 			name:     "error continuing gnap access with http server returning 501 error",
 			signer:   &mockSigner{SignatureVal: []byte("signature")},
+			privKey:  privKey(t),
 			grantReq: &gnap.ContinueRequest{InteractRef: ""},
-			errMsg:   "continue: Auth server replied with invalid Status [/gnap/continue]: 501 Not Implemented",
+			errMsg:   "auth server replied with invalid status [/gnap/continue]: 501 Not Implemented",
 		},
 		{
 			name:     "error continuing gnap access with bad http client error",
 			signer:   &mockSigner{SignatureVal: []byte("signature")},
+			privKey:  privKey(t),
 			grantReq: &gnap.ContinueRequest{InteractRef: ""},
-			errMsg: "continue: failed to post HTTP request to [/gnap/continue]: Post \"%s\": x509:" +
+			errMsg: "failed to post HTTP request to [/gnap/continue]: Post \"%s\": x509:" +
 				" certificate signed by unknown authority",
 		},
 		{
 			name:     "error continuing gnap access with bad response unmarshall",
 			signer:   &mockSigner{SignatureVal: []byte("signature")},
+			privKey:  privKey(t),
 			grantReq: &gnap.ContinueRequest{InteractRef: ""},
-			errMsg:   "continue: read response not properly formatted [/gnap/continue, unexpected end of JSON input]",
+			errMsg:   "read response not properly formatted [/gnap/continue, unexpected end of JSON input]",
 			grantResp: &gnap.AuthResponse{
 				InstanceID: "mocking empty response",
 			},
@@ -544,6 +568,46 @@ type mockSigner struct {
 	SignatureErr error
 }
 
-func (s *mockSigner) Sign(_ []byte) ([]byte, error) {
-	return s.SignatureVal, s.SignatureErr
+func (s *mockSigner) ProofType() string {
+	return "mock"
+}
+
+func (s *mockSigner) Sign(request *http.Request, requestBody []byte) (*http.Request, error) {
+	return request, s.SignatureErr
+}
+
+func privKey(t *testing.T) *jwk.JWK {
+	t.Helper()
+
+	priv, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	require.NoError(t, err)
+
+	return &jwk.JWK{
+		JSONWebKey: jose.JSONWebKey{
+			Key:       priv,
+			KeyID:     "key1",
+			Algorithm: "ES256",
+		},
+		Kty: "EC",
+		Crv: "P-256",
+	}
+}
+
+func clientKey(t *testing.T) *gnap.ClientKey {
+	t.Helper()
+
+	priv, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	require.NoError(t, err)
+
+	return &gnap.ClientKey{
+		JWK: jwk.JWK{
+			JSONWebKey: jose.JSONWebKey{
+				Key:       priv,
+				KeyID:     "key1",
+				Algorithm: "ES256",
+			},
+			Kty: "EC",
+			Crv: "P-256",
+		},
+	}
 }
