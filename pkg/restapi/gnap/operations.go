@@ -7,10 +7,12 @@ SPDX-License-Identifier: Apache-2.0
 package gnap
 
 import (
+	"bytes"
 	"context"
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"net/http"
 	"net/url"
 	"strings"
@@ -31,7 +33,7 @@ import (
 	"github.com/trustbloc/auth/pkg/restapi/common"
 	oidcmodel "github.com/trustbloc/auth/pkg/restapi/common/oidc"
 	"github.com/trustbloc/auth/spi/gnap"
-	"github.com/trustbloc/auth/spi/gnap/clientverifier/httpsig"
+	"github.com/trustbloc/auth/spi/gnap/proof/httpsig"
 )
 
 var logger = log.New("auth-restapi") //nolint:gochecknoglobals
@@ -155,7 +157,20 @@ func (o *Operation) GetRESTHandlers() []common.Handler {
 func (o *Operation) authRequestHandler(w http.ResponseWriter, req *http.Request) { // nolint: dupl
 	authRequest := &gnap.AuthRequest{}
 
-	if err := json.NewDecoder(req.Body).Decode(authRequest); err != nil {
+	bodyBytes, err := ioutil.ReadAll(req.Body)
+	if err != nil {
+		logger.Errorf("error reading request body: %s", err.Error())
+		w.WriteHeader(http.StatusInternalServerError)
+		o.writeResponse(w, &gnap.ErrorResponse{
+			Error: errRequestDenied,
+		})
+
+		return
+	}
+
+	req.Body = ioutil.NopCloser(bytes.NewReader(bodyBytes))
+
+	if err = json.Unmarshal(bodyBytes, authRequest); err != nil {
 		logger.Errorf("failed to parse gnap auth request: %s", err.Error())
 		w.WriteHeader(http.StatusBadRequest)
 		o.writeResponse(w, &gnap.ErrorResponse{
@@ -391,7 +406,20 @@ func (o *Operation) authContinueHandler(w http.ResponseWriter, req *http.Request
 
 	continueRequest := &gnap.ContinueRequest{}
 
-	if err := json.NewDecoder(req.Body).Decode(continueRequest); err != nil {
+	bodyBytes, err := ioutil.ReadAll(req.Body)
+	if err != nil {
+		logger.Errorf("error reading request body: %s", err.Error())
+		w.WriteHeader(http.StatusInternalServerError)
+		o.writeResponse(w, &gnap.ErrorResponse{
+			Error: errRequestDenied,
+		})
+
+		return
+	}
+
+	req.Body = ioutil.NopCloser(bytes.NewReader(bodyBytes))
+
+	if err = json.Unmarshal(bodyBytes, continueRequest); err != nil {
 		logger.Errorf("failed to parse gnap continue request: %s", err.Error())
 		w.WriteHeader(http.StatusBadRequest)
 		o.writeResponse(w, &gnap.ErrorResponse{
@@ -420,7 +448,20 @@ func (o *Operation) authContinueHandler(w http.ResponseWriter, req *http.Request
 func (o *Operation) introspectHandler(w http.ResponseWriter, req *http.Request) { // nolint: dupl
 	introspectRequest := &gnap.IntrospectRequest{}
 
-	if err := json.NewDecoder(req.Body).Decode(introspectRequest); err != nil {
+	bodyBytes, err := ioutil.ReadAll(req.Body)
+	if err != nil {
+		logger.Errorf("error reading request body: %s", err.Error())
+		w.WriteHeader(http.StatusInternalServerError)
+		o.writeResponse(w, &gnap.ErrorResponse{
+			Error: errRequestDenied,
+		})
+
+		return
+	}
+
+	req.Body = ioutil.NopCloser(bytes.NewReader(bodyBytes))
+
+	if err = json.Unmarshal(bodyBytes, introspectRequest); err != nil {
 		logger.Errorf("failed to parse gnap introspection request: %s", err.Error())
 		w.WriteHeader(http.StatusBadRequest)
 		o.writeResponse(w, &gnap.ErrorResponse{

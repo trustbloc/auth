@@ -7,7 +7,9 @@ SPDX-License-Identifier: Apache-2.0
 package rs
 
 import (
+	"crypto/ecdsa"
 	"crypto/ed25519"
+	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/tls"
 	"crypto/x509"
@@ -23,7 +25,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/hyperledger/aries-framework-go/pkg/doc/jose/jwk"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/jose/jwk/jwksupport"
+	"github.com/square/go-jose/v3"
 	"github.com/stretchr/testify/require"
 
 	gnaprest "github.com/trustbloc/auth/pkg/restapi/gnap"
@@ -58,6 +62,7 @@ func TestRequestAccess(t *testing.T) {
 		name      string
 		signer    gnap.Signer
 		tokenRef  string
+		privKey   *jwk.JWK
 		grantReq  *gnap.IntrospectRequest
 		grantResp *gnap.IntrospectResponse
 		errMsg    string
@@ -66,8 +71,12 @@ func TestRequestAccess(t *testing.T) {
 			name:     "success gnap introspecting access",
 			signer:   &mockSigner{SignatureVal: []byte("signature")},
 			tokenRef: "test Success Value",
+			privKey:  privKey(t),
 			grantReq: &gnap.IntrospectRequest{
 				AccessToken: "",
+				ResourceServer: &gnap.RequestClient{
+					Key: clientKey(t),
+				},
 			},
 			grantResp: &gnap.IntrospectResponse{
 				Active: true,
@@ -85,64 +94,70 @@ func TestRequestAccess(t *testing.T) {
 			name:     "error gnap introspecting access with invalid server URL",
 			signer:   &mockSigner{SignatureVal: []byte("signature")},
 			tokenRef: "test Success Value",
+			privKey:  privKey(t),
 			grantReq: &gnap.IntrospectRequest{
 				AccessToken: "",
 			},
-			errMsg: "introspect: failed to build http request: parse \"\\u007fbad url/gnap/introspect\": net/url: " +
+			errMsg: "failed to build http request: parse \"\\u007fbad url/gnap/introspect\": net/url: " +
 				"invalid control character in URL",
 		},
 		{
 			name:     "error gnap introspecting with empty request",
 			signer:   &mockSigner{SignatureVal: []byte("signature")},
 			tokenRef: "test Success Value",
+			privKey:  privKey(t),
 			grantReq: nil,
-			errMsg:   "introspect: empty request",
+			errMsg:   "empty request",
 		},
 		{
 			name:     "error gnap introspecting with invalid signer",
 			signer:   &mockSigner{SignatureErr: fmt.Errorf("signing error")},
 			tokenRef: "test Success Value",
+			privKey:  privKey(t),
 			grantReq: &gnap.IntrospectRequest{
 				AccessToken:    "",
 				Proof:          "",
 				Access:         nil,
 				ResourceServer: nil,
 			},
-			errMsg: "introspect: signature error: signing error",
+			errMsg: "signature error: signing error",
 		},
 		{
-			name:   "error gnap introspecting with http server returning 501 error",
-			signer: &mockSigner{SignatureVal: []byte("signature")},
+			name:    "error gnap introspecting with http server returning 501 error",
+			signer:  &mockSigner{SignatureVal: []byte("signature")},
+			privKey: privKey(t),
 			grantReq: &gnap.IntrospectRequest{
 				AccessToken:    "",
 				Proof:          "",
 				Access:         nil,
 				ResourceServer: nil,
 			},
-			errMsg: "introspect: Resource server replied with invalid Status [/gnap/introspect]: 501 Not Implemented",
+			errMsg: "auth server replied with invalid status [/gnap/introspect]: 501 Not Implemented",
 		},
 		{
-			name:   "error gnap introspecting access with bad http client error",
-			signer: &mockSigner{SignatureVal: []byte("signature")},
+			name:    "error gnap introspecting access with bad http client error",
+			signer:  &mockSigner{SignatureVal: []byte("signature")},
+			privKey: privKey(t),
 			grantReq: &gnap.IntrospectRequest{
 				AccessToken:    "",
 				Proof:          "",
 				Access:         nil,
 				ResourceServer: nil,
 			},
-			errMsg: "introspect: failed to post HTTP request to [/gnap/introspect]: Post \"%s\": x509:" +
+			errMsg: "failed to post HTTP request to [/gnap/introspect]: Post \"%s\": x509:" +
 				" certificate signed by unknown authority",
 		},
 		{
-			name:   "error gnap introspecting with bad response unmarshall",
-			signer: &mockSigner{SignatureVal: []byte("signature")},
+			name:    "error gnap introspecting with bad response unmarshall",
+			signer:  &mockSigner{SignatureVal: []byte("signature")},
+			privKey: privKey(t),
 			grantReq: &gnap.IntrospectRequest{
 				AccessToken:    "",
 				Proof:          "",
 				Access:         nil,
 				ResourceServer: nil,
 			},
-			errMsg: "introspect: read response not properly formatted [/gnap/introspect, unexpected end of JSON input]",
+			errMsg: "read response not properly formatted [/gnap/introspect, unexpected end of JSON input]",
 			grantResp: &gnap.IntrospectResponse{
 				Active: false,
 				Access: nil,
@@ -399,8 +414,12 @@ type mockSigner struct {
 	SignatureErr error
 }
 
-func (s *mockSigner) Sign(_ []byte) ([]byte, error) {
-	return s.SignatureVal, s.SignatureErr
+func (s *mockSigner) ProofType() string {
+	return "mock"
+}
+
+func (s *mockSigner) Sign(request *http.Request, requestBody []byte) (*http.Request, error) {
+	return request, s.SignatureErr
 }
 
 func clientKey(t *testing.T) *gnap.ClientKey {
@@ -418,4 +437,21 @@ func clientKey(t *testing.T) *gnap.ClientKey {
 	}
 
 	return &ck
+}
+
+func privKey(t *testing.T) *jwk.JWK {
+	t.Helper()
+
+	priv, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	require.NoError(t, err)
+
+	return &jwk.JWK{
+		JSONWebKey: jose.JSONWebKey{
+			Key:       priv,
+			KeyID:     "key1",
+			Algorithm: "ES256",
+		},
+		Kty: "EC",
+		Crv: "P-256",
+	}
 }

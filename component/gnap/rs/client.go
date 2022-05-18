@@ -10,7 +10,6 @@ package rs
 
 import (
 	"bytes"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
@@ -57,21 +56,18 @@ func NewClient(signer gnap.Signer, httpClient *http.Client, gnapResourceServerUR
 }
 
 // Introspect verifies a GNAP auth grant request.
-func (c *Client) Introspect(req *gnap.IntrospectRequest) (*gnap.IntrospectResponse, error) {
+func (c *Client) Introspect(req *gnap.IntrospectRequest) (*gnap.IntrospectResponse, error) { // nolint:gocyclo
 	if req == nil {
-		return nil, fmt.Errorf("introspect: empty request")
+		return nil, fmt.Errorf("empty request")
+	}
+
+	if req.ResourceServer != nil && !req.ResourceServer.IsReference && req.ResourceServer.Key != nil {
+		req.ResourceServer.Key.Proof = c.signer.ProofType()
 	}
 
 	mReq, err := json.Marshal(req)
 	if err != nil {
-		return nil, fmt.Errorf("introspect: signature error: %w", err)
-	}
-
-	var sig []byte
-
-	sig, err = c.signer.Sign(mReq)
-	if err != nil {
-		return nil, fmt.Errorf("introspect: signature error: %w", err)
+		return nil, fmt.Errorf("marshal error: %w", err)
 	}
 
 	requestReader := bytes.NewReader(mReq)
@@ -79,16 +75,19 @@ func (c *Client) Introspect(req *gnap.IntrospectRequest) (*gnap.IntrospectRespon
 	//nolint:noctx // TODO add context if needed.
 	httpReq, err := http.NewRequest(http.MethodPost, c.gnapResourceServerURL+gnaprest.AuthIntrospectPath, requestReader)
 	if err != nil {
-		return nil, fmt.Errorf("introspect: failed to build http request: %w", err)
+		return nil, fmt.Errorf("failed to build http request: %w", err)
 	}
 
 	httpReq.Header.Add("Content-Type", contentType)
-	// httpReq.Header.Add("Signature-Input", "TODO") // TODO update signature input
-	httpReq.Header.Add("Signature", base64.URLEncoding.EncodeToString(sig))
+
+	httpReq, err = c.signer.Sign(httpReq, mReq)
+	if err != nil {
+		return nil, fmt.Errorf("signature error: %w", err)
+	}
 
 	r, err := c.httpClient.Do(httpReq)
 	if err != nil {
-		return nil, fmt.Errorf("introspect: failed to post HTTP request to [%s]: %w", gnaprest.AuthIntrospectPath,
+		return nil, fmt.Errorf("failed to post HTTP request to [%s]: %w", gnaprest.AuthIntrospectPath,
 			err)
 	}
 
@@ -100,20 +99,20 @@ func (c *Client) Introspect(req *gnap.IntrospectRequest) (*gnap.IntrospectRespon
 	}()
 
 	if r.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("introspect: Resource server replied with invalid Status [%s]: %v",
+		return nil, fmt.Errorf("auth server replied with invalid status [%s]: %v",
 			gnaprest.AuthIntrospectPath, r.Status)
 	}
 
 	respBody, err := ioutil.ReadAll(r.Body)
 	if err != nil {
-		return nil, fmt.Errorf("introspect: read response failed [%s, %w]", gnaprest.AuthIntrospectPath, err)
+		return nil, fmt.Errorf("read response failed [%s, %w]", gnaprest.AuthIntrospectPath, err)
 	}
 
 	gnapResp := &gnap.IntrospectResponse{}
 
 	err = json.Unmarshal(respBody, gnapResp)
 	if err != nil {
-		return nil, fmt.Errorf("introspect: read response not properly formatted [%s, %w]",
+		return nil, fmt.Errorf("read response not properly formatted [%s, %w]",
 			gnaprest.AuthIntrospectPath, err)
 	}
 

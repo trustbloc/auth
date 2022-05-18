@@ -9,7 +9,8 @@ package gnap
 import (
 	"bytes"
 	"context"
-	"crypto/ed25519"
+	"crypto/ecdsa"
+	"crypto/elliptic"
 	"crypto/rand"
 	"encoding/json"
 	"errors"
@@ -21,8 +22,9 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/hyperledger/aries-framework-go/component/storageutil/mem"
-	"github.com/hyperledger/aries-framework-go/pkg/doc/jose/jwk/jwksupport"
+	"github.com/hyperledger/aries-framework-go/pkg/doc/jose/jwk"
 	mockstore "github.com/hyperledger/aries-framework-go/pkg/mock/storage"
+	"github.com/square/go-jose/v3"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/oauth2"
 
@@ -34,6 +36,7 @@ import (
 	"github.com/trustbloc/auth/pkg/internal/common/mockstorage"
 	oidcmodel "github.com/trustbloc/auth/pkg/restapi/common/oidc"
 	"github.com/trustbloc/auth/spi/gnap"
+	"github.com/trustbloc/auth/spi/gnap/proof/httpsig"
 )
 
 func TestNew(t *testing.T) {
@@ -92,6 +95,20 @@ func TestOperation_AuthProvidersHandler(t *testing.T) {
 }
 
 func TestOperation_authRequestHandler(t *testing.T) {
+	t.Run("fail to read body", func(t *testing.T) {
+		o := &Operation{}
+
+		rw := httptest.NewRecorder()
+
+		expectErr := errors.New("expected error")
+
+		req := httptest.NewRequest(http.MethodPost, AuthRequestPath, &errorReader{err: expectErr})
+
+		o.authRequestHandler(rw, req)
+
+		require.Equal(t, http.StatusInternalServerError, rw.Code)
+	})
+
 	t.Run("fail to parse empty request body", func(t *testing.T) {
 		o := &Operation{}
 
@@ -120,10 +137,12 @@ func TestOperation_authRequestHandler(t *testing.T) {
 		o, err := New(config(t))
 		require.NoError(t, err)
 
+		priv, client := clientKey(t)
+
 		authReq := &gnap.AuthRequest{
 			Client: &gnap.RequestClient{
 				IsReference: false,
-				Key:         clientKey(t),
+				Key:         client,
 			},
 		}
 
@@ -133,6 +152,9 @@ func TestOperation_authRequestHandler(t *testing.T) {
 		rw := httptest.NewRecorder()
 
 		req := httptest.NewRequest(http.MethodPost, AuthRequestPath, bytes.NewReader(authReqBytes))
+
+		req, err = httpsig.Sign(req, authReqBytes, priv, "sha-256")
+		require.NoError(t, err)
 
 		o.authRequestHandler(rw, req)
 
@@ -188,6 +210,25 @@ func TestOperation_authContinueHandler(t *testing.T) {
 		require.Equal(t, errRequestDenied, resp.Error)
 	})
 
+	t.Run("fail to read request body", func(t *testing.T) {
+		o := &Operation{}
+
+		rw := httptest.NewRecorder()
+
+		expectErr := errors.New("expected error")
+
+		req := httptest.NewRequest(http.MethodPost, AuthContinuePath, &errorReader{err: expectErr})
+		req.Header.Add("Authorization", "GNAP mock-token")
+
+		o.authContinueHandler(rw, req)
+
+		require.Equal(t, http.StatusInternalServerError, rw.Code)
+
+		resp := &gnap.ErrorResponse{}
+		require.NoError(t, json.Unmarshal(rw.Body.Bytes(), resp))
+		require.Equal(t, errRequestDenied, resp.Error)
+	})
+
 	t.Run("fail to parse empty request body", func(t *testing.T) {
 		o := &Operation{}
 
@@ -225,6 +266,20 @@ func TestOperation_authContinueHandler(t *testing.T) {
 }
 
 func TestOperation_introspectHandler(t *testing.T) {
+	t.Run("fail to read request body", func(t *testing.T) {
+		o := &Operation{}
+
+		rw := httptest.NewRecorder()
+
+		expectErr := errors.New("expected error")
+
+		req := httptest.NewRequest(http.MethodPost, AuthRequestPath, &errorReader{err: expectErr})
+
+		o.introspectHandler(rw, req)
+
+		require.Equal(t, http.StatusInternalServerError, rw.Code)
+	})
+
 	t.Run("fail to parse empty request body", func(t *testing.T) {
 		o := &Operation{}
 
@@ -253,11 +308,13 @@ func TestOperation_introspectHandler(t *testing.T) {
 		o, err := New(config(t))
 		require.NoError(t, err)
 
+		priv, client := clientKey(t)
+
 		intReq := &gnap.IntrospectRequest{
 			AccessToken: "invalid token",
 			Proof:       "httpsig",
 			ResourceServer: &gnap.RequestClient{
-				Key: clientKey(t),
+				Key: client,
 			},
 		}
 
@@ -267,6 +324,9 @@ func TestOperation_introspectHandler(t *testing.T) {
 		rw := httptest.NewRecorder()
 
 		req := httptest.NewRequest(http.MethodPost, AuthIntrospectPath, bytes.NewReader(intReqBytes))
+
+		req, err = httpsig.Sign(req, intReqBytes, priv, "sha-256")
+		require.NoError(t, err)
 
 		o.introspectHandler(rw, req)
 
@@ -795,11 +855,13 @@ func Test_Full_Flow(t *testing.T) {
 		state       string
 	)
 
+	userPriv, userClient := clientKey(t)
+
 	{
 		authReq := &gnap.AuthRequest{
 			Client: &gnap.RequestClient{
 				IsReference: false,
-				Key:         clientKey(t),
+				Key:         userClient,
 			},
 			AccessToken: []*gnap.TokenRequest{
 				{
@@ -826,6 +888,9 @@ func Test_Full_Flow(t *testing.T) {
 		rw := httptest.NewRecorder()
 
 		req := httptest.NewRequest(http.MethodPost, AuthRequestPath, bytes.NewReader(authReqBytes))
+
+		req, err = httpsig.Sign(req, authReqBytes, userPriv, "sha-256")
+		require.NoError(t, err)
 
 		o.authRequestHandler(rw, req)
 
@@ -909,6 +974,9 @@ func Test_Full_Flow(t *testing.T) {
 		req := httptest.NewRequest(http.MethodPost, AuthRequestPath, bytes.NewReader(contReqBytes))
 		req.Header.Add("Authorization", "GNAP "+authResp.Continue.AccessToken.Value)
 
+		req, err = httpsig.Sign(req, contReqBytes, userPriv, "sha-256")
+		require.NoError(t, err)
+
 		o.authContinueHandler(rw, req)
 
 		require.Equal(t, http.StatusOK, rw.Code)
@@ -918,12 +986,14 @@ func Test_Full_Flow(t *testing.T) {
 
 	require.Len(t, contResp.AccessToken, 1)
 
+	rsPriv, rsClient := clientKey(t)
+
 	{
 		intReq := &gnap.IntrospectRequest{
 			AccessToken: contResp.AccessToken[0].Value,
 			Proof:       "httpsig",
 			ResourceServer: &gnap.RequestClient{
-				Key: clientKey(t),
+				Key: rsClient,
 			},
 		}
 
@@ -933,6 +1003,9 @@ func Test_Full_Flow(t *testing.T) {
 		rw := httptest.NewRecorder()
 
 		req := httptest.NewRequest(http.MethodPost, AuthIntrospectPath, bytes.NewReader(intReqBytes))
+
+		req, err = httpsig.Sign(req, intReqBytes, rsPriv, "sha-256")
+		require.NoError(t, err)
 
 		o.introspectHandler(rw, req)
 
@@ -1077,21 +1150,42 @@ func config(t *testing.T) *Config {
 	}
 }
 
-func clientKey(t *testing.T) *gnap.ClientKey {
+type errorReader struct {
+	err error
+}
+
+func (e *errorReader) Read([]byte) (int, error) {
+	return 0, e.err
+}
+
+func clientKey(t *testing.T) (*jwk.JWK, *gnap.ClientKey) {
 	t.Helper()
 
-	pub, _, err := ed25519.GenerateKey(rand.Reader)
+	priv, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	require.NoError(t, err)
 
-	k, err := jwksupport.JWKFromKey(pub)
-	require.NoError(t, err)
+	privJWK := jwk.JWK{
+		JSONWebKey: jose.JSONWebKey{
+			Key:       priv,
+			KeyID:     "key1",
+			Algorithm: "ES256",
+		},
+		Kty: "EC",
+		Crv: "P-256",
+	}
+
+	pubJWK := jwk.JWK{
+		JSONWebKey: privJWK.Public(),
+		Kty:        "EC",
+		Crv:        "P-256",
+	}
 
 	ck := gnap.ClientKey{
 		Proof: "httpsig",
-		JWK:   *k,
+		JWK:   pubJWK,
 	}
 
-	return &ck
+	return &privJWK, &ck
 }
 
 const (

@@ -7,7 +7,8 @@ SPDX-License-Identifier: Apache-2.0
 package gnap
 
 import (
-	"crypto/ed25519"
+	"crypto/ecdsa"
+	"crypto/elliptic"
 	"crypto/rand"
 	"fmt"
 	"net/http"
@@ -17,10 +18,11 @@ import (
 
 	"github.com/cucumber/godog"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/jose/jwk"
-	"github.com/hyperledger/aries-framework-go/pkg/doc/jose/jwk/jwksupport"
+	"github.com/square/go-jose/v3"
 	"github.com/trustbloc/auth/component/gnap/as"
 	"github.com/trustbloc/auth/component/gnap/rs"
 	"github.com/trustbloc/auth/spi/gnap"
+	"github.com/trustbloc/auth/spi/gnap/proof/httpsig"
 
 	bddctx "github.com/trustbloc/auth/test/bdd/pkg/context"
 )
@@ -40,7 +42,9 @@ type Steps struct {
 	ctx          *bddctx.BDDContext
 	gnapClient   *as.Client
 	gnapRSClient *rs.Client
-	pubKeyJWK    jwk.JWK
+
+	clientPubKey *jwk.JWK
+	rsPubKey     *jwk.JWK
 	authResp     *gnap.AuthResponse
 	interactRef  string
 	browser      *http.Client
@@ -66,44 +70,77 @@ func (s *Steps) createGNAPClient() error {
 		Transport: &http.Transport{TLSClientConfig: s.ctx.TLSConfig()},
 	}
 
-	// create key-pair
-	pub, private, err := ed25519.GenerateKey(rand.Reader)
-	if err != nil {
-		return fmt.Errorf("failed to create ed25519 key-pair: %w", err)
+	{
+		priv, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+		if err != nil {
+			return err
+		}
+
+		privJWK := &jwk.JWK{
+			JSONWebKey: jose.JSONWebKey{
+				Key:       priv,
+				KeyID:     "key1",
+				Algorithm: "ES256",
+			},
+			Kty: "EC",
+			Crv: "P-256",
+		}
+
+		pubJWK := &jwk.JWK{
+			JSONWebKey: privJWK.Public(),
+			Kty:        "EC",
+			Crv:        "P-256",
+		}
+
+		// create gnap as client
+		gnapClient, err := as.NewClient(
+			&httpsig.Signer{SigningKey: privJWK},
+			httpClient,
+			authServerURL,
+		)
+		if err != nil {
+			return fmt.Errorf("failed to create gnap as go-client: %w", err)
+		}
+
+		s.gnapClient = gnapClient
+		s.clientPubKey = pubJWK
 	}
 
-	pubKeyJWK, err := jwksupport.JWKFromKey(pub)
-	if err != nil {
-		return fmt.Errorf("failed to create jwk from key: %w", err)
-	}
+	{
+		priv, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+		if err != nil {
+			return err
+		}
 
-	// create gnap as client
-	gnapClient, err := as.NewClient(
-		&Signer{
-			PrivateKey: private,
-		},
-		httpClient,
-		authServerURL,
-	)
-	if err != nil {
-		return fmt.Errorf("failed to create gnap as go-client: %w", err)
-	}
+		privJWK := &jwk.JWK{
+			JSONWebKey: jose.JSONWebKey{
+				Key:       priv,
+				KeyID:     "key1",
+				Algorithm: "ES256",
+			},
+			Kty: "EC",
+			Crv: "P-256",
+		}
 
-	// create gnap rs client
-	gnapRSClient, err := rs.NewClient(
-		&Signer{
-			PrivateKey: private,
-		},
-		httpClient,
-		authServerURL,
-	)
-	if err != nil {
-		return fmt.Errorf("failed to create gnap rs go-client: %w", err)
-	}
+		pubJWK := &jwk.JWK{
+			JSONWebKey: privJWK.Public(),
+			Kty:        "EC",
+			Crv:        "P-256",
+		}
 
-	s.gnapClient = gnapClient
-	s.gnapRSClient = gnapRSClient
-	s.pubKeyJWK = *pubKeyJWK
+		// create gnap rs client
+		gnapRSClient, err := rs.NewClient(
+			&httpsig.Signer{SigningKey: privJWK},
+			httpClient,
+			authServerURL,
+		)
+		if err != nil {
+			return fmt.Errorf("failed to create gnap rs go-client: %w", err)
+		}
+
+		s.gnapRSClient = gnapRSClient
+		s.rsPubKey = pubJWK
+	}
 
 	return nil
 }
@@ -115,7 +152,7 @@ func (s *Steps) txnRequest() error {
 		Client: &gnap.RequestClient{
 			Key: &gnap.ClientKey{
 				Proof: "httpsig",
-				JWK:   s.pubKeyJWK,
+				JWK:   *s.clientPubKey,
 			},
 		},
 		AccessToken: []*gnap.TokenRequest{
@@ -298,14 +335,13 @@ func (s *Steps) introspection() error {
 	req := &gnap.IntrospectRequest{
 		ResourceServer: &gnap.RequestClient{
 			Key: &gnap.ClientKey{
-				JWK: s.pubKeyJWK,
+				JWK:   *s.rsPubKey,
+				Proof: "httpsig",
 			},
 		},
 		Proof:       "httpsig",
 		AccessToken: tok.Value,
 	}
-
-	fmt.Printf("token: %#v\n", tok)
 
 	resp, err := s.gnapRSClient.Introspect(req)
 	if err != nil {
