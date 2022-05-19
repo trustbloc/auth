@@ -14,9 +14,10 @@ require (
 	github.com/hyperledger/aries-framework-go v0.1.8
 	github.com/ory/hydra-client-go v1.10.6
 	github.com/pkg/errors v0.9.1
+	github.com/square/go-jose/v3 v3.0.0-20200630053402-0a67ce9b0693
 	github.com/tidwall/gjson v1.6.7
 	github.com/trustbloc/auth v0.0.0
-	github.com/trustbloc/auth/spi/gnap v0.0.0-00010101000000-000000000000
+	github.com/trustbloc/auth/spi/gnap v0.0.0-20220518152301-fe6ea3ada1af
 	github.com/trustbloc/edge-core v0.1.8
 	golang.org/x/oauth2 v0.0.0-20211104180415-d3ed0bb246c8
 )
@@ -74,7 +75,6 @@ require (
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/sirupsen/logrus v1.6.0 // indirect
 	github.com/spf13/pflag v1.0.5 // indirect
-	github.com/square/go-jose/v3 v3.0.0-20200630053402-0a67ce9b0693 // indirect
 	github.com/stretchr/testify v1.7.1 // indirect
 	github.com/teserakt-io/golang-ed25519 v0.0.0-20210104091850-3888c087a4c8 // indirect
 	github.com/tidwall/match v1.0.3 // indirect
@@ -96,5 +96,3 @@ require (
 )
 
 replace github.com/trustbloc/auth => ../..
-
-replace github.com/trustbloc/auth/spi/gnap => ../../spi/gnap
