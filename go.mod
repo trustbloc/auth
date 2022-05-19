@@ -15,8 +15,9 @@ require (
 	github.com/hyperledger/aries-framework-go/component/storageutil v0.0.0-20220330140627-07042d78580c
 	github.com/hyperledger/aries-framework-go/spi v0.0.0-20220330140627-07042d78580c
 	github.com/ory/hydra-client-go v1.10.6
+	github.com/square/go-jose/v3 v3.0.0-20200630053402-0a67ce9b0693
 	github.com/stretchr/testify v1.7.1
-	github.com/trustbloc/auth/spi/gnap v0.0.0-00010101000000-000000000000
+	github.com/trustbloc/auth/spi/gnap v0.0.0-20220518152301-fe6ea3ada1af
 	github.com/trustbloc/edge-core v0.1.8
 	golang.org/x/crypto v0.0.0-20210817164053-32db794688a5
 	golang.org/x/oauth2 v0.0.0-20211104180415-d3ed0bb246c8
@@ -50,7 +51,6 @@ require (
 	github.com/oklog/ulid v1.3.1 // indirect
 	github.com/opentracing/opentracing-go v1.2.0 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
-	github.com/square/go-jose/v3 v3.0.0-20200630053402-0a67ce9b0693 // indirect
 	github.com/teserakt-io/golang-ed25519 v0.0.0-20210104091850-3888c087a4c8 // indirect
 	go.mongodb.org/mongo-driver v1.5.1 // indirect
 	golang.org/x/net v0.0.0-20210813160813-60bc85c4be6d // indirect
@@ -63,5 +63,3 @@ require (
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 	gopkg.in/yaml.v3 v3.0.0-20210107192922-496545a6307b // indirect
 )
-
-replace github.com/trustbloc/auth/spi/gnap => ./spi/gnap
