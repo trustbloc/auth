@@ -72,7 +72,7 @@ func TestAuthHandler_HandleAccessRequest(t *testing.T) {
 		req := &gnap.AuthRequest{}
 		v := &mockverifier.MockVerifier{}
 
-		_, err = h.HandleAccessRequest(req, v)
+		_, err = h.HandleAccessRequest(req, v, "")
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "missing client")
 	})
@@ -89,7 +89,7 @@ func TestAuthHandler_HandleAccessRequest(t *testing.T) {
 		}
 		v := &mockverifier.MockVerifier{}
 
-		_, err = h.HandleAccessRequest(req, v)
+		_, err = h.HandleAccessRequest(req, v, "")
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "getting client session by client ID")
 	})
@@ -106,7 +106,7 @@ func TestAuthHandler_HandleAccessRequest(t *testing.T) {
 		}
 		v := &mockverifier.MockVerifier{}
 
-		_, err = h.HandleAccessRequest(req, v)
+		_, err = h.HandleAccessRequest(req, v, "")
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "getting client session by key")
 	})
@@ -127,7 +127,7 @@ func TestAuthHandler_HandleAccessRequest(t *testing.T) {
 			ErrVerify: expectedErr,
 		}
 
-		_, err = h.HandleAccessRequest(req, v)
+		_, err = h.HandleAccessRequest(req, v, "")
 		require.Error(t, err)
 		require.ErrorIs(t, err, expectedErr)
 		require.Contains(t, err.Error(), "verification failure")
@@ -162,7 +162,7 @@ func TestAuthHandler_HandleAccessRequest(t *testing.T) {
 		}
 		v := &mockverifier.MockVerifier{}
 
-		resp, err := h.HandleAccessRequest(req, v)
+		resp, err := h.HandleAccessRequest(req, v, "")
 		require.Error(t, err)
 		require.ErrorIs(t, err, expectErr)
 
@@ -187,7 +187,7 @@ func TestAuthHandler_HandleAccessRequest(t *testing.T) {
 		}
 		v := &mockverifier.MockVerifier{}
 
-		resp, err := h.HandleAccessRequest(req, v)
+		resp, err := h.HandleAccessRequest(req, v, "")
 		require.ErrorIs(t, err, expectErr)
 		require.Nil(t, resp)
 	})
@@ -211,7 +211,7 @@ func TestAuthHandler_HandleAccessRequest(t *testing.T) {
 		}
 		v := &mockverifier.MockVerifier{}
 
-		resp, err := h.HandleAccessRequest(req, v)
+		resp, err := h.HandleAccessRequest(req, v, "")
 		require.NoError(t, err)
 
 		require.Equal(t, "foo.com", resp.Interact.Redirect)

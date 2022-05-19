@@ -36,14 +36,16 @@ type InteractionHandler interface {
 	// PrepareLoginConsentFlow takes a set of requested access tokens and subject
 	// data, prepares a login & consent flow, and returns parameters for the user
 	// client to initiate the login & consent flow.
-	PrepareInteraction(clientInteract *gnap.RequestInteract, requestedTokens []*ExpiringTokenRequest,
+	PrepareInteraction(clientInteract *gnap.RequestInteract, requestURI string, requestedTokens []*ExpiringTokenRequest,
 	) (*gnap.ResponseInteract, error)
 
 	// CompleteLoginConsentFlow takes a set of access requests that the user
 	// consented to, and the ID of the flow where this was performed, creates an
 	// interact_ref, saves the consent set under the interact_ref, and returns the
 	// interact_ref.
-	CompleteInteraction(flowID string, consentSet *ConsentResult) (string, *gnap.RequestInteract, error)
+	//
+	// Returns: interact_ref, response hash, client's RequestInteract, error
+	CompleteInteraction(flowID string, consentSet *ConsentResult) (string, string, *gnap.RequestInteract, error)
 	// QueryInteraction returns the consent metadata and subject info saved under the interaction.
 	QueryInteraction(interactRef string) (*ConsentResult, error)
 	// DeleteInteraction deletes the interaction under interactRef if it exists.

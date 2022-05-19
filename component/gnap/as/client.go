@@ -10,12 +10,16 @@ package as
 
 import (
 	"bytes"
+	"crypto"
+	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/ioutil"
 	"net/http"
 
 	"github.com/trustbloc/edge-core/pkg/log"
+	_ "golang.org/x/crypto/sha3" // nolint:gci // init sha3 hash.
 
 	gnaprest "github.com/trustbloc/auth/pkg/restapi/gnap"
 	"github.com/trustbloc/auth/spi/gnap"
@@ -118,6 +122,40 @@ func (c *Client) RequestAccess(req *gnap.AuthRequest) (*gnap.AuthResponse, error
 	}
 
 	return gnapResp, nil
+}
+
+// ErrInvalidInteractHash signifies that the provided interaction hash is invalid.
+var ErrInvalidInteractHash = errors.New("invalid interact hash")
+
+// ValidateInteractHash returns whether the given interaction hash is valid for the given hash parameters.
+func ValidateInteractHash(hash, myNonce, theirNonce, interactRef, reqURI string) error {
+	expectedHash, err := responseHash(myNonce, theirNonce, interactRef, reqURI)
+	if err != nil {
+		return err
+	}
+
+	if hash != expectedHash {
+		return ErrInvalidInteractHash
+	}
+
+	return nil
+}
+
+func responseHash(clientNonce, serverNonce, interactRef, requestURI string) (string, error) {
+	hashBase := clientNonce + "\n" + serverNonce + "\n" + interactRef + "\n" + requestURI
+
+	hasher := crypto.SHA3_512.New()
+
+	_, err := hasher.Write([]byte(hashBase))
+	if err != nil {
+		return "", fmt.Errorf("failed to hash: %w", err)
+	}
+
+	hash := hasher.Sum(nil)
+
+	hashB64 := base64.RawURLEncoding.EncodeToString(hash)
+
+	return hashB64, nil
 }
 
 // Continue gnap auth request containing interact_ref.

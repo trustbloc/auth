@@ -25,6 +25,7 @@ type InteractHandler struct {
 // PrepareInteraction mock.
 func (l *InteractHandler) PrepareInteraction(
 	clientInteract *gnap.RequestInteract,
+	requestURI string,
 	requestedTokens []*api.ExpiringTokenRequest,
 ) (*gnap.ResponseInteract, error) {
 	return l.PrepareVal, l.PrepareErr
@@ -34,8 +35,8 @@ func (l *InteractHandler) PrepareInteraction(
 func (l *InteractHandler) CompleteInteraction(
 	flowID string,
 	consentSet *api.ConsentResult,
-) (string, *gnap.RequestInteract, error) {
-	return l.CompleteVal, nil, l.CompleteErr
+) (string, string, *gnap.RequestInteract, error) {
+	return l.CompleteVal, "", nil, l.CompleteErr
 }
 
 // QueryInteraction mock.

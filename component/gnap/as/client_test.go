@@ -198,6 +198,26 @@ func TestRequestAccess(t *testing.T) {
 	}
 }
 
+func TestValidateHash(t *testing.T) {
+	clientNonce := "foo"
+	serverNonce := "bar"
+	interactRef := "abc-xyz-123"
+	requestURI := "http://example.com/foo"
+
+	t.Run("success", func(t *testing.T) {
+		hash, err := responseHash(clientNonce, serverNonce, interactRef, requestURI)
+		require.NoError(t, err)
+
+		err = ValidateInteractHash(hash, clientNonce, serverNonce, interactRef, requestURI)
+		require.NoError(t, err)
+	})
+
+	t.Run("invalid hash", func(t *testing.T) {
+		err := ValidateInteractHash("blah", clientNonce, serverNonce, interactRef, requestURI)
+		require.ErrorIs(t, err, ErrInvalidInteractHash)
+	})
+}
+
 func TestContinue(t *testing.T) {
 	tests := []struct {
 		name      string

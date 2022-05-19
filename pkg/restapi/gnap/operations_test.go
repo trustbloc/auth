@@ -471,7 +471,7 @@ func TestOIDCCallbackHandler(t *testing.T) {
 				Method: "redirect",
 				URI:    "example.foo/client-redirect",
 			},
-		}, []*api.ExpiringTokenRequest{
+		}, "", []*api.ExpiringTokenRequest{
 			{
 				TokenRequest: gnap.TokenRequest{
 					Access: []gnap.TokenAccess{
@@ -806,7 +806,7 @@ func TestOIDCCallbackHandler(t *testing.T) {
 				Method: "redirect",
 				URI:    "^$#^*#%$^&#$%#T^ UTTER GIBBERISH",
 			},
-		}, []*api.ExpiringTokenRequest{
+		}, "", []*api.ExpiringTokenRequest{
 			{
 				TokenRequest: gnap.TokenRequest{
 					Access: []gnap.TokenAccess{
