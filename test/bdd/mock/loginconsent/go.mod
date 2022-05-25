@@ -7,7 +7,7 @@ module mock_server
 go 1.17
 
 require (
-	github.com/google/uuid v1.1.2
+	github.com/google/uuid v1.3.0
 	github.com/gorilla/mux v1.8.0
 	github.com/hyperledger/aries-framework-go/component/storageutil v0.0.0-20210807121559-b41545a4f1e8
 	github.com/hyperledger/aries-framework-go/spi v0.0.0-20210807121559-b41545a4f1e8
