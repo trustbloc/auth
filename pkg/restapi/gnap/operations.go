@@ -65,7 +65,8 @@ const (
 	transientStoreName = "gnap_transient"
 
 	// client redirect query params.
-	interactRefQueryParam = "interact_ref"
+	interactRefQueryParam  = "interact_ref"
+	responseHashQueryParam = "hash"
 )
 
 // TODO: figure out what logic should go in the access policy vs operation handlers.
@@ -154,7 +155,7 @@ func (o *Operation) GetRESTHandlers() []common.Handler {
 	}
 }
 
-func (o *Operation) authRequestHandler(w http.ResponseWriter, req *http.Request) { // nolint: dupl
+func (o *Operation) authRequestHandler(w http.ResponseWriter, req *http.Request) {
 	authRequest := &gnap.AuthRequest{}
 
 	bodyBytes, err := ioutil.ReadAll(req.Body)
@@ -182,7 +183,7 @@ func (o *Operation) authRequestHandler(w http.ResponseWriter, req *http.Request)
 
 	v := httpsig.NewVerifier(req)
 
-	resp, err := o.authHandler.HandleAccessRequest(authRequest, v)
+	resp, err := o.authHandler.HandleAccessRequest(authRequest, v, "")
 	if err != nil {
 		logger.Errorf("access policy failed to handle access request: %s", err.Error())
 		w.WriteHeader(http.StatusUnauthorized)
@@ -357,11 +358,14 @@ func (o *Operation) oidcCallbackHandler(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	interactRef, clientInteract, err := o.interactionHandler.CompleteInteraction(data.TxnID, &api.ConsentResult{
-		SubjectData: map[string]string{
-			"sub": claims.Sub,
+	interactRef, responseHash, clientInteract, err := o.interactionHandler.CompleteInteraction(
+		data.TxnID,
+		&api.ConsentResult{
+			SubjectData: map[string]string{
+				"sub": claims.Sub,
+			},
 		},
-	})
+	)
 	if err != nil {
 		o.writeErrorResponse(w, http.StatusInternalServerError,
 			fmt.Sprintf("failed to complete GNAP interaction : %s", err))
@@ -381,6 +385,7 @@ func (o *Operation) oidcCallbackHandler(w http.ResponseWriter, r *http.Request) 
 	q := clientURI.Query()
 
 	q.Add(interactRefQueryParam, interactRef)
+	q.Add(responseHashQueryParam, responseHash)
 
 	clientURI.RawQuery = q.Encode()
 
@@ -445,7 +450,7 @@ func (o *Operation) authContinueHandler(w http.ResponseWriter, req *http.Request
 	o.writeResponse(w, resp)
 }
 
-func (o *Operation) introspectHandler(w http.ResponseWriter, req *http.Request) { // nolint: dupl
+func (o *Operation) introspectHandler(w http.ResponseWriter, req *http.Request) {
 	introspectRequest := &gnap.IntrospectRequest{}
 
 	bodyBytes, err := ioutil.ReadAll(req.Body)

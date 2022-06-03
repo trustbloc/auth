@@ -84,9 +84,10 @@ func New(config *Config) (*AuthHandler, error) {
 }
 
 // HandleAccessRequest handles GNAP access requests.
-func (h *AuthHandler) HandleAccessRequest( // nolint:funlen
+func (h *AuthHandler) HandleAccessRequest( // nolint: funlen
 	req *gnap.AuthRequest,
 	reqVerifier api.Verifier,
+	reqURL string,
 ) (*gnap.AuthResponse, error) {
 	var (
 		s   *session.Session
@@ -129,7 +130,7 @@ func (h *AuthHandler) HandleAccessRequest( // nolint:funlen
 	s.Requested = permissions.NeedsConsent
 
 	// TODO: support selecting one of multiple interaction handlers
-	interact, err := h.loginConsent.PrepareInteraction(req.Interact, permissions.NeedsConsent.Tokens)
+	interact, err := h.loginConsent.PrepareInteraction(req.Interact, reqURL, permissions.NeedsConsent.Tokens)
 	if err != nil {
 		return nil, fmt.Errorf("creating response interaction parameters: %w", err)
 	}

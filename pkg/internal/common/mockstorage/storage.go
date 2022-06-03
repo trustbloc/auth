@@ -66,11 +66,12 @@ func (p *Provider) GetOpenStores() []storage.Store {
 
 // MockStore represents a mock store.
 type MockStore struct {
-	Store    map[string][]byte
-	lock     sync.RWMutex
-	ErrPut   error
-	ErrGet   error
-	ErrQuery error
+	Store     map[string][]byte
+	lock      sync.RWMutex
+	ErrPut    error
+	ErrGet    error
+	ErrQuery  error
+	ErrDelete error
 }
 
 // GetTags fetches all tags associated with the given key.
@@ -134,7 +135,7 @@ func (s *MockStore) Get(k string) ([]byte, error) {
 	return val, s.ErrGet
 }
 
-// Delete is currently unimplemented.
+// Delete returns s.ErrDelete, not actually deleting.
 func (s *MockStore) Delete(k string) error {
-	panic("implement me")
+	return s.ErrDelete
 }
