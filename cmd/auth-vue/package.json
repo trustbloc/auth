@@ -12,7 +12,7 @@
     "prettier-check": "prettier --check \"./**/*.{md,jsx,json,html,css,js,yml,vue}\""
   },
   "dependencies": {
-    "axios": "^0.26.1",
+    "axios": "^0.27.2",
     "vue": "^3.2.31",
     "vue-i18n": "^9.1.10",
     "vue-router": "^4.0.14"
