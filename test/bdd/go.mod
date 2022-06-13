@@ -15,7 +15,7 @@ require (
 	github.com/ory/hydra-client-go v1.10.6
 	github.com/pkg/errors v0.9.1
 	github.com/square/go-jose/v3 v3.0.0-20200630053402-0a67ce9b0693
-	github.com/tidwall/gjson v1.6.7
+	github.com/tidwall/gjson v1.14.1
 	github.com/trustbloc/auth v0.0.0
 	github.com/trustbloc/auth/spi/gnap v0.0.0-20220518152301-fe6ea3ada1af
 	github.com/trustbloc/edge-core v0.1.8
@@ -77,8 +77,8 @@ require (
 	github.com/spf13/pflag v1.0.5 // indirect
 	github.com/stretchr/testify v1.7.1 // indirect
 	github.com/teserakt-io/golang-ed25519 v0.0.0-20210104091850-3888c087a4c8 // indirect
-	github.com/tidwall/match v1.0.3 // indirect
-	github.com/tidwall/pretty v1.0.2 // indirect
+	github.com/tidwall/match v1.1.1 // indirect
+	github.com/tidwall/pretty v1.2.0 // indirect
 	go.mongodb.org/mongo-driver v1.5.1 // indirect
 	golang.org/x/crypto v0.0.0-20210817164053-32db794688a5 // indirect
 	golang.org/x/net v0.0.0-20210813160813-60bc85c4be6d // indirect
