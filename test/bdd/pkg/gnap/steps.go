@@ -226,10 +226,12 @@ func (s *Steps) interactRedirect() error {
 		}
 	}()
 
+	signUpURL := authServerSignUpURL + "?txnID=" + txnID
+
 	// validate the redirect url
-	if response.Request.URL.String() != authServerSignUpURL {
+	if response.Request.URL.String() != signUpURL {
 		return fmt.Errorf(
-			"invalid ui redirect url: expected=%s actual=%s", authServerSignUpURL, response.Request.URL.String(),
+			"invalid ui redirect url: expected=%s actual=%s", signUpURL, response.Request.URL.String(),
 		)
 	}
 

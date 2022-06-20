@@ -198,9 +198,24 @@ func (o *Operation) authRequestHandler(w http.ResponseWriter, req *http.Request)
 }
 
 func (o *Operation) interactHandler(w http.ResponseWriter, req *http.Request) {
-	// TODO validate interactTxnID and append interactTxnID to the query param for ui-session management
+	// TODO validate txnID
+	txnID := req.URL.Query().Get(txnQueryParam)
+
+	redirURL, err := url.Parse(o.uiEndpoint + "/sign-up")
+	if err != nil {
+		o.writeErrorResponse(w, http.StatusInternalServerError, "failed to construct redirect url")
+
+		return
+	}
+
+	q := redirURL.Query()
+
+	q.Add(txnQueryParam, txnID)
+
+	redirURL.RawQuery = q.Encode()
+
 	// redirect to UI
-	http.Redirect(w, req, o.uiEndpoint+"/sign-up", http.StatusFound)
+	http.Redirect(w, req, redirURL.String(), http.StatusFound)
 }
 
 func (o *Operation) authProvidersHandler(w http.ResponseWriter, _ *http.Request) {

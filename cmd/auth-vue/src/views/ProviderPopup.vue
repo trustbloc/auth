@@ -7,10 +7,14 @@ const props = defineProps({
     type: String,
     default: null,
   },
+  txnID: {
+    type: String,
+    default: null,
+  },
 });
 
 onMounted(() => {
-  window.location.href = `/oidc/login?provider=${props.providerID}`;
+  window.location.href = `/oidc/login?provider=${props.providerID}&txnID=${props.txnID}`;
 });
 </script>
 
