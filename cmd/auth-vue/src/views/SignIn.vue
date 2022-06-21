@@ -18,6 +18,13 @@ const systemError = ref(false);
 const providerPopup = ref({ closed: false });
 const { t, locale } = useI18n();
 
+const props = defineProps({
+  txnID: {
+    type: String,
+    default: null,
+  },
+});
+
 onMounted(async () => {
   try {
     const rawProviders = await axios.get('/oidc/providers');
@@ -51,7 +58,9 @@ function openProviderPopup(url, title, w, h) {
 function initiateOIDCLogin(providerID) {
   loading.value = true;
   providerPopup.value = openProviderPopup(
-    `${import.meta.env.BASE_URL}provider?providerID=${providerID}`,
+    `${import.meta.env.BASE_URL}provider?providerID=${providerID}&txnID=${
+      props.txnID
+    }`,
     '',
     700,
     770
