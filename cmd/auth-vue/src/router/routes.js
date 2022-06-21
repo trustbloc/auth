@@ -33,17 +33,26 @@ export default [
         path: 'sign-in',
         name: 'SignIn',
         component: load('SignIn'),
+        props: (route) => ({
+          txnID: route.query.txnID,
+        }),
       },
       {
         path: 'sign-up',
         name: 'SignUp',
         component: load('SignUp'),
+        props: (route) => ({
+          txnID: route.query.txnID,
+        }),
       },
       {
         path: 'provider',
         name: 'ProviderPopup',
         component: load('ProviderPopup'),
-        props: (route) => ({ providerID: route.query.providerID }),
+        props: (route) => ({
+          providerID: route.query.providerID,
+          txnID: route.query.txnID,
+        }),
       },
     ],
   },
