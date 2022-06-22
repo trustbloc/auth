@@ -74,15 +74,15 @@ type AuthResponse struct {
 
 // ResponseContinue https://www.ietf.org/archive/id/draft-ietf-gnap-core-protocol-09.html#section-3.1
 type ResponseContinue struct {
-	URI         string      `json:"uri"`
-	AccessToken AccessToken `json:"access_token"`
-	Wait        int         `json:"wait"`
+	URI         string      `json:"uri,omitempty"`
+	AccessToken AccessToken `json:"access_token,omitempty"`
+	Wait        int         `json:"wait,omitempty"`
 }
 
 // ResponseInteract https://www.ietf.org/archive/id/draft-ietf-gnap-core-protocol-09.html#section-3.3
 type ResponseInteract struct {
-	Redirect string `json:"redirect"`
-	Finish   string `json:"finish"`
+	Redirect string `json:"redirect,omitempty"`
+	Finish   string `json:"finish,omitempty"`
 }
 
 // Subject https://www.ietf.org/archive/id/draft-ietf-gnap-core-protocol-09.html#section-3.4
@@ -105,13 +105,13 @@ type SubjectAssertion struct {
 
 // AccessToken https://www.ietf.org/archive/id/draft-ietf-gnap-core-protocol-09.html#section-3.2.1
 type AccessToken struct {
-	Value   string        `json:"value"`
-	Label   string        `json:"label"`
-	Manage  string        `json:"manage"`
-	Access  []TokenAccess `json:"access"`
-	Expires int64         `json:"expires_in"` // integer value in seconds.
-	Key     string        `json:"key"`
-	Flags   []AccessFlag  `json:"flags"`
+	Value   string        `json:"value,omitempty"`
+	Label   string        `json:"label,omitempty"`
+	Manage  string        `json:"manage,omitempty"`
+	Access  []TokenAccess `json:"access,omitempty"`
+	Expires int64         `json:"expires_in,omitempty"` // integer value in seconds.
+	Key     string        `json:"key,omitempty"`
+	Flags   []AccessFlag  `json:"flags,omitempty"`
 }
 
 // ContinueRequest https://www.ietf.org/archive/id/draft-ietf-gnap-core-protocol-09.html#section-5.1

@@ -8,9 +8,7 @@ package httpsig
 
 import (
 	"bytes"
-	"crypto/ecdsa"
 	"crypto/elliptic"
-	"crypto/rand"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -18,138 +16,71 @@ import (
 	"github.com/hyperledger/aries-framework-go/pkg/doc/jose/jwk"
 	"github.com/square/go-jose/v3"
 	"github.com/stretchr/testify/require"
-	"github.com/trustbloc/auth/spi/gnap/internal/digest"
 )
 
-func TestSigner(t *testing.T) {
-	t.Run("ProofType", func(t *testing.T) {
-		require.Equal(t, "httpsig", (&Signer{}).ProofType())
-	})
-
-	t.Run("Sign", func(t *testing.T) {
-		body := []byte("foo bar baz")
-
-		req := httptest.NewRequest(http.MethodPost, "http://foo.bar/baz", bytes.NewReader(body))
-
-		req.Header.Add("Authorization", "Bearer OPEN-SESAME")
-
-		priv, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
-		require.NoError(t, err)
-
-		privJWK := &jwk.JWK{
-			JSONWebKey: jose.JSONWebKey{
-				Key:       priv,
-				KeyID:     "key1",
-				Algorithm: "ES256",
-			},
-			Kty: "EC",
-			Crv: "P-256",
-		}
-
-		signer := &Signer{
-			SigningKey: privJWK,
-		}
-
-		req, err = signer.Sign(req, body)
-		require.NoError(t, err)
-	})
-
+func TestProofType(t *testing.T) {
+	require.Equal(t, "httpsig", (&Signer{}).ProofType())
 }
 
 func TestSign(t *testing.T) {
 	t.Run("success", func(t *testing.T) {
+		priv, _ := jwkPairECDSA(t, "ES256", elliptic.P256())
+
 		body := []byte("foo bar baz")
 
 		req := httptest.NewRequest(http.MethodPost, "http://foo.bar/baz", bytes.NewReader(body))
 
-		req.Header.Add("Authorization", "Bearer OPEN-SESAME")
+		// include an auth header to be signed as well
+		req.Header.Add("Authorization", "FOO bar")
 
-		priv, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
-		require.NoError(t, err)
-
-		privJWK := &jwk.JWK{
-			JSONWebKey: jose.JSONWebKey{
-				Key:       priv,
-				KeyID:     "key1",
-				Algorithm: "ES256",
-			},
-			Kty: "EC",
-			Crv: "P-256",
+		signer := Signer{
+			SigningKey: priv,
 		}
 
-		req, err = Sign(req, body, privJWK, digest.SHA256)
+		signedReq, err := signer.Sign(req, body)
 		require.NoError(t, err)
+
+		sig := signedReq.Header.Get("signature")
+		require.NotEmpty(t, sig)
+		sigParams := signedReq.Header.Get("signature-input")
+		require.NotEmpty(t, sigParams)
 	})
 
-	t.Run("jwk marshal error", func(t *testing.T) {
+	t.Run("fail to create signer", func(t *testing.T) {
+		priv := &jwk.JWK{
+			JSONWebKey: jose.JSONWebKey{
+				Algorithm: "foo",
+			},
+		}
+
 		body := []byte("foo bar baz")
 
 		req := httptest.NewRequest(http.MethodPost, "http://foo.bar/baz", bytes.NewReader(body))
 
-		req.Header.Add("Authorization", "Bearer OPEN-SESAME")
-
-		privJWK := &jwk.JWK{
-			JSONWebKey: jose.JSONWebKey{
-				Key:       []byte{},
-				KeyID:     "key1",
-				Algorithm: "ES256",
-			},
-			Kty: "OKP", // incorrect type data, to force a marshalling error
-			Crv: "X25519",
+		signer := Signer{
+			SigningKey: priv,
 		}
 
-		_, err := Sign(req, body, privJWK, digest.SHA256)
+		_, err := signer.Sign(req, body)
 		require.Error(t, err)
-		require.Contains(t, err.Error(), "marshalling signing key")
+		require.Contains(t, err.Error(), "creating signer")
 	})
 
-	t.Run("unsupported digest", func(t *testing.T) {
-		body := []byte("foo bar baz")
+	t.Run("fail to sign invalid request", func(t *testing.T) {
+		priv, _ := jwkPairECDSA(t, "ES256", elliptic.P256())
 
-		req := httptest.NewRequest(http.MethodPost, "http://foo.bar/baz", bytes.NewReader(body))
+		body := []byte("")
 
-		req.Header.Add("Authorization", "Bearer OPEN-SESAME")
+		req := httptest.NewRequest(http.MethodPost, "http://foo.bar/baz", nil)
 
-		priv, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
-		require.NoError(t, err)
+		req.Header.Add("@invalid-header", "foo")
 
-		privJWK := &jwk.JWK{
-			JSONWebKey: jose.JSONWebKey{
-				Key:       priv,
-				KeyID:     "key1",
-				Algorithm: "ES256",
-			},
-			Kty: "EC",
-			Crv: "P-256",
+		signer := Signer{
+			SigningKey: priv,
 		}
 
-		req, err = Sign(req, body, privJWK, "unknown digest")
+		_, err := signer.Sign(req, body)
 		require.Error(t, err)
-		require.Contains(t, err.Error(), "unsupported digest")
-	})
-
-	t.Run("fail to sign", func(t *testing.T) {
-		body := []byte("foo bar baz")
-
-		req := httptest.NewRequest(http.MethodPost, "http://foo.bar/baz", bytes.NewReader(body))
-
-		req.Header.Add("Authorization", "Bearer OPEN-SESAME")
-
-		priv, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
-		require.NoError(t, err)
-
-		privJWK := &jwk.JWK{
-			JSONWebKey: jose.JSONWebKey{
-				Key:       &priv.PublicKey, // jwk algorithm will fail to sign given a public key
-				KeyID:     "key1",
-				Algorithm: "ES256",
-			},
-			Kty: "EC",
-			Crv: "P-256",
-		}
-
-		req, err = Sign(req, body, privJWK, digest.SHA256)
-		require.Error(t, err)
-		require.Contains(t, err.Error(), "failed to sign")
+		require.Contains(t, err.Error(), "signing request")
 	})
 }

@@ -21,6 +21,12 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+const (
+	es256Alg = "ES256"
+	es384Alg = "ES384"
+	es512Alg = "ES512"
+)
+
 func Test_ecdsaSign(t *testing.T) {
 	tests := []struct {
 		name string

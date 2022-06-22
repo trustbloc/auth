@@ -8,19 +8,13 @@ package httpsig
 
 import (
 	"bytes"
-	"encoding/base64"
-	"encoding/json"
-	"errors"
 	"fmt"
 	"io/ioutil"
 	"net/http"
-	"strings"
 
-	"github.com/igor-pavlenko/httpsignatures-go"
-
+	"github.com/lestrrat-go/jwx/v2/jwa"
 	"github.com/trustbloc/auth/spi/gnap"
-	"github.com/trustbloc/auth/spi/gnap/internal/digest"
-	"github.com/trustbloc/auth/spi/gnap/internal/jwksignature"
+	"github.com/yaronf/httpsign"
 )
 
 // Verifier verifies that the client request is signed by the client key, using http-signature verification.
@@ -35,26 +29,16 @@ func NewVerifier(req *http.Request) *Verifier {
 
 // Verify verifies that the Verifier's client request is signed by the client key, using http-signature verification.
 func (v *Verifier) Verify(key *gnap.ClientKey) error {
-	keyBytes, err := json.Marshal(&key.JWK)
-	if err != nil {
-		return fmt.Errorf("marshalling verification key: %w", err)
+	verKey := key.JWK
+
+	fields := httpsign.Headers("@request-target")
+
+	if v.req.Header.Get("Authorization") != "" {
+		fields.AddHeader("Authorization")
 	}
 
-	ss := httpsignatures.NewSimpleSecretsStorage(map[string]httpsignatures.Secret{
-		key.JWK.KeyID: {
-			KeyID:      key.JWK.KeyID,
-			PublicKey:  "",
-			PrivateKey: string(keyBytes),
-			Algorithm:  key.JWK.Algorithm,
-		},
-	})
-	hs := httpsignatures.NewHTTPSignatures(ss)
-	hs.SetSignatureHashAlgorithm(jwksignature.NewJWKAlgorithm(key.JWK.Algorithm))
-
-	var bodyBytes []byte
-
 	if v.req.Body != nil {
-		bodyBytes, err = ioutil.ReadAll(v.req.Body)
+		bodyBytes, err := ioutil.ReadAll(v.req.Body)
 		if err != nil {
 			return err
 		}
@@ -62,53 +46,24 @@ func (v *Verifier) Verify(key *gnap.ClientKey) error {
 		v.req.Body = ioutil.NopCloser(bytes.NewBuffer(bodyBytes))
 
 		if len(bodyBytes) > 0 {
-			err = verifyDigest(v.req, bodyBytes)
-			if err != nil {
-				return err
-			}
-
-			// TODO: confirm that the content-digest header is included in the http-signature input.
+			fields.AddHeader("content-digest")
 		}
 	}
 
-	err = hs.Verify(v.req)
+	verifier, err := httpsign.NewJWSVerifier(
+		jwa.SignatureAlgorithm(verKey.Algorithm),
+		verKey.Key,
+		verKey.KeyID,
+		nil,
+		fields,
+	)
 	if err != nil {
-		return fmt.Errorf("failed verification: %w", err)
+		return fmt.Errorf("creating verifier: %w", err)
 	}
 
-	return nil
-}
-
-func verifyDigest(req *http.Request, bodyBytes []byte) error {
-	contentDigest := req.Header.Get("Content-Digest")
-	if len(contentDigest) == 0 {
-		return errors.New("request with body should have a content-digest header")
-	}
-
-	digestParts := strings.Split(contentDigest, ":")
-	if len(digestParts) < 2 {
-		return errors.New("content-digest header should have name and value")
-	}
-
-	digestName := strings.Trim(digestParts[0], "=")
-
-	digestAlg, err := digest.GetDigest(digestName)
+	err = httpsign.VerifyRequest(defaultSignatureName, *verifier, v.req)
 	if err != nil {
-		return err
-	}
-
-	digestValue, err := base64.StdEncoding.DecodeString(digestParts[1])
-	if err != nil {
-		return fmt.Errorf("decoding digest value: %w", err)
-	}
-
-	computedDigest, err := digestAlg(bodyBytes)
-	if err != nil {
-		return fmt.Errorf("computing expected digest: %w", err)
-	}
-
-	if !bytes.Equal(computedDigest, digestValue) {
-		return errors.New("content-digest header does not match digest of request body")
+		return fmt.Errorf("verifying request: %w", err)
 	}
 
 	return nil
