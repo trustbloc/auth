@@ -204,6 +204,11 @@ const (
 	gnapAccessPolicyFlagUsage = "Path to the GNAP access policy JSON config." +
 		" Alternatively, this can be set with the following environment variable: " + gnapAccessPolicyEnvKey
 	gnapAccessPolicyEnvKey = "GNAP_ACCESS_POLICY"
+
+	gnapDevModeFlagName  = "gnap-dev-mode"
+	gnapDevModeFlagUsage = "Run GNAP server in dev mode, disabling http signature verification." +
+		" Alternatively, this can be set with the following environment variable: " + gnapDevModeEnvKey
+	gnapDevModeEnvKey = "GNAP_DEV_MODE"
 )
 
 const (
@@ -440,6 +445,7 @@ func createFlags(startCmd *cobra.Command) {
 	startCmd.Flags().StringP(sessionCookieAuthKeyFlagName, "", "", sessionCookieAuthKeyFlagUsage)
 	startCmd.Flags().StringP(sessionCookieEncKeyFlagName, "", "", sessionCookieEncKeyFlagUsage)
 	startCmd.Flags().StringP(gnapAccessPolicyFlagName, "", "", gnapAccessPolicyFlagUsage)
+	startCmd.Flags().StringP(gnapDevModeFlagName, "", "", gnapDevModeFlagUsage)
 }
 
 // nolint:funlen
@@ -520,6 +526,7 @@ func startAuthService(parameters *authRestParameters, srv server) error {
 		},
 		TransientStoreProvider: provider,
 		TLSConfig:              &tls.Config{RootCAs: rootCAs}, //nolint:gosec
+		DisableHTTPSigVerify:   parameters.gnap.disableHTTPSigVerify,
 	})
 	if err != nil {
 		return err
@@ -701,7 +708,12 @@ func getGNAPParams(cmd *cobra.Command) *gnapParameters {
 
 	apConfPath := cmdutils.GetUserSetOptionalVarFromString(cmd, gnapAccessPolicyFlagName, gnapAccessPolicyEnvKey)
 
+	devMode := cmdutils.GetUserSetOptionalVarFromString(cmd, gnapDevModeFlagName, gnapDevModeEnvKey)
+
+	devModeBool := strings.EqualFold(devMode, "true")
+
 	params.accessPolicyConfigPath = apConfPath
+	params.disableHTTPSigVerify = devModeBool
 
 	return params
 }
