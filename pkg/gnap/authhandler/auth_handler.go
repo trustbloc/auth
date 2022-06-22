@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/hyperledger/aries-framework-go/pkg/common/log"
 	"github.com/hyperledger/aries-framework-go/spi/storage"
 
 	"github.com/trustbloc/auth/pkg/gnap/accesspolicy"
@@ -19,6 +20,8 @@ import (
 	"github.com/trustbloc/auth/pkg/gnap/session"
 	"github.com/trustbloc/auth/spi/gnap"
 )
+
+var logger = log.New("gnap/auth-handler") // nolint:gochecknoglobals
 
 /*
 AuthHandler handles GNAP access requests and decides what access to grant.
@@ -49,10 +52,11 @@ TODO what AuthHandler needs to do:
      apply access policy to construct the tokens and subject data to return.
 */
 type AuthHandler struct {
-	continuePath string
-	accessPolicy *accesspolicy.AccessPolicy
-	sessionStore *session.Manager
-	loginConsent api.InteractionHandler
+	continuePath   string
+	accessPolicy   *accesspolicy.AccessPolicy
+	sessionStore   *session.Manager
+	loginConsent   api.InteractionHandler
+	disableHTTPSig bool
 }
 
 // Config holds AuthHandler constructor configuration.
@@ -61,6 +65,7 @@ type Config struct {
 	ContinuePath       string
 	InteractionHandler api.InteractionHandler
 	StoreProvider      storage.Provider
+	DisableHTTPSig     bool
 }
 
 // New returns new AuthHandler.
@@ -76,10 +81,11 @@ func New(config *Config) (*AuthHandler, error) {
 	}
 
 	return &AuthHandler{
-		continuePath: config.ContinuePath,
-		accessPolicy: accessPolicy,
-		sessionStore: sessionHandler,
-		loginConsent: config.InteractionHandler,
+		continuePath:   config.ContinuePath,
+		accessPolicy:   accessPolicy,
+		sessionStore:   sessionHandler,
+		loginConsent:   config.InteractionHandler,
+		disableHTTPSig: config.DisableHTTPSig,
 	}, nil
 }
 
@@ -111,9 +117,13 @@ func (h *AuthHandler) HandleAccessRequest( // nolint: funlen
 		}
 	}
 
-	verifyErr := reqVerifier.Verify(s.ClientKey)
-	if verifyErr != nil {
-		return nil, fmt.Errorf("client request verification failure: %w", verifyErr)
+	if h.disableHTTPSig {
+		logger.Warnf("server running in dev mode: http signature verification disabled")
+	} else {
+		verifyErr := reqVerifier.Verify(s.ClientKey)
+		if verifyErr != nil {
+			return nil, fmt.Errorf("client request verification failure: %w", verifyErr)
+		}
 	}
 
 	permissions, err := h.accessPolicy.DeterminePermissions(req.AccessToken, s)
@@ -163,9 +173,13 @@ func (h *AuthHandler) HandleContinueRequest( // nolint: funlen
 		return nil, fmt.Errorf("getting session for continue token: %w", err)
 	}
 
-	verifyErr := reqVerifier.Verify(s.ClientKey)
-	if verifyErr != nil {
-		return nil, fmt.Errorf("client request verification failure: %w", verifyErr)
+	if h.disableHTTPSig {
+		logger.Warnf("server running in dev mode: http signature verification disabled")
+	} else {
+		verifyErr := reqVerifier.Verify(s.ClientKey)
+		if verifyErr != nil {
+			return nil, fmt.Errorf("client request verification failure: %w", verifyErr)
+		}
 	}
 
 	consent, err := h.loginConsent.QueryInteraction(req.InteractRef)
@@ -223,7 +237,7 @@ func (h *AuthHandler) HandleContinueRequest( // nolint: funlen
 }
 
 // HandleIntrospection handles GNAP resource-server requests for access token introspection.
-func (h *AuthHandler) HandleIntrospection( // nolint:gocyclo
+func (h *AuthHandler) HandleIntrospection( // nolint:gocyclo,funlen
 	req *gnap.IntrospectRequest,
 	reqVerifier api.Verifier,
 ) (*gnap.IntrospectResponse, error) {
@@ -250,9 +264,13 @@ func (h *AuthHandler) HandleIntrospection( // nolint:gocyclo
 		}
 	}
 
-	verifyErr := reqVerifier.Verify(serverSession.ClientKey)
-	if verifyErr != nil {
-		return nil, fmt.Errorf("rs request verification failure: %w", verifyErr)
+	if h.disableHTTPSig {
+		logger.Warnf("server running in dev mode: http signature verification disabled")
+	} else {
+		verifyErr := reqVerifier.Verify(serverSession.ClientKey)
+		if verifyErr != nil {
+			return nil, fmt.Errorf("rs request verification failure: %w", verifyErr)
+		}
 	}
 
 	clientSession, clientToken, err := h.sessionStore.GetByAccessToken(req.AccessToken)

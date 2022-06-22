@@ -192,6 +192,35 @@ func TestAuthHandler_HandleAccessRequest(t *testing.T) {
 		require.Nil(t, resp)
 	})
 
+	t.Run("httpsig validation disabled", func(t *testing.T) {
+		conf := config(t)
+		conf.DisableHTTPSig = true
+
+		h, err := New(conf)
+		require.NoError(t, err)
+
+		h.loginConsent = &mockinteract.InteractHandler{
+			PrepareVal: &gnap.ResponseInteract{
+				Redirect: "foo.com",
+				Finish:   "barbazqux",
+			},
+		}
+
+		req := &gnap.AuthRequest{
+			Client: &gnap.RequestClient{
+				IsReference: false,
+				Key:         clientKey(t),
+			},
+		}
+
+		v := &mockverifier.MockVerifier{
+			ErrVerify: errors.New("this is ignored"),
+		}
+
+		_, err = h.HandleAccessRequest(req, v, "")
+		require.NoError(t, err)
+	})
+
 	t.Run("success", func(t *testing.T) {
 		h, err := New(config(t))
 		require.NoError(t, err)
@@ -273,6 +302,36 @@ func TestAuthHandler_HandleContinueRequest(t *testing.T) {
 		_, err = h.HandleContinueRequest(&gnap.ContinueRequest{}, "foo", &mockverifier.MockVerifier{})
 		require.Error(t, err)
 		require.ErrorIs(t, err, expectErr)
+	})
+
+	t.Run("httpsig validation disabled", func(t *testing.T) {
+		conf := config(t)
+		conf.DisableHTTPSig = true
+
+		h, err := New(conf)
+		require.NoError(t, err)
+
+		h.loginConsent = &mockinteract.InteractHandler{
+			QueryVal: &api.ConsentResult{
+				Tokens: nil,
+			},
+		}
+
+		s, err := h.sessionStore.GetOrCreateByKey(clientKey(t))
+		require.NoError(t, err)
+
+		s.ContinueToken = &api.ExpiringToken{AccessToken: gnap.AccessToken{
+			Value: "foo",
+		}}
+
+		require.NoError(t, h.sessionStore.Save(s))
+
+		v := &mockverifier.MockVerifier{
+			ErrVerify: errors.New("this is ignored"),
+		}
+
+		_, err = h.HandleContinueRequest(&gnap.ContinueRequest{}, "foo", v)
+		require.NoError(t, err)
 	})
 
 	t.Run("success", func(t *testing.T) {
@@ -380,6 +439,28 @@ func TestAuthHandler_HandleIntrospection(t *testing.T) {
 		require.Error(t, err)
 		require.ErrorIs(t, err, expectedErr)
 		require.Contains(t, err.Error(), "verification failure")
+	})
+
+	t.Run("httpsig validation disabled", func(t *testing.T) {
+		conf := config(t)
+		conf.DisableHTTPSig = true
+
+		h, err := New(conf)
+		require.NoError(t, err)
+
+		req := &gnap.IntrospectRequest{
+			ResourceServer: &gnap.RequestClient{
+				IsReference: false,
+				Key:         clientKey(t),
+			},
+		}
+		v := &mockverifier.MockVerifier{
+			ErrVerify: errors.New("this is ignored"),
+		}
+
+		resp, err := h.HandleIntrospection(req, v)
+		require.NoError(t, err)
+		require.Equal(t, &gnap.IntrospectResponse{}, resp)
 	})
 
 	t.Run("access token does not exist", func(t *testing.T) {

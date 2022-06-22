@@ -78,5 +78,6 @@ type keyParameters struct {
 }
 
 type gnapParameters struct {
+	disableHTTPSigVerify   bool
 	accessPolicyConfigPath string
 }

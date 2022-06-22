@@ -97,6 +97,7 @@ type Config struct {
 	StartupTimeout         uint64
 	TransientStoreProvider storage.Provider
 	TLSConfig              *tls.Config
+	DisableHTTPSigVerify   bool
 }
 
 // New creates GNAP operation handler.
@@ -117,6 +118,7 @@ func New(config *Config) (*Operation, error) {
 		AccessPolicyConfig: config.AccessPolicyConfig,
 		ContinuePath:       config.BaseURL + AuthContinuePath,
 		InteractionHandler: config.InteractionHandler,
+		DisableHTTPSig:     config.DisableHTTPSigVerify,
 	})
 	if err != nil {
 		return nil, err
