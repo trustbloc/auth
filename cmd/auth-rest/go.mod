@@ -17,7 +17,7 @@ require (
 	github.com/hyperledger/aries-framework-go/spi v0.0.0-20220330140627-07042d78580c
 	github.com/rs/cors v1.8.2
 	github.com/spf13/cobra v1.4.0
-	github.com/stretchr/testify v1.7.2
+	github.com/stretchr/testify v1.7.4
 	github.com/trustbloc/auth v0.0.0-00010101000000-000000000000
 	github.com/trustbloc/edge-core v0.1.8
 	gopkg.in/yaml.v2 v2.4.0
