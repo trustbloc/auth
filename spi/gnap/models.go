@@ -69,6 +69,7 @@ type AuthResponse struct {
 	AccessToken []AccessToken    `json:"access_token,omitempty"`
 	Interact    ResponseInteract `json:"interact,omitempty"`
 	InstanceID  string           `json:"instance_id,omitempty"`
+	Subject     Subject          `json:"subject,omitempty"`
 }
 
 // ResponseContinue https://www.ietf.org/archive/id/draft-ietf-gnap-core-protocol-09.html#section-3.1
@@ -82,6 +83,24 @@ type ResponseContinue struct {
 type ResponseInteract struct {
 	Redirect string `json:"redirect"`
 	Finish   string `json:"finish"`
+}
+
+// Subject https://www.ietf.org/archive/id/draft-ietf-gnap-core-protocol-09.html#section-3.4
+type Subject struct {
+	SubIDs     []SubjectID        `json:"sub_ids,omitempty"`
+	Assertions []SubjectAssertion `json:"assertions,omitempty"`
+}
+
+// SubjectID https://www.ietf.org/archive/id/draft-ietf-secevent-subject-identifiers-09.txt
+type SubjectID struct {
+	ID     string `json:"id,omitempty"`
+	Format string `json:"format,omitempty"`
+}
+
+// SubjectAssertion https://www.ietf.org/archive/id/draft-ietf-gnap-core-protocol-09.html#section-3.4
+type SubjectAssertion struct {
+	Value  string `json:"value,omitempty"`
+	Format string `json:"format,omitempty"`
 }
 
 // AccessToken https://www.ietf.org/archive/id/draft-ietf-gnap-core-protocol-09.html#section-3.2.1
