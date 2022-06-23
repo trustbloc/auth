@@ -85,6 +85,7 @@ func (h InteractHandler) PrepareInteraction(
 		},
 		Interact:    clientInteract,
 		ServerNonce: serverNonce,
+		RequestURL:  requestURI,
 	}
 
 	txnBytes, err := json.Marshal(txn)
