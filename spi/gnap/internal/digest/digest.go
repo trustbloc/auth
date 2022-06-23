@@ -14,6 +14,8 @@ import (
 
 const (
 	SHA256 = "sha-256"
+	SHA384 = "sha-384"
+	SHA512 = "sha-512"
 )
 
 // Digest computes the content-digest of the given message.
@@ -24,6 +26,10 @@ func GetDigest(name string) (Digest, error) {
 	switch name {
 	case SHA256:
 		return hashToDigest(crypto.SHA256), nil
+	case SHA384:
+		return hashToDigest(crypto.SHA384), nil
+	case SHA512:
+		return hashToDigest(crypto.SHA512), nil
 	default:
 		return nil, errors.New("unsupported digest")
 	}
