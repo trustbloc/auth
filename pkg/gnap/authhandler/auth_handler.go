@@ -139,6 +139,8 @@ func (h *AuthHandler) HandleAccessRequest( // nolint: funlen
 
 	s.Requested = permissions.NeedsConsent
 
+	// TODO: if any tokens are granted, and no tokens need consent, return granted tokens
+
 	// TODO: support selecting one of multiple interaction handlers
 	interact, err := h.loginConsent.PrepareInteraction(req.Interact, reqURL, permissions.NeedsConsent.Tokens)
 	if err != nil {
@@ -218,6 +220,8 @@ func (h *AuthHandler) HandleContinueRequest( // nolint: funlen
 			s.Expires = tokenExpires
 		}
 	}
+
+	// TODO: in response, include previously-granted tokens that match request
 
 	err = h.sessionStore.Save(s)
 	if err != nil {
