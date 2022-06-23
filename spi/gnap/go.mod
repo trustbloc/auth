@@ -10,7 +10,7 @@ require (
 	github.com/hyperledger/aries-framework-go v0.1.8
 	github.com/igor-pavlenko/httpsignatures-go v0.0.23
 	github.com/square/go-jose/v3 v3.0.0-20200630053402-0a67ce9b0693
-	github.com/stretchr/testify v1.7.2
+	github.com/stretchr/testify v1.7.4
 )
 
 require (
