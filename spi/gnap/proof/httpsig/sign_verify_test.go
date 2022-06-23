@@ -11,6 +11,7 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -22,41 +23,67 @@ import (
 )
 
 func TestSignVerify(t *testing.T) {
-	t.Run("success", func(t *testing.T) {
-		body := []byte("foo bar baz")
+	tests := []struct {
+		crv        elliptic.Curve
+		alg        string
+		digestName string
+	}{
+		{
+			crv:        elliptic.P256(),
+			alg:        "ES256",
+			digestName: "sha-256",
+		},
+		{
+			crv:        elliptic.P384(),
+			alg:        "ES384",
+			digestName: "sha-384",
+		},
+		{
+			crv:        elliptic.P521(),
+			alg:        "ES512",
+			digestName: "sha-512",
+		},
+	}
 
-		req := httptest.NewRequest(http.MethodPost, "http://foo.bar/baz", bytes.NewReader(body))
+	for _, tt := range tests {
+		tc := tt
 
-		req.Header.Add("Authorization", "Bearer OPEN-SESAME")
+		t.Run(fmt.Sprintf("success %s", tc.alg), func(t *testing.T) {
+			body := []byte("foo bar baz")
 
-		priv, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
-		require.NoError(t, err)
+			req := httptest.NewRequest(http.MethodPost, "http://foo.bar/baz", bytes.NewReader(body))
 
-		privJWK := &jwk.JWK{
-			JSONWebKey: jose.JSONWebKey{
-				Key:       priv,
-				KeyID:     "key1",
-				Algorithm: "ES256",
-			},
-			Kty: "EC",
-			Crv: "P-256",
-		}
+			req.Header.Add("Authorization", "Bearer OPEN-SESAME")
 
-		pubJWK := jwk.JWK{
-			JSONWebKey: privJWK.Public(),
-			Kty:        "EC",
-			Crv:        "P-256",
-		}
+			priv, err := ecdsa.GenerateKey(tc.crv, rand.Reader)
+			require.NoError(t, err)
 
-		req, err = Sign(req, body, privJWK, "sha-256")
-		require.NoError(t, err)
+			privJWK := &jwk.JWK{
+				JSONWebKey: jose.JSONWebKey{
+					Key:       priv,
+					KeyID:     "key1",
+					Algorithm: tc.alg,
+				},
+				Kty: "EC",
+				Crv: tc.crv.Params().Name,
+			}
 
-		v := NewVerifier(req)
+			pubJWK := jwk.JWK{
+				JSONWebKey: privJWK.Public(),
+				Kty:        "EC",
+				Crv:        tc.crv.Params().Name,
+			}
 
-		err = v.Verify(&gnap.ClientKey{
-			Proof: "httpsig",
-			JWK:   pubJWK,
+			req, err = Sign(req, body, privJWK, tc.digestName)
+			require.NoError(t, err)
+
+			v := NewVerifier(req)
+
+			err = v.Verify(&gnap.ClientKey{
+				Proof: "httpsig",
+				JWK:   pubJWK,
+			})
+			require.NoError(t, err)
 		})
-		require.NoError(t, err)
-	})
+	}
 }
