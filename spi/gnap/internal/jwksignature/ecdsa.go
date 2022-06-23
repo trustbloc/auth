@@ -26,6 +26,10 @@ func ecdsaSign(msg []byte, privateKey *ecdsa.PrivateKey, alg string) ([]byte, er
 	switch alg {
 	case "ES256":
 		hash = crypto.SHA256
+	case "ES384":
+		hash = crypto.SHA384
+	case "ES512":
+		hash = crypto.SHA512
 	default:
 		return nil, errors.New("alg not supported")
 	}
@@ -64,6 +68,10 @@ func ecdsaVerifier(pubKeyJWK *jwk.JWK, msg, signature []byte) error {
 	switch pubKeyJWK.Algorithm {
 	case "ES256":
 		return ecdsaVerify(pubKeyJWK, msg, signature, 32, crypto.SHA256)
+	case "ES384":
+		return ecdsaVerify(pubKeyJWK, msg, signature, 48, crypto.SHA384)
+	case "ES512":
+		return ecdsaVerify(pubKeyJWK, msg, signature, 66, crypto.SHA512)
 	}
 
 	return errors.New("ecdsa alg not supported")

@@ -12,6 +12,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"testing"
 
 	"github.com/hyperledger/aries-framework-go/pkg/doc/jose/jwk"
@@ -22,6 +23,8 @@ import (
 
 const (
 	es256Alg = "ES256"
+	es384Alg = "ES384"
+	es512Alg = "ES512"
 )
 
 func TestSignatureAlgorithm_Algorithm(t *testing.T) {
@@ -34,7 +37,7 @@ func TestSignatureAlgorithm_Algorithm(t *testing.T) {
 
 func TestSignatureAlgorithm_Create(t *testing.T) {
 	t.Run("success", func(t *testing.T) {
-		_, privData := secretPair(t)
+		_, privData := secretPair(t, es256Alg, elliptic.P256())
 
 		msg := []byte("the quick brown fox jumps over the lazy dog")
 
@@ -143,25 +146,47 @@ func TestSignatureAlgorithm_Verify(t *testing.T) {
 }
 
 func Test_SignVerify(t *testing.T) {
-	t.Run("success", func(t *testing.T) {
-		pubData, privData := secretPair(t)
+	tests := []struct {
+		name string
+		crv  elliptic.Curve
+	}{
+		{
+			name: es256Alg,
+			crv:  elliptic.P256(),
+		},
+		{
+			name: es384Alg,
+			crv:  elliptic.P384(),
+		},
+		{
+			name: es512Alg,
+			crv:  elliptic.P521(),
+		},
+	}
 
-		msg := []byte("the quick brown fox jumps over the lazy dog")
+	for _, tt := range tests {
+		tc := tt
 
-		alg := NewJWKAlgorithm(es256Alg)
+		t.Run(fmt.Sprintf("success SignVerify %s", tc.name), func(t *testing.T) {
+			pubData, privData := secretPair(t, tc.name, tc.crv)
 
-		sig, err := alg.Create(privData, msg)
-		require.NoError(t, err)
+			msg := []byte("the quick brown fox jumps over the lazy dog")
 
-		err = alg.Verify(pubData, msg, sig)
-		require.NoError(t, err)
-	})
+			alg := NewJWKAlgorithm(tc.name)
+
+			sig, err := alg.Create(privData, msg)
+			require.NoError(t, err)
+
+			err = alg.Verify(pubData, msg, sig)
+			require.NoError(t, err)
+		})
+	}
 }
 
-func secretPair(t *testing.T) (pub, priv httpsignatures.Secret) {
+func secretPair(t *testing.T, alg string, crv elliptic.Curve) (pub, priv httpsignatures.Secret) {
 	t.Helper()
 
-	ecKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	ecKey, err := ecdsa.GenerateKey(crv, rand.Reader)
 	require.NoError(t, err)
 
 	kid := "key1"
@@ -170,10 +195,10 @@ func secretPair(t *testing.T) (pub, priv httpsignatures.Secret) {
 		JSONWebKey: jose.JSONWebKey{
 			Key:       ecKey,
 			KeyID:     kid,
-			Algorithm: es256Alg,
+			Algorithm: alg,
 		},
 		Kty: "EC",
-		Crv: "P-256",
+		Crv: crv.Params().Name,
 	}
 
 	privBytes, err := json.Marshal(privJWK)
@@ -187,10 +212,10 @@ func secretPair(t *testing.T) (pub, priv httpsignatures.Secret) {
 	return httpsignatures.Secret{
 			KeyID:      kid,
 			PrivateKey: string(pubBytes),
-			Algorithm:  es256Alg,
+			Algorithm:  alg,
 		}, httpsignatures.Secret{
 			KeyID:      kid,
 			PrivateKey: string(privBytes),
-			Algorithm:  es256Alg,
+			Algorithm:  alg,
 		}
 }

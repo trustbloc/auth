@@ -12,6 +12,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"math/big"
 	"testing"
 
@@ -21,16 +22,38 @@ import (
 )
 
 func Test_ecdsaSign(t *testing.T) {
-	t.Run("success", func(t *testing.T) {
-		ecKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
-		require.NoError(t, err)
+	tests := []struct {
+		name string
+		crv  elliptic.Curve
+	}{
+		{
+			name: es256Alg,
+			crv:  elliptic.P256(),
+		},
+		{
+			name: es384Alg,
+			crv:  elliptic.P384(),
+		},
+		{
+			name: es512Alg,
+			crv:  elliptic.P521(),
+		},
+	}
 
-		msg := []byte("the quick brown fox jumps over the lazy dog")
+	for _, tt := range tests {
+		tc := tt
 
-		sig, err := ecdsaSign(msg, ecKey, es256Alg)
-		require.NoError(t, err)
-		require.NotEmpty(t, sig)
-	})
+		t.Run(fmt.Sprintf("success sign %s", tc.name), func(t *testing.T) {
+			ecKey, err := ecdsa.GenerateKey(tc.crv, rand.Reader)
+			require.NoError(t, err)
+
+			msg := []byte("the quick brown fox jumps over the lazy dog")
+
+			sig, err := ecdsaSign(msg, ecKey, tc.name)
+			require.NoError(t, err)
+			require.NotEmpty(t, sig)
+		})
+	}
 
 	t.Run("alg not supported", func(t *testing.T) {
 		ecKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
