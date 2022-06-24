@@ -21,6 +21,7 @@ import (
 
 	"github.com/trustbloc/auth/pkg/gnap/accesspolicy"
 	"github.com/trustbloc/auth/pkg/gnap/api"
+	"github.com/trustbloc/auth/pkg/gnap/session"
 	"github.com/trustbloc/auth/pkg/internal/common/mockinteract"
 	"github.com/trustbloc/auth/pkg/internal/common/mockstorage"
 	"github.com/trustbloc/auth/pkg/internal/common/mockverifier"
@@ -389,6 +390,8 @@ func TestAuthHandler_HandleContinueRequest(t *testing.T) {
 		h, err := New(config(t))
 		require.NoError(t, err)
 
+		subID := "JohnDoe12341234"
+
 		h.loginConsent = &mockinteract.InteractHandler{
 			QueryVal: &api.ConsentResult{
 				Tokens: []*api.ExpiringTokenRequest{
@@ -397,12 +400,16 @@ func TestAuthHandler_HandleContinueRequest(t *testing.T) {
 							Access: []gnap.TokenAccess{
 								{
 									IsReference: true,
-									Ref:         "foo",
+									Ref:         "client-id",
 								},
 							},
 							Label: "foo",
 						},
 					},
+				},
+
+				SubjectData: map[string]string{
+					"sub": subID,
 				},
 			},
 		}
@@ -421,7 +428,7 @@ func TestAuthHandler_HandleContinueRequest(t *testing.T) {
 						Access: []gnap.TokenAccess{
 							{
 								IsReference: true,
-								Ref:         "bar",
+								Ref:         "other-access",
 							},
 						},
 						Label: "bar",
@@ -439,6 +446,9 @@ func TestAuthHandler_HandleContinueRequest(t *testing.T) {
 		// TODO: validate that one token is foo, one token is bar, either order
 		require.Equal(t, "foo", resp.AccessToken[0].Label)
 		require.Equal(t, "bar", resp.AccessToken[1].Label)
+
+		require.Len(t, resp.Subject.SubIDs, 1)
+		require.Equal(t, subID, resp.Subject.SubIDs[0].ID)
 	})
 }
 
@@ -618,8 +628,8 @@ func TestAuthHandler_HandleIntrospection(t *testing.T) {
 
 		clientSession.Tokens = append(clientSession.Tokens, &api.ExpiringToken{AccessToken: *token})
 		clientSession.AddSubjectData(map[string]string{
-			clientIDKey: clientIDVal,
-			"secret":    "blah blah",
+			"sub":    clientIDVal,
+			"secret": "blah blah",
 		})
 
 		require.NoError(t, h.sessionStore.Save(clientSession))
@@ -641,10 +651,32 @@ func TestAuthHandler_HandleIntrospection(t *testing.T) {
 			Access: token.Access,
 			Key:    clientVerKey,
 			SubjectData: map[string]string{
-				clientIDKey: clientIDVal,
+				"sub": clientIDVal,
 			},
 		}
 		require.Equal(t, expectedResp, resp)
+	})
+}
+
+func TestAuthHandler_tokensGranted(t *testing.T) {
+	t.Run("failure", func(t *testing.T) {
+		h, err := New(config(t))
+		require.NoError(t, err)
+
+		_, _, err = h.tokensGranted([]*api.ExpiringTokenRequest{
+			{
+				TokenRequest: gnap.TokenRequest{
+					Access: []gnap.TokenAccess{
+						{
+							IsReference: true,
+							Ref:         "not-found",
+						},
+					},
+				},
+			},
+		}, &session.Session{})
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "fetching subject-data keys")
 	})
 }
 
@@ -688,8 +720,8 @@ const (
 			"permission": "NeedsConsent",
 			"access": {
 				"type": "trustbloc.xyz/auth/type/client-id",
-				"subject-keys": ["client-id"],
-				"userid-key": "client-id"
+				"subject-keys": ["sub"],
+				"userid-key": "sub"
 			}
 		}, {
 			"reference": "other-access",
