@@ -12,6 +12,7 @@ import (
 	"encoding/json"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/hyperledger/aries-framework-go/component/storageutil/mem"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/jose/jwk/jwksupport"
@@ -245,6 +246,56 @@ func TestAuthHandler_HandleAccessRequest(t *testing.T) {
 
 		require.Equal(t, "foo.com", resp.Interact.Redirect)
 	})
+
+	t.Run("success - requested data already allowed", func(t *testing.T) {
+		h, err := New(config(t))
+		require.NoError(t, err)
+
+		h.loginConsent = &mockinteract.InteractHandler{
+			PrepareVal: &gnap.ResponseInteract{
+				Redirect: "foo.com",
+				Finish:   "barbazqux",
+			},
+		}
+
+		tokReq := gnap.TokenRequest{
+			Access: []gnap.TokenAccess{
+				{
+					IsReference: true,
+					Ref:         "other-access",
+				},
+			},
+			Label: "example",
+		}
+
+		userKey := clientKey(t)
+
+		s, err := h.sessionStore.GetOrCreateByKey(userKey)
+		require.NoError(t, err)
+
+		expTime := time.Now().Add(time.Hour)
+
+		tok := CreateToken(&api.ExpiringTokenRequest{TokenRequest: tokReq, Expires: expTime})
+
+		s.Tokens = append(s.Tokens, &api.ExpiringToken{AccessToken: *tok, Expires: expTime})
+
+		require.NoError(t, h.sessionStore.Save(s))
+
+		req := &gnap.AuthRequest{
+			Client: &gnap.RequestClient{
+				IsReference: false,
+				Key:         userKey,
+			},
+			AccessToken: []*gnap.TokenRequest{&tokReq},
+		}
+
+		v := &mockverifier.MockVerifier{}
+
+		resp, err := h.HandleAccessRequest(req, v, "")
+		require.NoError(t, err)
+
+		require.Equal(t, "example", resp.AccessToken[0].Label)
+	})
 }
 
 func TestAuthHandler_HandleContinueRequest(t *testing.T) {
@@ -362,13 +413,32 @@ func TestAuthHandler_HandleContinueRequest(t *testing.T) {
 		s.ContinueToken = &api.ExpiringToken{AccessToken: gnap.AccessToken{
 			Value: "foo",
 		}}
+
+		s.AllowedRequest = &api.AccessMetadata{
+			Tokens: []*api.ExpiringTokenRequest{
+				{
+					TokenRequest: gnap.TokenRequest{
+						Access: []gnap.TokenAccess{
+							{
+								IsReference: true,
+								Ref:         "bar",
+							},
+						},
+						Label: "bar",
+					},
+				},
+			},
+		}
+
 		require.NoError(t, h.sessionStore.Save(s))
 
 		resp, err := h.HandleContinueRequest(&gnap.ContinueRequest{}, "foo", &mockverifier.MockVerifier{})
 		require.NoError(t, err)
 		require.NotNil(t, resp)
-		require.Len(t, resp.AccessToken, 1)
+		require.Len(t, resp.AccessToken, 2)
+		// TODO: validate that one token is foo, one token is bar, either order
 		require.Equal(t, "foo", resp.AccessToken[0].Label)
+		require.Equal(t, "bar", resp.AccessToken[1].Label)
 	})
 }
 

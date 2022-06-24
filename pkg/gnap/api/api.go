@@ -58,6 +58,11 @@ type AccessMetadata struct {
 	SubjectKeys []string
 }
 
+// IsEmpty returns true iff the AccessMetadata object is empty.
+func (m *AccessMetadata) IsEmpty() bool {
+	return m == nil || (len(m.Tokens) == 0 && len(m.SubjectKeys) == 0)
+}
+
 // ExpiringTokenRequest holds a request for a token with a custom expiration
 // time. If this token is granted, the token's expiration time must be the
 // earliest of this value and the expiry determined by the token's lifetime.

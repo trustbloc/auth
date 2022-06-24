@@ -90,7 +90,7 @@ func New(config *Config) (*AuthHandler, error) {
 }
 
 // HandleAccessRequest handles GNAP access requests.
-func (h *AuthHandler) HandleAccessRequest( // nolint: funlen
+func (h *AuthHandler) HandleAccessRequest( // nolint: funlen,gocyclo
 	req *gnap.AuthRequest,
 	reqVerifier api.Verifier,
 	reqURL string,
@@ -137,9 +137,29 @@ func (h *AuthHandler) HandleAccessRequest( // nolint: funlen
 
 	s.ContinueToken = &api.ExpiringToken{AccessToken: continueToken}
 
-	s.Requested = permissions.NeedsConsent
+	s.NeedsConsent = permissions.NeedsConsent
 
-	// TODO: if any tokens are granted, and no tokens need consent, return granted tokens
+	// TODO: smarter access policy logic, to recognize if a token is being re-requested, and send that token instead of
+	//   creating fresh access tokens every time.
+
+	if permissions.NeedsConsent.IsEmpty() && !permissions.Allowed.IsEmpty() {
+		// nothing needs consent, but something is allowed, so create tokens for all allowed, and return
+		var newTokens []gnap.AccessToken
+		newTokens, s = h.createTokens(permissions.Allowed.Tokens, s)
+
+		err = h.sessionStore.Save(s)
+		if err != nil {
+			return nil, err
+		}
+
+		resp := &gnap.AuthResponse{
+			AccessToken: newTokens,
+		}
+
+		return resp, nil
+	}
+
+	s.AllowedRequest = permissions.Allowed
 
 	// TODO: support selecting one of multiple interaction handlers
 	interact, err := h.loginConsent.PrepareInteraction(req.Interact, reqURL, permissions.NeedsConsent.Tokens)
@@ -165,7 +185,7 @@ func (h *AuthHandler) HandleAccessRequest( // nolint: funlen
 }
 
 // HandleContinueRequest handles GNAP continue requests.
-func (h *AuthHandler) HandleContinueRequest( // nolint: funlen
+func (h *AuthHandler) HandleContinueRequest(
 	req *gnap.ContinueRequest,
 	continueToken string,
 	reqVerifier api.Verifier,
@@ -191,37 +211,19 @@ func (h *AuthHandler) HandleContinueRequest( // nolint: funlen
 
 	s.AddSubjectData(consent.SubjectData)
 
-	newTokens := []gnap.AccessToken{}
+	var newTokens, addedTokens []gnap.AccessToken
+	newTokens, s = h.createTokens(consent.Tokens, s)
 
-	now := time.Now()
-
-	for _, tokenRequest := range consent.Tokens {
-		tok := gnap.AccessToken{
-			Value:  uuid.New().String(),
-			Label:  tokenRequest.Label,
-			Access: tokenRequest.Access,
-			Flags:  tokenRequest.Flags,
-		}
-
-		tokenExpires := tokenRequest.Expires
-
-		lifetime := tokenExpires.Sub(now)
-
-		tok.Expires = int64(lifetime / time.Second)
-
-		newTokens = append(newTokens, tok)
-
-		s.Tokens = append(s.Tokens, &api.ExpiringToken{
-			AccessToken: tok,
-			Expires:     tokenExpires,
-		})
-
-		if tokenExpires.After(s.Expires) {
-			s.Expires = tokenExpires
-		}
+	// create fresh tokens for all requested tokens that were already permitted before this consent interaction
+	if s.AllowedRequest != nil {
+		addedTokens, s = h.createTokens(s.AllowedRequest.Tokens, s)
 	}
 
-	// TODO: in response, include previously-granted tokens that match request
+	newTokens = append(newTokens, addedTokens...)
+
+	// clear request metadata, since these are now granted
+	s.AllowedRequest = nil
+	s.NeedsConsent = nil
 
 	err = h.sessionStore.Save(s)
 	if err != nil {
@@ -238,6 +240,43 @@ func (h *AuthHandler) HandleContinueRequest( // nolint: funlen
 	}
 
 	return resp, nil
+}
+
+func (h *AuthHandler) createTokens(
+	tokRequests []*api.ExpiringTokenRequest,
+	clientSession *session.Session,
+) ([]gnap.AccessToken, *session.Session) {
+	newTokens := []gnap.AccessToken{}
+
+	now := time.Now()
+
+	for _, tokenRequest := range tokRequests {
+		tok := gnap.AccessToken{
+			Value:  uuid.New().String(),
+			Label:  tokenRequest.Label,
+			Access: tokenRequest.Access,
+			Flags:  tokenRequest.Flags,
+		}
+
+		tokenExpires := tokenRequest.Expires
+
+		lifetime := tokenExpires.Sub(now)
+
+		tok.Expires = int64(lifetime / time.Second)
+
+		newTokens = append(newTokens, tok)
+
+		clientSession.Tokens = append(clientSession.Tokens, &api.ExpiringToken{
+			AccessToken: tok,
+			Expires:     tokenExpires,
+		})
+
+		if tokenExpires.After(clientSession.Expires) {
+			clientSession.Expires = tokenExpires
+		}
+	}
+
+	return newTokens, clientSession
 }
 
 // HandleIntrospection handles GNAP resource-server requests for access token introspection.
