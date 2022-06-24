@@ -131,6 +131,25 @@ func (h *AuthHandler) HandleAccessRequest( // nolint: funlen,gocyclo
 		return nil, fmt.Errorf("failed to determine permissions for access request: %w", err)
 	}
 
+	// TODO: smarter access policy logic, to recognize if a token is being re-requested, and send that token instead of
+	//   creating fresh access tokens every time.
+	if permissions.NeedsConsent.IsEmpty() && !permissions.Allowed.IsEmpty() {
+		// nothing needs consent, but something is allowed, so create tokens for all allowed, and return
+		var resp *gnap.AuthResponse
+
+		resp, s, err = h.tokensGranted(permissions.Allowed.Tokens, s)
+		if err != nil {
+			return nil, err
+		}
+
+		err = h.sessionStore.Save(s)
+		if err != nil {
+			return nil, err
+		}
+
+		return resp, nil
+	}
+
 	continueToken := gnap.AccessToken{
 		Value: uuid.New().String(),
 	}
@@ -138,26 +157,6 @@ func (h *AuthHandler) HandleAccessRequest( // nolint: funlen,gocyclo
 	s.ContinueToken = &api.ExpiringToken{AccessToken: continueToken}
 
 	s.NeedsConsent = permissions.NeedsConsent
-
-	// TODO: smarter access policy logic, to recognize if a token is being re-requested, and send that token instead of
-	//   creating fresh access tokens every time.
-
-	if permissions.NeedsConsent.IsEmpty() && !permissions.Allowed.IsEmpty() {
-		// nothing needs consent, but something is allowed, so create tokens for all allowed, and return
-		var newTokens []gnap.AccessToken
-		newTokens, s = h.createTokens(permissions.Allowed.Tokens, s)
-
-		err = h.sessionStore.Save(s)
-		if err != nil {
-			return nil, err
-		}
-
-		resp := &gnap.AuthResponse{
-			AccessToken: newTokens,
-		}
-
-		return resp, nil
-	}
 
 	s.AllowedRequest = permissions.Allowed
 
@@ -211,15 +210,21 @@ func (h *AuthHandler) HandleContinueRequest(
 
 	s.AddSubjectData(consent.SubjectData)
 
-	var newTokens, addedTokens []gnap.AccessToken
-	newTokens, s = h.createTokens(consent.Tokens, s)
+	var tokReqs []*api.ExpiringTokenRequest
+
+	tokReqs = append(tokReqs, consent.Tokens...)
 
 	// create fresh tokens for all requested tokens that were already permitted before this consent interaction
 	if s.AllowedRequest != nil {
-		addedTokens, s = h.createTokens(s.AllowedRequest.Tokens, s)
+		tokReqs = append(tokReqs, s.AllowedRequest.Tokens...)
 	}
 
-	newTokens = append(newTokens, addedTokens...)
+	var resp *gnap.AuthResponse
+
+	resp, s, err = h.tokensGranted(tokReqs, s)
+	if err != nil {
+		return nil, err
+	}
 
 	// clear request metadata, since these are now granted
 	s.AllowedRequest = nil
@@ -235,11 +240,40 @@ func (h *AuthHandler) HandleContinueRequest(
 		return nil, err
 	}
 
+	return resp, nil
+}
+
+func (h *AuthHandler) tokensGranted(
+	tokReqs []*api.ExpiringTokenRequest,
+	s *session.Session,
+) (
+	*gnap.AuthResponse,
+	*session.Session,
+	error,
+) {
+	var newTokens []gnap.AccessToken
+
+	newTokens, s = h.createTokens(tokReqs, s)
+
 	resp := &gnap.AuthResponse{
 		AccessToken: newTokens,
 	}
 
-	return resp, nil
+	subjectData, err := h.getSubjectData(newTokens, s)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	if sub, ok := subjectData["sub"]; ok {
+		resp.Subject.SubIDs = []gnap.SubjectID{
+			{
+				Format: "opaque",
+				ID:     sub,
+			},
+		}
+	}
+
+	return resp, s, nil
 }
 
 func (h *AuthHandler) createTokens(
@@ -279,8 +313,34 @@ func (h *AuthHandler) createTokens(
 	return newTokens, clientSession
 }
 
+func (h *AuthHandler) getSubjectData(
+	tokens []gnap.AccessToken,
+	clientSession *session.Session,
+) (map[string]string, error) {
+	mergedAccess := []gnap.TokenAccess{}
+
+	for _, token := range tokens {
+		mergedAccess = append(mergedAccess, token.Access...)
+	}
+
+	subjectKeys, err := h.accessPolicy.AllowedSubjectKeys(mergedAccess)
+	if err != nil {
+		return nil, fmt.Errorf("error fetching subject-data keys: %w", err)
+	}
+
+	subjectData := map[string]string{}
+
+	for k := range subjectKeys {
+		if v, ok := clientSession.SubjectData[k]; ok {
+			subjectData[k] = v
+		}
+	}
+
+	return subjectData, nil
+}
+
 // HandleIntrospection handles GNAP resource-server requests for access token introspection.
-func (h *AuthHandler) HandleIntrospection( // nolint:gocyclo,funlen
+func (h *AuthHandler) HandleIntrospection( // nolint:gocyclo
 	req *gnap.IntrospectRequest,
 	reqVerifier api.Verifier,
 ) (*gnap.IntrospectResponse, error) {
@@ -325,9 +385,9 @@ func (h *AuthHandler) HandleIntrospection( // nolint:gocyclo,funlen
 		return &gnap.IntrospectResponse{Active: false}, nil
 	}
 
-	subjectKeys, err := h.accessPolicy.AllowedSubjectKeys(clientToken.Access)
+	subjectData, err := h.getSubjectData([]gnap.AccessToken{clientToken.AccessToken}, clientSession)
 	if err != nil {
-		err = fmt.Errorf("error fetching subject-data keys for requested token: %w", err)
+		return nil, fmt.Errorf("get subject data: %w", err)
 	}
 
 	resp := &gnap.IntrospectResponse{
@@ -335,13 +395,7 @@ func (h *AuthHandler) HandleIntrospection( // nolint:gocyclo,funlen
 		Access:      clientToken.Access,
 		Key:         clientSession.ClientKey,
 		Flags:       clientToken.Flags,
-		SubjectData: map[string]string{},
-	}
-
-	for k := range subjectKeys {
-		if v, ok := clientSession.SubjectData[k]; ok {
-			resp.SubjectData[k] = v
-		}
+		SubjectData: subjectData,
 	}
 
 	return resp, err
