@@ -202,7 +202,7 @@ func (ap *AccessPolicy) getTokenAccessPermission(access gnap.TokenAccess, client
 				continue
 			}
 
-			ok := isTokenAccessSubset(grantedMap, accessMap)
+			ok := isTokenAccessSuperset(grantedMap, accessMap)
 			if ok {
 				granted = true
 
@@ -233,7 +233,7 @@ func (ap *AccessPolicy) defaultTokenAccessPermission(access gnap.TokenAccess, ac
 	defaultLifetime := 0
 
 	for defaultType, defaultAccess := range ap.accessDescriptors {
-		ok := isTokenAccessSubset(defaultAccess, accessMap)
+		ok := isTokenAccessSuperset(defaultAccess, accessMap)
 		if ok {
 			perm := ap.basePermissions[defaultType]
 			lifetime := ap.lifetime[defaultType]
@@ -366,10 +366,10 @@ func (ap *AccessPolicy) parse(tok gnap.TokenAccess) (tokenAccessMap, error) {
 	return tokMap, nil
 }
 
-// isTokenAccessSubset returns true iff TokenAccess sub is a subset of super.
+// isTokenAccessSuperset returns true iff TokenAccess super is a superset of sub.
 //
 // Note: only supports maps with values that are string and/or []string.
-func isTokenAccessSubset(super, sub tokenAccessMap) bool { // nolint:gocyclo
+func isTokenAccessSuperset(super, sub tokenAccessMap) bool { // nolint:gocyclo
 	for k, subV := range sub {
 		if k == typeFieldName {
 			continue

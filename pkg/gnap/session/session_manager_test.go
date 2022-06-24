@@ -158,13 +158,13 @@ func TestManager(t *testing.T) {
 			SubjectKeys: []string{"foo"},
 		}
 
-		s.Requested = req
+		s.NeedsConsent = req
 
 		require.NoError(t, sm.Save(s))
 
 		s, err = sm.GetByID(s.ClientID)
 		require.NoError(t, err)
-		require.Equal(t, req, s.Requested)
+		require.Equal(t, req, s.NeedsConsent)
 	})
 
 	t.Run("set&get subject data", func(t *testing.T) {

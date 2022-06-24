@@ -88,7 +88,8 @@ type Session struct {
 	ClientKey      *gnap.ClientKey
 	Tokens         []*api.ExpiringToken
 	ContinueToken  *api.ExpiringToken
-	Requested      *api.AccessMetadata
+	NeedsConsent   *api.AccessMetadata
+	AllowedRequest *api.AccessMetadata
 	SubjectData    map[string]string
 	Expires        time.Time
 	InteractRef    string

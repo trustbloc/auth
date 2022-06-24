@@ -519,7 +519,7 @@ func Test_isTokenAccessSubset(t *testing.T) {
 
 	for _, tc := range testcases {
 		t.Run(tc.name, func(t *testing.T) {
-			res := isTokenAccessSubset(tc.super, tc.sub)
+			res := isTokenAccessSuperset(tc.super, tc.sub)
 			require.Equal(t, tc.result, res)
 		})
 	}
