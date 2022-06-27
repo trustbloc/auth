@@ -41,6 +41,7 @@ import (
 	"github.com/trustbloc/auth/pkg/internal/common/mockstorage"
 	oidcmodel "github.com/trustbloc/auth/pkg/restapi/common/oidc"
 	"github.com/trustbloc/auth/pkg/restapi/common/store/cookie"
+	"github.com/trustbloc/auth/spi/gnap"
 )
 
 func TestNew(t *testing.T) {
@@ -739,7 +740,7 @@ func TestOperations_HydraConsentHandler(t *testing.T) {
 }
 
 func TestGetBootstrapDataHandler(t *testing.T) {
-	t.Run("returns bootstrap data", func(t *testing.T) {
+	t.Run("returns bootstrap data when using OIDC token", func(t *testing.T) {
 		userSub := uuid.New().String()
 		config := config(t)
 		config.Hydra = &mockHydra{
@@ -774,6 +775,48 @@ func TestGetBootstrapDataHandler(t *testing.T) {
 		require.Equal(t, expected.Data, result.Data)
 	})
 
+	t.Run("returns bootstrap data when using GNAP token", func(t *testing.T) {
+		userSub := uuid.New().String()
+		config := config(t)
+
+		svc, err := New(config)
+		require.NoError(t, err)
+
+		svc.SetIntrospectHandler(func(req *gnap.IntrospectRequest) (*gnap.IntrospectResponse, error) {
+			return &gnap.IntrospectResponse{
+				SubjectData: map[string]string{"sub": userSub},
+			}, nil
+		})
+
+		expected := &user.Profile{
+			ID:     uuid.New().String(),
+			AAGUID: uuid.New().String(),
+			Data: map[string]string{
+				"primary vault": uuid.New().String(),
+				"backup vault":  uuid.New().String(),
+			},
+		}
+
+		err = svc.bootstrapStore.Put(userSub, marshal(t, expected))
+		require.NoError(t, err)
+
+		w := httptest.NewRecorder()
+
+		request := newGetBootstrapDataRequest()
+		request.Header.Set("authorization", "GNAP 123")
+
+		svc.getBootstrapDataHandler(w, request)
+		require.Equal(t, http.StatusOK, w.Code)
+		result := &BootstrapData{}
+		err = json.NewDecoder(w.Body).Decode(result)
+		require.NoError(t, err)
+		require.Equal(t, config.BootstrapConfig.DocumentSDSVaultURL, result.DocumentSDSVaultURL)
+		require.Equal(t, config.BootstrapConfig.KeySDSVaultURL, result.KeySDSVaultURL)
+		require.Equal(t, config.BootstrapConfig.AuthZKeyServerURL, result.AuthZKeyServerURL)
+		require.Equal(t, config.BootstrapConfig.OpsKeyServerURL, result.OpsKeyServerURL)
+		require.Equal(t, expected.Data, result.Data)
+	})
+
 	t.Run("forbidden if auth header is missing", func(t *testing.T) {
 		svc, err := New(config(t))
 		require.NoError(t, err)
@@ -792,6 +835,36 @@ func TestGetBootstrapDataHandler(t *testing.T) {
 		svc.getBootstrapDataHandler(w, request)
 		require.Equal(t, http.StatusBadRequest, w.Code)
 		require.Contains(t, w.Body.String(), "invalid authorization scheme")
+	})
+
+	t.Run("unauthorized if invalid gnap token", func(t *testing.T) {
+		request := newGetBootstrapDataRequest()
+		request.Header.Set("authorization", "GNAP 123")
+		svc, err := New(config(t))
+		svc.SetIntrospectHandler(func(req *gnap.IntrospectRequest) (*gnap.IntrospectResponse, error) {
+			return nil, fmt.Errorf("gnap introspect error")
+		})
+		require.NoError(t, err)
+		w := httptest.NewRecorder()
+		svc.getBootstrapDataHandler(w, request)
+		require.Equal(t, http.StatusUnauthorized, w.Code)
+		require.Contains(t, w.Body.String(), "gnap introspect error")
+	})
+
+	t.Run("unauthorized if gnap token does not grant access to subject id", func(t *testing.T) {
+		request := newGetBootstrapDataRequest()
+		request.Header.Set("authorization", "GNAP 123")
+		svc, err := New(config(t))
+		svc.SetIntrospectHandler(func(req *gnap.IntrospectRequest) (*gnap.IntrospectResponse, error) {
+			return &gnap.IntrospectResponse{
+				SubjectData: map[string]string{},
+			}, nil
+		})
+		require.NoError(t, err)
+		w := httptest.NewRecorder()
+		svc.getBootstrapDataHandler(w, request)
+		require.Equal(t, http.StatusUnauthorized, w.Code)
+		require.Contains(t, w.Body.String(), "does not grant access")
 	})
 
 	t.Run("badrequest if token is not base64 encoded", func(t *testing.T) {
@@ -880,6 +953,60 @@ func TestPostBootstrapDataHandler(t *testing.T) {
 		svc.postBootstrapDataHandler(result, newPostBootstrapDataRequest(t, &UpdateBootstrapDataRequest{
 			Data: expected.Data,
 		}))
+		require.Equal(t, http.StatusOK, result.Code)
+		raw, err := svc.bootstrapStore.Get(expected.ID)
+		require.NoError(t, err)
+		update := &user.Profile{}
+		err = json.NewDecoder(bytes.NewReader(raw)).Decode(update)
+		require.NoError(t, err)
+		require.Equal(t, expected, update)
+	})
+
+	t.Run("updates bootstrap data when using GNAP token", func(t *testing.T) {
+		expected := &user.Profile{
+			ID:     uuid.New().String(),
+			AAGUID: uuid.New().String(),
+			Data: map[string]string{
+				"docsSDS":  "https://example.org/edvs/123",
+				"keysSDS":  "https://example.org/edvs/456",
+				"authkeys": "https://example.org/kms/123",
+				"opskeys":  "https://example.org/kms/456",
+			},
+		}
+		config := config(t)
+		config.Hydra = &mockHydra{
+			introspectValue: &admin.IntrospectOAuth2TokenOK{Payload: &models.OAuth2TokenIntrospection{
+				Sub: expected.ID,
+			}},
+		}
+		config.StoreProvider = &mockstore.MockStoreProvider{
+			Store: &mockstore.MockStore{
+				Store: map[string]mockstore.DBEntry{
+					expected.ID: {Value: marshal(t, &user.Profile{
+						ID:     expected.ID,
+						AAGUID: expected.AAGUID,
+					})},
+				},
+			},
+		}
+		svc, err := New(config)
+		require.NoError(t, err)
+
+		svc.SetIntrospectHandler(func(req *gnap.IntrospectRequest) (*gnap.IntrospectResponse, error) {
+			return &gnap.IntrospectResponse{
+				SubjectData: map[string]string{"sub": expected.ID},
+			}, nil
+		})
+
+		result := httptest.NewRecorder()
+
+		request := newPostBootstrapDataRequest(t, &UpdateBootstrapDataRequest{
+			Data: expected.Data,
+		})
+
+		request.Header.Set("authorization", "GNAP 123")
+
+		svc.postBootstrapDataHandler(result, request)
 		require.Equal(t, http.StatusOK, result.Code)
 		raw, err := svc.bootstrapStore.Get(expected.ID)
 		require.NoError(t, err)
@@ -1666,6 +1793,28 @@ func TestGetSecretHandler(t *testing.T) {
 		o.getSecretHandler(result, httptest.NewRequest(http.MethodGet, "http://example.org/secrets/123", nil))
 		require.Equal(t, http.StatusForbidden, result.Code)
 		require.Contains(t, result.Body.String(), "no credentials")
+	})
+
+	t.Run("status bad request if authorization header is not bearer", func(t *testing.T) {
+		o, err := New(config(t))
+		require.NoError(t, err)
+		request := httptest.NewRequest(http.MethodGet, "http://example.org/secrets/123", nil)
+		request.Header.Set("authorization", "blahblah "+base64.StdEncoding.EncodeToString([]byte("INVALID")))
+		result := httptest.NewRecorder()
+		o.getSecretHandler(result, request)
+		require.Equal(t, http.StatusBadRequest, result.Code)
+		require.Contains(t, result.Body.String(), "invalid authorization scheme")
+	})
+
+	t.Run("status bad request if token is not base64", func(t *testing.T) {
+		o, err := New(config(t))
+		require.NoError(t, err)
+		request := httptest.NewRequest(http.MethodGet, "http://example.org/secrets/123", nil)
+		request.Header.Set("authorization", "Bearer @&#$@^&*^")
+		result := httptest.NewRecorder()
+		o.getSecretHandler(result, request)
+		require.Equal(t, http.StatusBadRequest, result.Code)
+		require.Contains(t, result.Body.String(), "failed to decode token")
 	})
 
 	t.Run("status unauthorized if token is invalid", func(t *testing.T) {

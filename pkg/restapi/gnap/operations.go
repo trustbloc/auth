@@ -397,7 +397,8 @@ func (o *Operation) oidcCallbackHandler(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	// TODO: add interaction hash as query param here
+	// TODO: redirect to auth frontend that saves the redirect URI (with interactRef
+	//  and responseHash) in vueX then closes the popup
 
 	q := clientURI.Query()
 
@@ -465,6 +466,21 @@ func (o *Operation) authContinueHandler(w http.ResponseWriter, req *http.Request
 	}
 
 	o.writeResponse(w, resp)
+}
+
+type skipVerify struct{}
+
+// Verify skip request verification when introspecting internally through Go.
+func (s skipVerify) Verify(_ *gnap.ClientKey) error {
+	return nil
+}
+
+// InternalIntrospectHandler returns a handler that allows the auth server's handlers to perform GNAP introspection
+// with itself as the AS and RS.
+func (o *Operation) InternalIntrospectHandler() common.Introspecter {
+	return func(req *gnap.IntrospectRequest) (*gnap.IntrospectResponse, error) {
+		return o.authHandler.HandleIntrospection(req, &skipVerify{})
+	}
 }
 
 func (o *Operation) introspectHandler(w http.ResponseWriter, req *http.Request) {

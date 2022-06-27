@@ -41,6 +41,7 @@ func NewSteps(ctx *bddctx.BDDContext) *Steps {
 
 func (s *Steps) RegisterSteps(gs *godog.ScenarioContext) {
 	gs.Step("a wallet that has logged in", s.userLoggedIn)
+	gs.Step("a wallet that has logged in with GNAP", s.userLoggedInGNAP)
 	gs.Step("the wallet executes an HTTP GET on the bootstrap endpoint", s.walletFetchesBootstrapData)
 	gs.Step("auth returns the SDS and KeyServer URLs", s.hubAuthReturnsSDSAndKeyServerURLs)
 	gs.Step("the wallet executes an HTTP POST on the bootstrap endpoint", s.walletUpdatesBootstrapData)
@@ -51,6 +52,17 @@ func (s *Steps) userLoggedIn() error {
 	var err error
 
 	s.wallet, err = login.NewSteps(s.ctx).NewWalletLogin()
+	if err != nil {
+		return fmt.Errorf("failed to login user: %w", err)
+	}
+
+	return nil
+}
+
+func (s *Steps) userLoggedInGNAP() error {
+	var err error
+
+	s.wallet, err = login.NewSteps(s.ctx).NewWalletLoginGNAP()
 	if err != nil {
 		return fmt.Errorf("failed to login user: %w", err)
 	}

@@ -9,6 +9,9 @@ package login
 import (
 	"bytes"
 	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -21,9 +24,14 @@ import (
 
 	"github.com/coreos/go-oidc/v3/oidc"
 	"github.com/google/uuid"
+	"github.com/hyperledger/aries-framework-go/pkg/doc/jose/jwk"
 	"github.com/ory/hydra-client-go/client"
 	"github.com/ory/hydra-client-go/client/admin"
 	"github.com/ory/hydra-client-go/models"
+	"github.com/square/go-jose/v3"
+	"github.com/trustbloc/auth/component/gnap/as"
+	"github.com/trustbloc/auth/spi/gnap"
+	"github.com/trustbloc/auth/spi/gnap/proof/httpsig"
 	"golang.org/x/oauth2"
 
 	"github.com/trustbloc/auth/pkg/restapi/operation"
@@ -41,10 +49,21 @@ type MockWallet struct {
 	userData         *UserClaims
 	callbackErr      error
 	accessToken      string
+	authHeader       string
 	ReceivedCallback bool
 	UserData         *UserClaims
 	CallbackErr      error
 	Secret           string
+	gnap             *gnapParams
+}
+
+type gnapParams struct {
+	pubJWK      *jwk.JWK
+	signer      *httpsig.Signer
+	client      *as.Client
+	authResp    *gnap.AuthResponse
+	interactRef string
+	token       string
 }
 
 func (m *MockWallet) RequestUserAuthentication() (*http.Response, error) {
@@ -66,13 +85,278 @@ func (m *MockWallet) RequestUserAuthentication() (*http.Response, error) {
 	return response, nil
 }
 
+func (m *MockWallet) GNAPLogin(authServerURL string) error {
+	err := m.setupGNAP(authServerURL)
+	if err != nil {
+		return err
+	}
+
+	err = m.gnapReqAccess()
+	if err != nil {
+		return err
+	}
+
+	err = m.gnapInteract()
+	if err != nil {
+		return err
+	}
+
+	err = m.gnapContinueRequest()
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (m *MockWallet) setupGNAP(authServerURL string) error {
+	priv, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		return err
+	}
+
+	privJWK := &jwk.JWK{
+		JSONWebKey: jose.JSONWebKey{
+			Key:       priv,
+			KeyID:     "key1",
+			Algorithm: "ES256",
+		},
+		Kty: "EC",
+		Crv: "P-256",
+	}
+
+	pubJWK := &jwk.JWK{
+		JSONWebKey: privJWK.Public(),
+		Kty:        "EC",
+		Crv:        "P-256",
+	}
+
+	signer := &httpsig.Signer{SigningKey: privJWK}
+
+	// create gnap as client
+	gnapClient, err := as.NewClient(
+		signer,
+		m.httpClient,
+		authServerURL,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to create gnap as go-client: %w", err)
+	}
+
+	m.gnap = &gnapParams{
+		pubJWK: pubJWK,
+		signer: signer,
+		client: gnapClient,
+	}
+
+	return nil
+}
+
+const mockClientFinishURI = "https://mock.client.example.com/"
+
+func (m *MockWallet) gnapReqAccess() error {
+	req := &gnap.AuthRequest{
+		Client: &gnap.RequestClient{
+			Key: &gnap.ClientKey{
+				Proof: "httpsig",
+				JWK:   *m.gnap.pubJWK,
+			},
+		},
+		AccessToken: []*gnap.TokenRequest{
+			{
+				Access: []gnap.TokenAccess{
+					{
+						IsReference: true,
+						Ref:         "example-token-type",
+					},
+				},
+			},
+		},
+		Interact: &gnap.RequestInteract{
+			Start: []string{"redirect"},
+			Finish: gnap.RequestFinish{
+				Method: "redirect",
+				URI:    mockClientFinishURI,
+			},
+		},
+	}
+
+	authResp, err := m.gnap.client.RequestAccess(req)
+	if err != nil {
+		return fmt.Errorf("failed to gnap go-client: %w", err)
+	}
+
+	m.gnap.authResp = authResp
+
+	return nil
+}
+
+const (
+	authServerURL       = "https://auth.trustbloc.local:8070"
+	expectedInteractURL = authServerURL + "/gnap/interact"
+
+	oidcProviderSelectorURL = authServerURL + "/oidc/login"
+	oidcCallbackURLURL      = authServerURL + "/oidc/callback"
+	authServerSignUpURL     = authServerURL + "/ui/sign-up"
+
+	gnapOIDCProviderName = "mockbank1" // providers.yaml
+)
+
+func (m *MockWallet) gnapInteract() error {
+	// initialise the browser
+	interactURL, err := url.Parse(m.gnap.authResp.Interact.Redirect)
+	if err != nil {
+		return err
+	}
+
+	txnID := interactURL.Query().Get("txnID")
+
+	// redirect to interact url
+	response, err := m.httpClient.Get(m.gnap.authResp.Interact.Redirect)
+	if err != nil {
+		return err
+	}
+
+	defer func() {
+		closeErr := response.Body.Close()
+		if closeErr != nil {
+			fmt.Printf("WARNING - failed to close http response body: %s\n", closeErr.Error())
+		}
+	}()
+
+	signUpURL := authServerSignUpURL + "?txnID=" + txnID
+
+	// validate the redirect url
+	if response.Request.URL.String() != signUpURL {
+		return fmt.Errorf(
+			"invalid ui redirect url: expected=%s actual=%s", signUpURL, response.Request.URL.String(),
+		)
+	}
+
+	// select provider
+	request := fmt.Sprintf("%s?provider=%s&txnID=%s", oidcProviderSelectorURL, gnapOIDCProviderName, txnID)
+
+	prevCheckRedirect := m.httpClient.CheckRedirect
+
+	m.httpClient.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+		return http.ErrUseLastResponse
+	}
+
+	result, err := m.httpClient.Get(request)
+	if err != nil {
+		return fmt.Errorf("failed to redirect to OIDC provider url %s: %w", request, err)
+	}
+
+	request = result.Header.Get("Location")
+
+	result, err = m.httpClient.Get(request)
+	if err != nil {
+		return fmt.Errorf("failed to redirect to OIDC provider url %s: %w", request, err)
+	}
+
+	request = result.Header.Get("Location")
+
+	result, err = m.httpClient.Get(request)
+	if err != nil {
+		return fmt.Errorf("failed to redirect to login url %s: %w", request, err)
+	}
+
+	// login to third party oidc
+	loginResp, err := m.httpClient.Post(result.Request.URL.String(), "", nil)
+	if err != nil {
+		return err
+	}
+
+	request = loginResp.Header.Get("Location")
+
+	result, err = m.httpClient.Get(request)
+	if err != nil {
+		return fmt.Errorf("failed to redirect to post-login oauth url %s: %w", request, err)
+	}
+
+	request = result.Header.Get("Location")
+
+	result, err = m.httpClient.Get(request)
+	if err != nil {
+		return fmt.Errorf("failed to redirect to consent url %s: %w", request, err)
+	}
+
+	request = result.Header.Get("Location")
+
+	result, err = m.httpClient.Get(request)
+	if err != nil {
+		return fmt.Errorf("failed to redirect to post-consent oauth url %s: %w", request, err)
+	}
+
+	request = result.Header.Get("Location")
+
+	result, err = m.httpClient.Get(request)
+	if err != nil {
+		return fmt.Errorf("failed to redirect to auth callback url %s: %w", request, err)
+	}
+
+	clientRedirect := result.Header.Get("Location")
+
+	// TODO validate the client finishURL
+	if !strings.HasPrefix(clientRedirect, mockClientFinishURI) {
+		return fmt.Errorf(
+			"invalid client finish redirect prefix expected=%s actual=%s",
+			mockClientFinishURI, clientRedirect)
+	}
+
+	crURL, err := url.Parse(clientRedirect)
+	if err != nil {
+		return err
+	}
+
+	m.gnap.interactRef = crURL.Query().Get("interact_ref")
+
+	m.httpClient.CheckRedirect = prevCheckRedirect
+
+	return nil
+}
+
+func (m *MockWallet) gnapContinueRequest() error {
+	req := &gnap.ContinueRequest{
+		InteractRef: m.gnap.interactRef,
+	}
+
+	authResp, err := m.gnap.client.Continue(req, m.gnap.authResp.Continue.AccessToken.Value)
+	if err != nil {
+		return fmt.Errorf("failed to call continue request: %w", err)
+	}
+
+	m.gnap.authResp = authResp
+
+	if len(authResp.AccessToken) < 1 {
+		return fmt.Errorf("expected a GNAP token to be granted")
+	}
+
+	m.gnap.token = authResp.AccessToken[0].Value
+
+	m.setGNAPAccessToken(m.gnap.token)
+
+	if m.UserData == nil {
+		m.UserData = &UserClaims{}
+	}
+
+	if len(authResp.Subject.SubIDs) > 0 {
+		m.UserData.Sub = authResp.Subject.SubIDs[0].ID
+	}
+
+	return nil
+}
+
 func (m *MockWallet) FetchBootstrapData(endpoint string) (*operation.BootstrapData, error) {
 	request, err := http.NewRequest(http.MethodGet, endpoint, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to construct http request: %w", err)
 	}
 
-	m.addAccessToken(request)
+	err = m.addAuthHeaders(request, nil)
+	if err != nil {
+		return nil, err
+	}
 
 	response, err := m.httpClient.Do(request)
 	if err != nil {
@@ -113,7 +397,10 @@ func (m *MockWallet) UpdateBootstrapData(endpoint string, update *operation.Upda
 		return fmt.Errorf("failed to create http request: %w", err)
 	}
 
-	m.addAccessToken(request)
+	err = m.addAuthHeaders(request, payload)
+	if err != nil {
+		return err
+	}
 
 	response, err := m.httpClient.Do(request)
 	if err != nil {
@@ -156,7 +443,10 @@ func (m *MockWallet) CreateAndPushSecretToHubAuth(endpoint string) error {
 		return fmt.Errorf("failed to create http request: %w", err)
 	}
 
-	m.addAccessToken(request)
+	err = m.addAuthHeaders(request, payload)
+	if err != nil {
+		return err
+	}
 
 	response, err := m.httpClient.Do(request)
 	if err != nil {
@@ -205,6 +495,7 @@ func (m *MockWallet) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	m.accessToken = token.AccessToken
+	m.setOIDCAccessToken(token.AccessToken)
 
 	rawIDToken, ok := token.Extra("id_token").(string)
 	if !ok {
@@ -238,13 +529,32 @@ func (m *MockWallet) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	// store access token
 	m.accessToken = token.AccessToken
+	m.setOIDCAccessToken(token.AccessToken)
 }
 
-func (m *MockWallet) addAccessToken(r *http.Request) {
-	r.Header.Set(
-		"authorization",
-		fmt.Sprintf("Bearer %s", base64.StdEncoding.EncodeToString([]byte(m.accessToken))),
-	)
+func (m *MockWallet) setOIDCAccessToken(token string) {
+	m.authHeader = fmt.Sprintf("Bearer %s", base64.StdEncoding.EncodeToString([]byte(token)))
+}
+
+func (m *MockWallet) setGNAPAccessToken(token string) {
+	m.authHeader = fmt.Sprintf("GNAP %s", token)
+}
+
+func (m *MockWallet) addAuthHeaders(r *http.Request, body []byte) error {
+	r.Header.Set("authorization", m.authHeader)
+
+	if !strings.HasPrefix(m.authHeader, "GNAP") || m.gnap == nil {
+		return nil
+	}
+
+	// if GNAP, we sign the request
+	var err error
+	r, err = m.gnap.signer.Sign(r, body)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func NewMockWallet(clientRegistrationURL, oidcProviderURL string, httpClient *http.Client) (*MockWallet, error) {

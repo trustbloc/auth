@@ -12,6 +12,8 @@ import (
 	"net/http"
 
 	"github.com/trustbloc/edge-core/pkg/log"
+
+	"github.com/trustbloc/auth/spi/gnap"
 )
 
 // Handler http handler for each controller API endpoint.
@@ -37,3 +39,6 @@ func WriteErrorResponsef(rw http.ResponseWriter, logger log.Logger, status int, 
 		logger.Errorf("Unable to send error message, %s", err)
 	}
 }
+
+// Introspecter performs a GNAP introspection where the auth server is both AS and RS.
+type Introspecter func(req *gnap.IntrospectRequest) (*gnap.IntrospectResponse, error)
