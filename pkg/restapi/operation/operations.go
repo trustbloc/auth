@@ -622,9 +622,12 @@ func (o *Operation) postBootstrapDataHandler(w http.ResponseWriter, r *http.Requ
 
 	existing, err := user.NewStore(o.bootstrapStore).Get(subject)
 	if errors.Is(err, storage.ErrDataNotFound) {
-		o.writeErrorResponse(w, http.StatusConflict, "associated bootstrap data not found")
+		existing, err = o.onboardUser(subject) // TODO: Onboard user as part of GNAP flow when we get access token?
+		if err != nil {
+			o.writeErrorResponse(w, http.StatusInternalServerError, fmt.Sprintf("failed to onboard user: %s", err))
 
-		return
+			return
+		}
 	}
 
 	if err != nil {
@@ -931,7 +934,6 @@ func (o *Operation) gnapSub(w http.ResponseWriter, _ *http.Request, authHeader s
 
 	introspection, err := o.introspectHandler(&gnap.IntrospectRequest{
 		AccessToken:    token,
-		Proof:          "httpsig",
 		ResourceServer: o.gnapRSClient,
 	})
 	if err != nil {
@@ -1034,7 +1036,7 @@ func createGNAPClient() (*gnap.RequestClient, error) {
 			Proof: "httpsig",
 			JWK: jwk.JWK{
 				JSONWebKey: jose.JSONWebKey{
-					Key:       priv.PublicKey,
+					Key:       &priv.PublicKey,
 					KeyID:     "key1",
 					Algorithm: "ES256",
 				},
