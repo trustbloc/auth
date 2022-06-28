@@ -104,6 +104,18 @@ func (s *Steps) NewWalletLogin() (*MockWallet, error) {
 	return s.wallet, s.userHasAuthenticatedToTheWallet()
 }
 
+// NewWalletLogin returns a new common.MockWallet that is logged in.
+func (s *Steps) NewWalletLoginGNAP() (*MockWallet, error) {
+	err := s.registerWallet()
+	if err != nil {
+		return nil, err
+	}
+
+	err = s.wallet.GNAPLogin(authServerURL)
+
+	return s.wallet, s.userHasAuthenticatedToTheWallet()
+}
+
 func (s *Steps) registerWallet() error {
 	err := s.initBrowser()
 	if err != nil {

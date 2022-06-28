@@ -8,6 +8,9 @@ package operation
 
 import (
 	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/base64"
@@ -24,9 +27,11 @@ import (
 	"github.com/cenkalti/backoff"
 	"github.com/coreos/go-oidc/v3/oidc"
 	"github.com/google/uuid"
+	"github.com/hyperledger/aries-framework-go/pkg/doc/jose/jwk"
 	"github.com/hyperledger/aries-framework-go/spi/storage"
 	"github.com/ory/hydra-client-go/client/admin"
 	"github.com/ory/hydra-client-go/models"
+	"github.com/square/go-jose/v3"
 	"github.com/trustbloc/edge-core/pkg/log"
 	tlsutils "github.com/trustbloc/edge-core/pkg/utils/tls"
 	"golang.org/x/oauth2"
@@ -36,6 +41,7 @@ import (
 	"github.com/trustbloc/auth/pkg/restapi/common"
 	oidcmodel "github.com/trustbloc/auth/pkg/restapi/common/oidc"
 	"github.com/trustbloc/auth/pkg/restapi/common/store/cookie"
+	"github.com/trustbloc/auth/spi/gnap"
 )
 
 const (
@@ -83,6 +89,8 @@ type Operation struct {
 	timeout             uint64
 	cachedOIDCProvLock  sync.RWMutex
 	authProviders       []authProvider
+	introspectHandler   common.Introspecter
+	gnapRSClient        *gnap.RequestClient
 }
 
 // Config defines configuration for rp operations.
@@ -167,6 +175,11 @@ func New(config *Config) (*Operation, error) {
 		return nil, err
 	}
 
+	svc.gnapRSClient, err = createGNAPClient()
+	if err != nil {
+		return nil, err
+	}
+
 	return svc, nil
 }
 
@@ -184,6 +197,11 @@ func (o *Operation) GetRESTHandlers() []common.Handler {
 		support.NewHTTPHandler(secretsPath, http.MethodGet, o.getSecretHandler),
 		support.NewHTTPHandler(deviceCertPath, http.MethodPost, o.deviceCertHandler),
 	}
+}
+
+// SetIntrospectHandler sets the GNAP introspection handler for Operation's APIs.
+func (o *Operation) SetIntrospectHandler(i common.Introspecter) {
+	o.introspectHandler = i
 }
 
 func (o *Operation) authProvidersHandler(w http.ResponseWriter, _ *http.Request) {
@@ -859,15 +877,44 @@ func (o *Operation) writeResponse(rw http.ResponseWriter, v interface{}) {
 	}
 }
 
+const (
+	bearerScheme = "Bearer "
+	gnapScheme   = "GNAP "
+)
+
 func (o *Operation) subject(w http.ResponseWriter, r *http.Request) (string, bool) {
-	token, proceed := o.bearerToken(w, r)
-	if !proceed {
+	authHeader := strings.TrimSpace(r.Header.Get("authorization"))
+	if authHeader == "" {
+		o.writeErrorResponse(w, http.StatusForbidden, "no credentials")
+
+		return "", false
+	}
+
+	switch {
+	case strings.HasPrefix(authHeader, bearerScheme):
+		return o.oidcSub(w, r, authHeader)
+	case strings.HasPrefix(authHeader, gnapScheme):
+		return o.gnapSub(w, r, authHeader)
+	default:
+		o.writeErrorResponse(w, http.StatusBadRequest, "invalid authorization scheme")
+
+		return "", false
+	}
+}
+
+func (o *Operation) oidcSub(w http.ResponseWriter, r *http.Request, authHeader string) (string, bool) {
+	encoded := authHeader[len(bearerScheme):]
+
+	token, err := base64.StdEncoding.DecodeString(encoded)
+	if err != nil {
+		o.writeErrorResponse(w, http.StatusBadRequest, "failed to decode token: %s", err.Error())
+
 		return "", false
 	}
 
 	request := admin.NewIntrospectOAuth2TokenParams()
 	request.SetContext(r.Context())
-	request.SetToken(token)
+	request.SetToken(string(token))
 
 	introspection, err := o.hydra.IntrospectOAuth2Token(request)
 	if err != nil {
@@ -877,6 +924,29 @@ func (o *Operation) subject(w http.ResponseWriter, r *http.Request) (string, boo
 	}
 
 	return introspection.Payload.Sub, true
+}
+
+func (o *Operation) gnapSub(w http.ResponseWriter, _ *http.Request, authHeader string) (string, bool) {
+	token := authHeader[len(gnapScheme):]
+
+	introspection, err := o.introspectHandler(&gnap.IntrospectRequest{
+		AccessToken:    token,
+		Proof:          "httpsig",
+		ResourceServer: o.gnapRSClient,
+	})
+	if err != nil {
+		o.writeErrorResponse(w, http.StatusUnauthorized, "failed to introspect token: %s", err.Error())
+
+		return "", false
+	}
+
+	if sub, ok := introspection.SubjectData["sub"]; ok {
+		return sub, true
+	}
+
+	o.writeErrorResponse(w, http.StatusUnauthorized, "token does not grant access to subject id")
+
+	return "", false
 }
 
 func (o *Operation) bearerToken(w http.ResponseWriter, r *http.Request) (string, bool) {
@@ -950,6 +1020,29 @@ func openStore(provider storage.Provider, name string) (storage.Store, error) {
 	}
 
 	return s, nil
+}
+
+func createGNAPClient() (*gnap.RequestClient, error) {
+	priv, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		return nil, fmt.Errorf("creating public key for GNAP RS role: %w", err)
+	}
+
+	return &gnap.RequestClient{
+		IsReference: false,
+		Key: &gnap.ClientKey{
+			Proof: "httpsig",
+			JWK: jwk.JWK{
+				JSONWebKey: jose.JSONWebKey{
+					Key:       priv.PublicKey,
+					KeyID:     "key1",
+					Algorithm: "ES256",
+				},
+				Kty: "EC",
+				Crv: "P-256",
+			},
+		},
+	}, nil
 }
 
 func (o *Operation) initOIDCProvider(providerID string, config *oidcmodel.ProviderConfig) (oidcProvider, error) {

@@ -30,6 +30,8 @@ func New(config *operation.Config, gnapConfig *gnap.Config) (*Controller, error)
 		return nil, fmt.Errorf("failed to initialize auth-rest gnap operations: %w", err)
 	}
 
+	rpService.SetIntrospectHandler(gnapService.InternalIntrospectHandler())
+
 	allHandlers = append(allHandlers, gnapService.GetRESTHandlers()...)
 
 	return &Controller{handlers: allHandlers}, nil
