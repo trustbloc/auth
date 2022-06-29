@@ -519,6 +519,7 @@ func startAuthService(parameters *authRestParameters, srv server) error {
 		AccessPolicyConfig: gnapAPConfig,
 		InteractionHandler: interact,
 		UIEndpoint:         uiEndpoint,
+		ClosePopupHTML:     parameters.staticFiles + "/gnapRedirect.html",
 		StartupTimeout:     parameters.startupTimeout,
 		OIDC: &oidcmodel.Config{
 			CallbackURL: parameters.oidcParams.callbackURL,
@@ -544,7 +545,7 @@ Database prefix: %s`, parameters.hostURL, parameters.databaseType, parameters.da
 	router.PathPrefix(uiEndpoint).
 		Subrouter().
 		Methods(http.MethodGet).
-		HandlerFunc(uiHandler(parameters.staticFiles, http.ServeFile))
+		HandlerFunc(uiHandler(parameters.staticFiles+"/auth-vue", http.ServeFile))
 
 	return srv.ListenAndServe(
 		parameters.hostURL,
