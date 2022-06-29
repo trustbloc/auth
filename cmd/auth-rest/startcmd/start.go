@@ -787,7 +787,7 @@ func constructCORSHandler(handler http.Handler) http.Handler {
 	return cors.New(
 		cors.Options{
 			AllowedMethods: []string{http.MethodGet, http.MethodPost},
-			AllowedHeaders: []string{"Origin", "Accept", "Content-Type", "X-Requested-With", "Authorization"},
+			AllowedHeaders: []string{"*"},
 		},
 	).Handler(handler)
 }
