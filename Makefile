@@ -34,6 +34,7 @@ unit-test: generate-unit-test-key
 auth-rest:
 	@echo "Building auth-rest"
 	@mkdir -p ./.build/bin
+	@cp -r ${AUTH_REST_PATH}/static ./.build/bin/
 	@cd ${AUTH_REST_PATH} && go build -o ../../.build/bin/auth-rest main.go
 
 .PHONY: auth-vue

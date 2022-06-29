@@ -11,9 +11,11 @@ import (
 	"crypto/elliptic"
 	"crypto/rand"
 	"fmt"
+	"io/ioutil"
 	"net/http"
 	"net/http/cookiejar"
 	"net/url"
+	"regexp"
 	"strings"
 
 	"github.com/cucumber/godog"
@@ -296,6 +298,18 @@ func (s *Steps) interactRedirect() error {
 	}
 
 	clientRedirect := result.Header.Get("Location")
+
+	body, err := ioutil.ReadAll(result.Body)
+	if err != nil {
+		return fmt.Errorf("failed to read result body: %w", err)
+	}
+
+	rx := regexp.MustCompile("window.opener.location.href = '(.*)';")
+	res := rx.FindStringSubmatch(string(body))
+
+	clientRedirect = res[1]
+	clientRedirect = strings.Replace(clientRedirect, "\\u0026", "\u0026", -1)
+	clientRedirect = strings.Replace(clientRedirect, "\\/", "/", -1)
 
 	// TODO validate the client finishURL
 	if !strings.HasPrefix(clientRedirect, mockClientFinishURI) {

@@ -18,6 +18,9 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
+	"regexp"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
@@ -442,6 +445,11 @@ func TestOIDCCallbackHandler(t *testing.T) {
 		code := uuid.New().String()
 		config := config(t)
 
+		templatePath, deleteTmp := tmpStaticHTML(t)
+		defer deleteTmp()
+
+		config.ClosePopupHTML = templatePath
+
 		o, err := New(config)
 		require.NoError(t, err)
 
@@ -503,7 +511,7 @@ func TestOIDCCallbackHandler(t *testing.T) {
 
 		result := httptest.NewRecorder()
 		o.oidcCallbackHandler(result, newOIDCCallback(state, code))
-		require.Equal(t, http.StatusFound, result.Code)
+		require.Equal(t, http.StatusOK, result.Code)
 		// TODO validate redirect url
 	})
 
@@ -844,7 +852,14 @@ func TestOIDCCallbackHandler(t *testing.T) {
 }
 
 func Test_Full_Flow(t *testing.T) {
-	o, err := New(config(t))
+	conf := config(t)
+
+	templatePath, deleteTmp := tmpStaticHTML(t)
+	defer deleteTmp()
+
+	conf.ClosePopupHTML = templatePath
+
+	o, err := New(conf)
 	require.NoError(t, err)
 
 	authResp := &gnap.AuthResponse{}
@@ -950,10 +965,22 @@ func Test_Full_Flow(t *testing.T) {
 
 		o.oidcCallbackHandler(rw, newOIDCCallback(state, code))
 
-		require.Equal(t, http.StatusFound, rw.Code)
+		require.Equal(t, http.StatusOK, rw.Code)
 
-		redirectURL, err := url.Parse(rw.Header().Get("location"))
+		body := rw.Body.Bytes()
+
+		rx := regexp.MustCompile("window.opener.location.href = '(.*)';")
+		res := rx.FindStringSubmatch(string(body))
+
+		u := res[1]
+
+		u = strings.ReplaceAll(u, "\\u0026", "\u0026")
+		u = strings.ReplaceAll(u, "\\/", "/")
+
+		redirectURL, err := url.Parse(u)
 		require.NoError(t, err)
+
+		require.Contains(t, redirectURL.String(), "interact_ref")
 
 		interactRef = redirectURL.Query().Get("interact_ref")
 		require.NotEqual(t, "", interactRef)
@@ -1188,6 +1215,30 @@ func clientKey(t *testing.T) (*jwk.JWK, *gnap.ClientKey) {
 	return &privJWK, &ck
 }
 
+func tmpStaticHTML(t *testing.T) (string, func()) {
+	t.Helper()
+
+	f, err := os.CreateTemp("", "tmpfile-*.html")
+	require.NoError(t, err)
+
+	defer func() {
+		e := f.Close()
+		if e != nil {
+			fmt.Printf("failed to close tmpfile: %s", e.Error())
+		}
+	}()
+
+	_, err = f.Write([]byte(staticHTML))
+	require.NoError(t, err)
+
+	return f.Name(), func() {
+		e := os.Remove(f.Name())
+		if e != nil {
+			fmt.Printf("failed to delete tmpfile: %s", e.Error())
+		}
+	}
+}
+
 const (
 	accessPolicyConf = `{
 	"access-types": [{
@@ -1211,4 +1262,20 @@ const (
 		} 
 	]
 }`
+	staticHTML = `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Redirecting...</title>
+</head>
+
+<script>
+window.opener.location.href = '{{.RedirectURI}}';
+window.top.close();
+</script>
+
+<body>
+
+</body>
+</html>`
 )

@@ -12,6 +12,7 @@ import (
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
+	"html/template"
 	"io/ioutil"
 	"net/http"
 	"net/url"
@@ -76,6 +77,7 @@ type Operation struct {
 	authHandler         *authhandler.AuthHandler
 	interactionHandler  api.InteractionHandler
 	uiEndpoint          string
+	closePopupHTML      string
 	authProviders       []authProvider
 	oidcProvidersConfig map[string]*oidcmodel.ProviderConfig
 	cachedOIDCProviders map[string]oidcProvider
@@ -91,6 +93,7 @@ type Config struct {
 	StoreProvider          storage.Provider
 	AccessPolicyConfig     *accesspolicy.Config
 	BaseURL                string
+	ClosePopupHTML         string
 	InteractionHandler     api.InteractionHandler
 	UIEndpoint             string
 	OIDC                   *oidcmodel.Config
@@ -139,6 +142,7 @@ func New(config *Config) (*Operation, error) {
 		transientStore:      transientStore,
 		tlsConfig:           config.TLSConfig,
 		interactionHandler:  config.InteractionHandler,
+		closePopupHTML:      config.ClosePopupHTML,
 	}, nil
 }
 
@@ -397,8 +401,7 @@ func (o *Operation) oidcCallbackHandler(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	// TODO: redirect to auth frontend that saves the redirect URI (with interactRef
-	//  and responseHash) in vueX then closes the popup
+	// TODO: validate clientURI for security
 
 	q := clientURI.Query()
 
@@ -407,9 +410,20 @@ func (o *Operation) oidcCallbackHandler(w http.ResponseWriter, r *http.Request) 
 
 	clientURI.RawQuery = q.Encode()
 
-	// redirect to consumer url
-	http.Redirect(w, r, clientURI.String(), http.StatusFound)
-	logger.Debugf("redirected to: %s", clientURI.String())
+	redirect := clientURI.String()
+
+	t, err := template.ParseFiles(o.closePopupHTML)
+	if err != nil {
+		o.writeErrorResponse(w, http.StatusInternalServerError, "failed to parse template : %s", err.Error())
+
+		return
+	}
+
+	if err := t.Execute(w, map[string]interface{}{
+		"RedirectURI": redirect,
+	}); err != nil {
+		logger.Errorf(fmt.Sprintf("failed execute html template: %s", err.Error()))
+	}
 }
 
 func (o *Operation) authContinueHandler(w http.ResponseWriter, req *http.Request) {
