@@ -525,6 +525,11 @@ func startAuthService(parameters *authRestParameters, srv server) error {
 			CallbackURL: parameters.oidcParams.callbackURL,
 			Providers:   parameters.oidcParams.providers,
 		},
+		BootstrapConfig: &gnap.BootstrapConfig{
+			DocumentSDSVaultURL: parameters.bootstrapParams.documentSDSVaultURL,
+			KeySDSVaultURL:      parameters.bootstrapParams.keySDSVaultURL,
+			OpsKeyServerURL:     parameters.bootstrapParams.opsKeyServerURL,
+		},
 		TransientStoreProvider: provider,
 		TLSConfig:              &tls.Config{RootCAs: rootCAs}, //nolint:gosec
 		DisableHTTPSigVerify:   parameters.gnap.disableHTTPSigVerify,

@@ -27,10 +27,12 @@ import (
 	"github.com/hyperledger/aries-framework-go/component/storageutil/mem"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/jose/jwk"
 	mockstore "github.com/hyperledger/aries-framework-go/pkg/mock/storage"
+	"github.com/hyperledger/aries-framework-go/spi/storage"
 	"github.com/square/go-jose/v3"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/oauth2"
 
+	"github.com/trustbloc/auth/pkg/bootstrap/user"
 	"github.com/trustbloc/auth/pkg/gnap/accesspolicy"
 	"github.com/trustbloc/auth/pkg/gnap/api"
 	"github.com/trustbloc/auth/pkg/gnap/interact/redirect"
@@ -76,7 +78,7 @@ func TestOperation_GetRESTHandlers(t *testing.T) {
 	o := &Operation{}
 
 	h := o.GetRESTHandlers()
-	require.Len(t, h, 7)
+	require.Len(t, h, 9)
 }
 
 func TestOperation_AuthProvidersHandler(t *testing.T) {
@@ -268,7 +270,7 @@ func TestOperation_authContinueHandler(t *testing.T) {
 	})
 }
 
-func TestOperation_introspectHandler(t *testing.T) {
+func TestOperation_authIntrospectHandler(t *testing.T) {
 	t.Run("fail to read request body", func(t *testing.T) {
 		o := &Operation{}
 
@@ -278,7 +280,7 @@ func TestOperation_introspectHandler(t *testing.T) {
 
 		req := httptest.NewRequest(http.MethodPost, AuthRequestPath, &errorReader{err: expectErr})
 
-		o.introspectHandler(rw, req)
+		o.authIntrospectHandler(rw, req)
 
 		require.Equal(t, http.StatusInternalServerError, rw.Code)
 	})
@@ -290,7 +292,7 @@ func TestOperation_introspectHandler(t *testing.T) {
 
 		req := httptest.NewRequest(http.MethodPost, AuthRequestPath, nil)
 
-		o.introspectHandler(rw, req)
+		o.authIntrospectHandler(rw, req)
 
 		require.Equal(t, http.StatusBadRequest, rw.Code)
 	})
@@ -302,7 +304,7 @@ func TestOperation_introspectHandler(t *testing.T) {
 
 		req := httptest.NewRequest(http.MethodPost, AuthRequestPath, bytes.NewReader([]byte("{}")))
 
-		o.introspectHandler(rw, req)
+		o.authIntrospectHandler(rw, req)
 
 		require.Equal(t, http.StatusUnauthorized, rw.Code)
 	})
@@ -331,7 +333,7 @@ func TestOperation_introspectHandler(t *testing.T) {
 		req, err = httpsig.Sign(req, intReqBytes, priv, "sha-256")
 		require.NoError(t, err)
 
-		o.introspectHandler(rw, req)
+		o.authIntrospectHandler(rw, req)
 
 		require.Equal(t, http.StatusOK, rw.Code)
 
@@ -726,6 +728,64 @@ func TestOIDCCallbackHandler(t *testing.T) {
 		require.Equal(t, http.StatusInternalServerError, result.Code)
 	})
 
+	t.Run("generic bootstrap store PUT error while onboarding user", func(t *testing.T) {
+		provider := uuid.New().String()
+		id := uuid.New().String()
+		state := uuid.New().String()
+		code := uuid.New().String()
+		config := config(t)
+
+		config.StoreProvider = &mockstore.MockStoreProvider{
+			Store: &mockstore.MockStore{
+				Store: map[string]mockstore.DBEntry{
+					id: {},
+				},
+				ErrGet: storage.ErrDataNotFound,
+				ErrPut: errors.New("generic"),
+			},
+		}
+
+		o, err := New(config)
+		require.NoError(t, err)
+
+		o.cachedOIDCProviders = map[string]oidcProvider{
+			provider: &mockOIDCProvider{
+				name: provider,
+				oauth2Config: &mockOAuth2Config{
+					exchangeVal: &mockToken{
+						oauth2Claim: uuid.New().String(),
+					},
+				},
+				verifyVal: &mockToken{
+					oidcClaimsFunc: func(v interface{}) error {
+						c, ok := v.(*oidcClaims)
+						require.True(t, ok)
+						c.Sub = uuid.New().String()
+
+						return nil
+					},
+				},
+			},
+		}
+
+		data := &oidcTransientData{
+			Provider: provider,
+			TxnID:    "foo",
+		}
+
+		dataBytes, err := json.Marshal(data)
+		require.NoError(t, err)
+
+		err = o.transientStore.Put(state, dataBytes)
+		require.NoError(t, err)
+
+		result := httptest.NewRecorder()
+		o.oidcCallbackHandler(result, newOIDCCallback(state, code))
+		require.Equal(t, http.StatusInternalServerError, result.Code)
+
+		require.Contains(t, result.Body.String(), "failed to onboard new user")
+	})
+
 	t.Run("fail to complete interaction", func(t *testing.T) {
 		provider := uuid.New().String()
 		state := uuid.New().String()
@@ -848,6 +908,322 @@ func TestOIDCCallbackHandler(t *testing.T) {
 		o.oidcCallbackHandler(result, newOIDCCallback(state, code))
 		require.Equal(t, http.StatusBadRequest, result.Code)
 		require.Contains(t, result.Body.String(), "client provided invalid redirect URI")
+	})
+
+	t.Run("generic bootstrap store PUT error while onboarding user", func(t *testing.T) {
+		provider := uuid.New().String()
+		id := uuid.New().String()
+		state := uuid.New().String()
+		config := config(t)
+
+		config.TransientStoreProvider = &mockstore.MockStoreProvider{
+			Store: &mockstore.MockStore{
+				Store: map[string]mockstore.DBEntry{
+					state: {Value: []byte(state)},
+				},
+			},
+		}
+
+		config.StoreProvider = &mockstore.MockStoreProvider{
+			Store: &mockstore.MockStore{
+				Store: map[string]mockstore.DBEntry{
+					id: {},
+				},
+				ErrGet: storage.ErrDataNotFound,
+				ErrPut: errors.New("generic"),
+			},
+		}
+
+		svc, err := New(config)
+		require.NoError(t, err)
+
+		svc.cachedOIDCProviders = map[string]oidcProvider{
+			provider: &mockOIDCProvider{
+				name: provider,
+				oauth2Config: &mockOAuth2Config{exchangeVal: &mockToken{
+					oauth2Claim: uuid.New().String(),
+				}},
+				verifyVal: &mockToken{
+					oidcClaimsFunc: func(v interface{}) error {
+						c, ok := v.(*oidcClaims)
+						require.True(t, ok)
+						c.Sub = id
+
+						return nil
+					},
+				},
+			},
+		}
+
+		result := httptest.NewRecorder()
+		svc.oidcCallbackHandler(result, newOIDCCallback(state, "code"))
+		require.Equal(t, http.StatusInternalServerError, result.Code)
+	})
+}
+
+func TestGetBootstrapDataHandler(t *testing.T) {
+	t.Run("returns bootstrap data when using GNAP token", func(t *testing.T) {
+		userSub := uuid.New().String()
+		config := config(t)
+		svc, err := New(config)
+		require.NoError(t, err)
+		svc.SetIntrospectHandler(func(req *gnap.IntrospectRequest) (*gnap.IntrospectResponse, error) {
+			return &gnap.IntrospectResponse{
+				SubjectData: map[string]string{"sub": userSub},
+			}, nil
+		})
+		expected := &user.Profile{
+			ID:     uuid.New().String(),
+			AAGUID: uuid.New().String(),
+			Data: map[string]string{
+				"primary vault": uuid.New().String(),
+				"backup vault":  uuid.New().String(),
+			},
+		}
+
+		err = svc.bootstrapStore.Put(userSub, marshal(t, expected))
+		require.NoError(t, err)
+
+		w := httptest.NewRecorder()
+
+		request := newGetBootstrapDataRequest()
+		request.Header.Set("authorization", "GNAP 123")
+
+		svc.getBootstrapDataHandler(w, request)
+		require.Equal(t, http.StatusOK, w.Code)
+		result := &BootstrapData{}
+		err = json.NewDecoder(w.Body).Decode(result)
+		require.NoError(t, err)
+		require.Equal(t, config.BootstrapConfig.DocumentSDSVaultURL, result.DocumentSDSVaultURL)
+		require.Equal(t, config.BootstrapConfig.KeySDSVaultURL, result.KeySDSVaultURL)
+		require.Equal(t, config.BootstrapConfig.OpsKeyServerURL, result.OpsKeyServerURL)
+		require.Equal(t, expected.Data, result.Data)
+	})
+
+	t.Run("forbidden if auth header is missing", func(t *testing.T) {
+		svc, err := New(config(t))
+		require.NoError(t, err)
+		w := httptest.NewRecorder()
+		svc.getBootstrapDataHandler(w, httptest.NewRequest(http.MethodGet, "http://examepl.com/bootstrap", nil))
+		require.Equal(t, http.StatusForbidden, w.Code)
+		require.Contains(t, w.Body.String(), "no credentials")
+	})
+
+	t.Run("bad request if auth scheme is invalid", func(t *testing.T) {
+		request := newGetBootstrapDataRequest()
+		request.Header.Set("authorization", "invalid 123")
+		svc, err := New(config(t))
+		require.NoError(t, err)
+		w := httptest.NewRecorder()
+		svc.getBootstrapDataHandler(w, request)
+		require.Equal(t, http.StatusBadRequest, w.Code)
+		require.Contains(t, w.Body.String(), "invalid authorization scheme")
+	})
+
+	t.Run("unauthorized if invalid gnap token", func(t *testing.T) {
+		request := newGetBootstrapDataRequest()
+		request.Header.Set("authorization", "GNAP 123")
+		svc, err := New(config(t))
+		svc.SetIntrospectHandler(func(req *gnap.IntrospectRequest) (*gnap.IntrospectResponse, error) {
+			return nil, fmt.Errorf("gnap introspect error")
+		})
+		require.NoError(t, err)
+		w := httptest.NewRecorder()
+		svc.getBootstrapDataHandler(w, request)
+		require.Equal(t, http.StatusUnauthorized, w.Code)
+		require.Contains(t, w.Body.String(), "gnap introspect error")
+	})
+
+	t.Run("unauthorized if gnap token does not grant access to subject id", func(t *testing.T) {
+		request := newGetBootstrapDataRequest()
+		request.Header.Set("authorization", "GNAP 123")
+		svc, err := New(config(t))
+		svc.SetIntrospectHandler(func(req *gnap.IntrospectRequest) (*gnap.IntrospectResponse, error) {
+			return &gnap.IntrospectResponse{
+				SubjectData: map[string]string{},
+			}, nil
+		})
+		require.NoError(t, err)
+		w := httptest.NewRecorder()
+		svc.getBootstrapDataHandler(w, request)
+		require.Equal(t, http.StatusUnauthorized, w.Code)
+		require.Contains(t, w.Body.String(), "does not grant access")
+	})
+
+	t.Run("bad request if user does not have bootstrap data", func(t *testing.T) {
+		userSub := uuid.New().String()
+		config := config(t)
+		svc, err := New(config)
+		require.NoError(t, err)
+		svc.SetIntrospectHandler(func(req *gnap.IntrospectRequest) (*gnap.IntrospectResponse, error) {
+			return &gnap.IntrospectResponse{
+				SubjectData: map[string]string{"sub": userSub},
+			}, nil
+		})
+		w := httptest.NewRecorder()
+		svc.getBootstrapDataHandler(w, newGetBootstrapDataRequest())
+		require.Equal(t, http.StatusBadRequest, w.Code)
+		require.Contains(t, w.Body.String(), "invalid handle")
+	})
+
+	t.Run("internal server error if bootstrap store FETCH fails generically", func(t *testing.T) {
+		userSub := uuid.New().String()
+		config := config(t)
+		config.StoreProvider = &mockstore.MockStoreProvider{
+			Store: &mockstore.MockStore{
+				Store: map[string]mockstore.DBEntry{
+					userSub: {Value: marshal(t, &user.Profile{})},
+				},
+				ErrGet: errors.New("generic"),
+			},
+		}
+		svc, err := New(config)
+		require.NoError(t, err)
+		svc.SetIntrospectHandler(func(req *gnap.IntrospectRequest) (*gnap.IntrospectResponse, error) {
+			return &gnap.IntrospectResponse{
+				SubjectData: map[string]string{"sub": userSub},
+			}, nil
+		})
+		w := httptest.NewRecorder()
+		svc.getBootstrapDataHandler(w, newGetBootstrapDataRequest())
+		require.Equal(t, http.StatusInternalServerError, w.Code)
+		require.Contains(t, w.Body.String(), "failed to query bootstrap store for handle")
+	})
+}
+
+func TestPostBootstrapDataHandler(t *testing.T) {
+	t.Run("updates bootstrap data when using GNAP token", func(t *testing.T) {
+		expected := &user.Profile{
+			ID:     uuid.New().String(),
+			AAGUID: uuid.New().String(),
+			Data: map[string]string{
+				"docsSDS": "https://example.org/edvs/123",
+				"keysSDS": "https://example.org/edvs/456",
+				"opskeys": "https://example.org/kms/456",
+			},
+		}
+		config := config(t)
+		config.StoreProvider = &mockstore.MockStoreProvider{
+			Store: &mockstore.MockStore{
+				Store: map[string]mockstore.DBEntry{
+					expected.ID: {Value: marshal(t, &user.Profile{
+						ID:     expected.ID,
+						AAGUID: expected.AAGUID,
+					})},
+				},
+			},
+		}
+		svc, err := New(config)
+		require.NoError(t, err)
+
+		svc.SetIntrospectHandler(func(req *gnap.IntrospectRequest) (*gnap.IntrospectResponse, error) {
+			return &gnap.IntrospectResponse{
+				SubjectData: map[string]string{"sub": expected.ID},
+			}, nil
+		})
+
+		result := httptest.NewRecorder()
+
+		request := newPostBootstrapDataRequest(t, &UpdateBootstrapDataRequest{
+			Data: expected.Data,
+		})
+
+		svc.postBootstrapDataHandler(result, request)
+		require.Equal(t, http.StatusOK, result.Code)
+		raw, err := svc.bootstrapStore.Get(expected.ID)
+		require.NoError(t, err)
+		update := &user.Profile{}
+		err = json.NewDecoder(bytes.NewReader(raw)).Decode(update)
+		require.NoError(t, err)
+		require.Equal(t, expected, update)
+	})
+
+	t.Run("error badrequest if payload is not json", func(t *testing.T) {
+		userSub := uuid.New().String()
+		config := config(t)
+		config.StoreProvider = &mockstore.MockStoreProvider{
+			Store: &mockstore.MockStore{
+				Store: map[string]mockstore.DBEntry{
+					userSub: {Value: nil},
+				},
+			},
+		}
+		svc, err := New(config)
+		require.NoError(t, err)
+		svc.SetIntrospectHandler(func(req *gnap.IntrospectRequest) (*gnap.IntrospectResponse, error) {
+			return &gnap.IntrospectResponse{
+				SubjectData: map[string]string{"sub": userSub},
+			}, nil
+		})
+		request := httptest.NewRequest(http.MethodPost, "https://example.org/bootstrap", bytes.NewReader([]byte("}")))
+		request.Header.Set("authorization", "GNAP 123")
+		result := httptest.NewRecorder()
+		svc.postBootstrapDataHandler(result, request)
+		require.Equal(t, http.StatusBadRequest, result.Code)
+		require.Contains(t, result.Body.String(), "failed to decode request")
+	})
+
+	t.Run("error conflict if user does not exist", func(t *testing.T) {
+		config := config(t)
+		svc, err := New(config)
+		require.NoError(t, err)
+		svc.SetIntrospectHandler(func(req *gnap.IntrospectRequest) (*gnap.IntrospectResponse, error) {
+			return &gnap.IntrospectResponse{
+				SubjectData: map[string]string{"sub": uuid.New().String()},
+			}, nil
+		})
+		result := httptest.NewRecorder()
+		svc.postBootstrapDataHandler(result, newPostBootstrapDataRequest(t, &UpdateBootstrapDataRequest{}))
+		require.Equal(t, http.StatusConflict, result.Code)
+		require.Contains(t, result.Body.String(), "associated bootstrap data not found")
+	})
+
+	t.Run("internal server error on generic FETCH bootstrap store error", func(t *testing.T) {
+		userSub := uuid.New().String()
+		config := config(t)
+		config.StoreProvider = &mockstore.MockStoreProvider{
+			Store: &mockstore.MockStore{
+				Store: map[string]mockstore.DBEntry{
+					userSub: {Value: nil},
+				},
+				ErrGet: errors.New("generic"),
+			},
+		}
+		svc, err := New(config)
+		require.NoError(t, err)
+		svc.SetIntrospectHandler(func(req *gnap.IntrospectRequest) (*gnap.IntrospectResponse, error) {
+			return &gnap.IntrospectResponse{
+				SubjectData: map[string]string{"sub": userSub},
+			}, nil
+		})
+		result := httptest.NewRecorder()
+		svc.postBootstrapDataHandler(result, newPostBootstrapDataRequest(t, &UpdateBootstrapDataRequest{}))
+		require.Equal(t, http.StatusInternalServerError, result.Code)
+		require.Contains(t, result.Body.String(), "failed to query storage")
+	})
+
+	t.Run("internal server error if cannot persist update to bootstrap store", func(t *testing.T) {
+		userSub := uuid.New().String()
+		config := config(t)
+		config.StoreProvider = &mockstore.MockStoreProvider{
+			Store: &mockstore.MockStore{
+				Store: map[string]mockstore.DBEntry{
+					userSub: {Value: marshal(t, &user.Profile{})},
+				},
+				ErrPut: errors.New("generic"),
+			},
+		}
+		svc, err := New(config)
+		require.NoError(t, err)
+		svc.SetIntrospectHandler(func(req *gnap.IntrospectRequest) (*gnap.IntrospectResponse, error) {
+			return &gnap.IntrospectResponse{
+				SubjectData: map[string]string{"sub": userSub},
+			}, nil
+		})
+		result := httptest.NewRecorder()
+		svc.postBootstrapDataHandler(result, newPostBootstrapDataRequest(t, &UpdateBootstrapDataRequest{}))
+		require.Equal(t, http.StatusInternalServerError, result.Code)
+		require.Contains(t, result.Body.String(), "failed to update storage")
 	})
 }
 
@@ -1034,7 +1410,7 @@ func Test_Full_Flow(t *testing.T) {
 		req, err = httpsig.Sign(req, intReqBytes, rsPriv, "sha-256")
 		require.NoError(t, err)
 
-		o.introspectHandler(rw, req)
+		o.authIntrospectHandler(rw, req)
 
 		require.Equal(t, http.StatusOK, rw.Code)
 
@@ -1114,6 +1490,25 @@ func newOIDCCallback(state, code string) *http.Request {
 		fmt.Sprintf("http://example.com/oauth2/callback?state=%s&code=%s", state, code), nil)
 }
 
+func newGetBootstrapDataRequest() *http.Request {
+	r := httptest.NewRequest(http.MethodGet, "http://example.com/bootstrap", nil)
+	r.Header.Set("Authorization", "GNAP 123")
+
+	return r
+}
+
+func newPostBootstrapDataRequest(t *testing.T, params *UpdateBootstrapDataRequest) *http.Request {
+	t.Helper()
+
+	bits, err := json.Marshal(params)
+	require.NoError(t, err)
+
+	r := httptest.NewRequest(http.MethodPost, "http://example.com/bootstrap", bytes.NewReader(bits))
+	r.Header.Set("Authorization", "GNAP 123")
+
+	return r
+}
+
 type mockToken struct {
 	oauth2Claim    interface{}
 	oidcClaimsFunc func(v interface{}) error
@@ -1172,9 +1567,23 @@ func config(t *testing.T) *Config {
 				},
 			},
 		},
+		BootstrapConfig: &BootstrapConfig{
+			DocumentSDSVaultURL: "http://docs.sds.example.org/sds/vaults",
+			KeySDSVaultURL:      "http://keys.sds.example.org/sds/vaults/",
+			OpsKeyServerURL:     "http://ops.kms.example.org/kms/keystores/",
+		},
 		TransientStoreProvider: mem.NewProvider(),
 		StartupTimeout:         1,
 	}
+}
+
+func marshal(t *testing.T, v interface{}) []byte {
+	t.Helper()
+
+	bits, err := json.Marshal(v)
+	require.NoError(t, err)
+
+	return bits
 }
 
 type errorReader struct {

@@ -1033,29 +1033,19 @@ func TestPostBootstrapDataHandler(t *testing.T) {
 		require.Contains(t, result.Body.String(), "failed to decode request")
 	})
 
-	t.Run("error when onboarding user for gnap flow", func(t *testing.T) {
-		id := uuid.New().String()
+	t.Run("error conflict if user does not exist", func(t *testing.T) {
 		config := config(t)
 		config.Hydra = &mockHydra{
 			introspectValue: &admin.IntrospectOAuth2TokenOK{Payload: &models.OAuth2TokenIntrospection{
 				Sub: uuid.New().String(),
 			}},
 		}
-		config.StoreProvider = &mockstore.MockStoreProvider{
-			Store: &mockstore.MockStore{
-				Store: map[string]mockstore.DBEntry{
-					id: {},
-				},
-				ErrGet: storage.ErrDataNotFound,
-				ErrPut: errors.New("generic"),
-			},
-		}
 		svc, err := New(config)
 		require.NoError(t, err)
 		result := httptest.NewRecorder()
 		svc.postBootstrapDataHandler(result, newPostBootstrapDataRequest(t, &UpdateBootstrapDataRequest{}))
-		require.Equal(t, http.StatusInternalServerError, result.Code)
-		require.Contains(t, result.Body.String(), "failed to onboard user")
+		require.Equal(t, http.StatusConflict, result.Code)
+		require.Contains(t, result.Body.String(), "associated bootstrap data not found")
 	})
 
 	t.Run("internal server error on generic FETCH bootstrap store error", func(t *testing.T) {
