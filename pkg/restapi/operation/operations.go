@@ -622,12 +622,9 @@ func (o *Operation) postBootstrapDataHandler(w http.ResponseWriter, r *http.Requ
 
 	existing, err := user.NewStore(o.bootstrapStore).Get(subject)
 	if errors.Is(err, storage.ErrDataNotFound) {
-		existing, err = o.onboardUser(subject) // TODO: Onboard user as part of GNAP flow when we get access token?
-		if err != nil {
-			o.writeErrorResponse(w, http.StatusInternalServerError, fmt.Sprintf("failed to onboard user: %s", err))
+		o.writeErrorResponse(w, http.StatusConflict, "associated bootstrap data not found")
 
-			return
-		}
+		return
 	}
 
 	if err != nil {
