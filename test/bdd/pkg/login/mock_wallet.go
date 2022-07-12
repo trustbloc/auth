@@ -199,7 +199,7 @@ const (
 	oidcCallbackURLURL      = authServerURL + "/oidc/callback"
 	authServerSignUpURL     = authServerURL + "/ui/sign-up"
 
-	gnapOIDCProviderName = "mockbank1" // providers.yaml
+	gnapOIDCProviderName = "mockbank" // providers.yaml
 )
 
 func (m *MockWallet) gnapInteract() error {

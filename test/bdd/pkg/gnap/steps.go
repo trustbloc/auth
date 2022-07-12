@@ -37,7 +37,7 @@ const (
 	oidcCallbackURLURL      = authServerURL + "/oidc/callback"
 	authServerSignUpURL     = authServerURL + "/ui/sign-up"
 
-	mockOIDCProviderName = "mockbank1" // providers.yaml
+	mockOIDCProviderName = "mockbank" // providers.yaml
 )
 
 type Steps struct {
