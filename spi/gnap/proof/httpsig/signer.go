@@ -39,7 +39,7 @@ func (s *Signer) Sign(request *http.Request, requestBody []byte) (*http.Request,
 func Sign(req *http.Request, bodyBytes []byte, signingKey *jwk.JWK, digestName string) (*http.Request, error) {
 	conf := httpsign.NewSignConfig().SignAlg(false)
 
-	fields := httpsign.Headers("@request-target")
+	fields := httpsign.Headers("@method", "@target-uri")
 
 	if len(bodyBytes) > 0 {
 		body := ioutil.NopCloser(bytes.NewBuffer(bodyBytes))

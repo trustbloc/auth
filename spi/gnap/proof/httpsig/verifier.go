@@ -31,7 +31,7 @@ func NewVerifier(req *http.Request) *Verifier {
 func (v *Verifier) Verify(key *gnap.ClientKey) error {
 	verKey := key.JWK
 
-	fields := httpsign.Headers("@request-target")
+	fields := httpsign.Headers("@method", "@target-uri")
 
 	if v.req.Header.Get("Authorization") != "" {
 		fields.AddHeader("Authorization")
