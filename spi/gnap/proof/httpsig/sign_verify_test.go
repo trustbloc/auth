@@ -27,16 +27,19 @@ func TestSignVerify(t *testing.T) {
 		crv        elliptic.Curve
 		alg        string
 		digestName string
+		body       []byte
 	}{
 		{
 			crv:        elliptic.P256(),
 			alg:        "ES256",
 			digestName: "sha-256",
+			body:       []byte("foo bar baz"),
 		},
 		{
 			crv:        elliptic.P384(),
 			alg:        "ES384",
-			digestName: "sha-384",
+			digestName: "sha-512", // sha-384 is not a supported digest algorithm in the http-digest-headers spec.
+			body:       []byte("foo bar baz"),
 		},
 		{
 			crv:        elliptic.P521(),
@@ -49,32 +52,18 @@ func TestSignVerify(t *testing.T) {
 		tc := tt
 
 		t.Run(fmt.Sprintf("success %s", tc.alg), func(t *testing.T) {
-			body := []byte("foo bar baz")
-
-			req := httptest.NewRequest(http.MethodPost, "http://foo.bar/baz", bytes.NewReader(body))
+			var req *http.Request
+			if len(tc.body) > 0 {
+				req = httptest.NewRequest(http.MethodPost, "http://foo.bar/baz", bytes.NewReader(tc.body))
+			} else {
+				req = httptest.NewRequest(http.MethodGet, "http://foo.bar/baz", nil)
+			}
 
 			req.Header.Add("Authorization", "Bearer OPEN-SESAME")
 
-			priv, err := ecdsa.GenerateKey(tc.crv, rand.Reader)
-			require.NoError(t, err)
+			privJWK, pubJWK := jwkPairECDSA(t, tc.alg, tc.crv)
 
-			privJWK := &jwk.JWK{
-				JSONWebKey: jose.JSONWebKey{
-					Key:       priv,
-					KeyID:     "key1",
-					Algorithm: tc.alg,
-				},
-				Kty: "EC",
-				Crv: tc.crv.Params().Name,
-			}
-
-			pubJWK := jwk.JWK{
-				JSONWebKey: privJWK.Public(),
-				Kty:        "EC",
-				Crv:        tc.crv.Params().Name,
-			}
-
-			req, err = Sign(req, body, privJWK, tc.digestName)
+			req, err := Sign(req, tc.body, privJWK, tc.digestName)
 			require.NoError(t, err)
 
 			v := NewVerifier(req)
@@ -86,4 +75,29 @@ func TestSignVerify(t *testing.T) {
 			require.NoError(t, err)
 		})
 	}
+}
+
+func jwkPairECDSA(t *testing.T, alg string, crv elliptic.Curve) (*jwk.JWK, jwk.JWK) {
+	t.Helper()
+
+	priv, err := ecdsa.GenerateKey(crv, rand.Reader)
+	require.NoError(t, err)
+
+	privJWK := &jwk.JWK{
+		JSONWebKey: jose.JSONWebKey{
+			Key:       priv,
+			KeyID:     "key1",
+			Algorithm: alg,
+		},
+		Kty: "EC",
+		Crv: crv.Params().Name,
+	}
+
+	pubJWK := jwk.JWK{
+		JSONWebKey: privJWK.Public(),
+		Kty:        "EC",
+		Crv:        crv.Params().Name,
+	}
+
+	return privJWK, pubJWK
 }

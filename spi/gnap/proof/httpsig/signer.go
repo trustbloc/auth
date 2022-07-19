@@ -7,21 +7,24 @@ SPDX-License-Identifier: Apache-2.0
 package httpsig
 
 import (
-	"encoding/base64"
-	"encoding/json"
+	"bytes"
 	"fmt"
+	"io/ioutil"
 	"net/http"
 
 	"github.com/hyperledger/aries-framework-go/pkg/doc/jose/jwk"
-	"github.com/igor-pavlenko/httpsignatures-go"
+	"github.com/lestrrat-go/jwx/v2/jwa"
+	"github.com/yaronf/httpsign"
+
 	"github.com/trustbloc/auth/spi/gnap/internal/digest"
-	"github.com/trustbloc/auth/spi/gnap/internal/jwksignature"
 )
 
 // Signer signs GNAP http requests using http-signature.
 type Signer struct {
 	SigningKey *jwk.JWK
 }
+
+const defaultSignatureName = "sig1"
 
 // ProofType returns "httpsig", the GNAP proof type of the http-signature proof method.
 func (s *Signer) ProofType() string {
@@ -33,56 +36,48 @@ func (s *Signer) Sign(request *http.Request, requestBody []byte) (*http.Request,
 	return Sign(request, requestBody, s.SigningKey, digest.SHA256)
 }
 
-// Sign signs a GNAP http request, adding http-signature headers.
 func Sign(req *http.Request, bodyBytes []byte, signingKey *jwk.JWK, digestName string) (*http.Request, error) {
-	keyBytes, err := json.Marshal(signingKey)
-	if err != nil {
-		return nil, fmt.Errorf("marshalling signing key: %w", err)
-	}
+	conf := httpsign.NewSignConfig().SignAlg(false)
 
-	ss := httpsignatures.NewSimpleSecretsStorage(map[string]httpsignatures.Secret{
-		signingKey.KeyID: {
-			KeyID:      signingKey.KeyID,
-			PublicKey:  "",
-			PrivateKey: string(keyBytes),
-			Algorithm:  signingKey.Algorithm,
-		},
-	})
-	hs := httpsignatures.NewHTTPSignatures(ss)
-	hs.SetSignatureHashAlgorithm(jwksignature.NewJWKAlgorithm(signingKey.Algorithm))
+	fields := httpsign.Headers("@request-target")
 
-	coveredComponents := []string{
-		"(request-target)", // in this implementation, this string is the code for method + target-uri
-	}
+	if len(bodyBytes) > 0 {
+		body := ioutil.NopCloser(bytes.NewBuffer(bodyBytes))
 
-	if len(bodyBytes) != 0 {
-		digestAlgorithm, err := digest.GetDigest(digestName)
+		cdHeader, err := httpsign.GenerateContentDigestHeader(&body, []string{digestName})
 		if err != nil {
 			return nil, err
 		}
 
-		contentDigest, err := digestAlgorithm(bodyBytes)
-		if err != nil {
-			return nil, fmt.Errorf("creating content-digest: %w", err)
-		}
+		req.Header.Add("content-digest", cdHeader)
 
-		digestValue := digestName + "=:" + base64.StdEncoding.EncodeToString(contentDigest) + ":"
-
-		req.Header.Add("Content-Digest", digestValue)
-
-		coveredComponents = append(coveredComponents, "content-digest")
+		fields.AddHeader("content-digest")
 	}
 
-	if req.Header.Get("Authorization") != "" {
-		coveredComponents = append(coveredComponents, "authorization")
+	authHeader := req.Header.Get("Authorization")
+
+	if authHeader != "" {
+		fields.AddHeader("Authorization")
 	}
 
-	hs.SetDefaultSignatureHeaders(coveredComponents)
-
-	err = hs.Sign(signingKey.KeyID, req)
+	signer, err := httpsign.NewJWSSigner(
+		jwa.SignatureAlgorithm(signingKey.Algorithm),
+		signingKey.KeyID,
+		signingKey.Key,
+		conf,
+		fields,
+	)
 	if err != nil {
-		return nil, fmt.Errorf("failed to sign: %w", err)
+		return nil, fmt.Errorf("creating signer: %w", err)
 	}
+
+	sigInput, sig, err := httpsign.SignRequest(defaultSignatureName, *signer, req)
+	if err != nil {
+		return nil, fmt.Errorf("signing request: %w", err)
+	}
+
+	req.Header.Add("Signature", sig)
+	req.Header.Add("Signature-Input", sigInput)
 
 	return req, nil
 }
