@@ -105,7 +105,7 @@ function initiateOIDCLogin(providerID) {
         {{ t('SignIn.redirect') }}
         <router-link
           class="whitespace-nowrap text-primary-blue underline-blue"
-          :to="{ name: 'SignUp' }"
+          :to="{ name: 'SignUp', query: { txnID: props.txnID } }"
           >{{ t('SignIn.signup') }}
         </router-link>
       </p>
