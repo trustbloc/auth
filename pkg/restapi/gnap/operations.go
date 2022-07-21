@@ -189,6 +189,7 @@ func New(config *Config) (*Operation, error) {
 		authProviders:       authProviders,
 		oidcProvidersConfig: config.OIDC.Providers,
 		cachedOIDCProviders: make(map[string]oidcProvider),
+		callbackURL:         config.BaseURL + oidcCallbackPath,
 		timeout:             config.StartupTimeout,
 		transientStore:      transientStore,
 		bootstrapStore:      bootstrapStore,
