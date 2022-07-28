@@ -44,6 +44,10 @@ import (
 	"github.com/trustbloc/auth/spi/gnap/proof/httpsig"
 )
 
+const (
+	baseURL = "http://test.auth"
+)
+
 func TestNew(t *testing.T) {
 	t.Run("success", func(t *testing.T) {
 		o, err := New(config(t))
@@ -156,7 +160,7 @@ func TestOperation_authRequestHandler(t *testing.T) {
 
 		rw := httptest.NewRecorder()
 
-		req := httptest.NewRequest(http.MethodPost, AuthRequestPath, bytes.NewReader(authReqBytes))
+		req := httptest.NewRequest(http.MethodPost, baseURL+AuthRequestPath, bytes.NewReader(authReqBytes))
 
 		req, err = httpsig.Sign(req, authReqBytes, priv, "sha-256")
 		require.NoError(t, err)
@@ -328,7 +332,7 @@ func TestOperation_authIntrospectHandler(t *testing.T) {
 
 		rw := httptest.NewRecorder()
 
-		req := httptest.NewRequest(http.MethodPost, AuthIntrospectPath, bytes.NewReader(intReqBytes))
+		req := httptest.NewRequest(http.MethodPost, baseURL+AuthIntrospectPath, bytes.NewReader(intReqBytes))
 
 		req, err = httpsig.Sign(req, intReqBytes, priv, "sha-256")
 		require.NoError(t, err)
@@ -1278,7 +1282,7 @@ func Test_Full_Flow(t *testing.T) {
 
 		rw := httptest.NewRecorder()
 
-		req := httptest.NewRequest(http.MethodPost, AuthRequestPath, bytes.NewReader(authReqBytes))
+		req := httptest.NewRequest(http.MethodPost, baseURL+AuthRequestPath, bytes.NewReader(authReqBytes))
 
 		req, err = httpsig.Sign(req, authReqBytes, userPriv, "sha-256")
 		require.NoError(t, err)
@@ -1374,7 +1378,7 @@ func Test_Full_Flow(t *testing.T) {
 
 		rw := httptest.NewRecorder()
 
-		req := httptest.NewRequest(http.MethodPost, AuthRequestPath, bytes.NewReader(contReqBytes))
+		req := httptest.NewRequest(http.MethodPost, baseURL+AuthRequestPath, bytes.NewReader(contReqBytes))
 		req.Header.Add("Authorization", "GNAP "+authResp.Continue.AccessToken.Value)
 
 		req, err = httpsig.Sign(req, contReqBytes, userPriv, "sha-256")
@@ -1405,7 +1409,7 @@ func Test_Full_Flow(t *testing.T) {
 
 		rw := httptest.NewRecorder()
 
-		req := httptest.NewRequest(http.MethodPost, AuthIntrospectPath, bytes.NewReader(intReqBytes))
+		req := httptest.NewRequest(http.MethodPost, baseURL+AuthIntrospectPath, bytes.NewReader(intReqBytes))
 
 		req, err = httpsig.Sign(req, intReqBytes, rsPriv, "sha-256")
 		require.NoError(t, err)
@@ -1550,7 +1554,7 @@ func config(t *testing.T) *Config {
 	return &Config{
 		StoreProvider:      storeProv,
 		AccessPolicyConfig: apConfig,
-		BaseURL:            "example.com",
+		BaseURL:            baseURL,
 		InteractionHandler: interact,
 		OIDC: &oidcmodel.Config{
 			CallbackURL: "http://test.com",

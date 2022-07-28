@@ -110,6 +110,7 @@ type Operation struct {
 	cachedOIDCProvLock  sync.RWMutex
 	tlsConfig           *tls.Config
 	callbackURL         string
+	baseURL             string
 	timeout             uint64
 	transientStore      storage.Store
 	bootstrapStore      storage.Store
@@ -199,6 +200,7 @@ func New(config *Config) (*Operation, error) {
 		bootstrapConfig:     config.BootstrapConfig,
 		introspectHandler:   introspectHandler,
 		gnapRSClient:        gnapRSClient,
+		baseURL:             config.BaseURL,
 	}, nil
 }
 
@@ -227,6 +229,15 @@ func (o *Operation) SetIntrospectHandler(i common.Introspecter) {
 
 func (o *Operation) authRequestHandler(w http.ResponseWriter, req *http.Request) {
 	logger.Debugf("handling auth request to URL: %s", req.URL.String())
+
+	prevURL := req.URL
+
+	var err error
+
+	req.URL, err = url.Parse(o.baseURL + req.URL.Path)
+	if err != nil {
+		req.URL = prevURL
+	}
 
 	authRequest := &gnap.AuthRequest{}
 
@@ -502,8 +513,17 @@ func (o *Operation) oidcCallbackHandler(w http.ResponseWriter, r *http.Request) 
 	}
 }
 
-func (o *Operation) authContinueHandler(w http.ResponseWriter, req *http.Request) {
+func (o *Operation) authContinueHandler(w http.ResponseWriter, req *http.Request) { // nolint: funlen
 	logger.Debugf("handling continue request to URL: %s", req.URL.String())
+
+	prevURL := req.URL
+
+	var err error
+
+	req.URL, err = url.Parse(o.baseURL + req.URL.Path)
+	if err != nil {
+		req.URL = prevURL
+	}
 
 	tokHeader := strings.Split(strings.Trim(req.Header.Get("Authorization"), " "), " ")
 
@@ -659,6 +679,15 @@ func (o *Operation) InternalIntrospectHandler() common.Introspecter {
 
 func (o *Operation) authIntrospectHandler(w http.ResponseWriter, req *http.Request) {
 	logger.Debugf("handling introspect request to URL: %s", req.URL.String())
+
+	prevURL := req.URL
+
+	var err error
+
+	req.URL, err = url.Parse(o.baseURL + req.URL.Path)
+	if err != nil {
+		req.URL = prevURL
+	}
 
 	introspectRequest := &gnap.IntrospectRequest{}
 
