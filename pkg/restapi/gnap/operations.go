@@ -226,6 +226,8 @@ func (o *Operation) SetIntrospectHandler(i common.Introspecter) {
 }
 
 func (o *Operation) authRequestHandler(w http.ResponseWriter, req *http.Request) {
+	logger.Debugf("handling auth request to URL: %s", req.URL.String())
+
 	authRequest := &gnap.AuthRequest{}
 
 	bodyBytes, err := ioutil.ReadAll(req.Body)
@@ -501,6 +503,8 @@ func (o *Operation) oidcCallbackHandler(w http.ResponseWriter, r *http.Request) 
 }
 
 func (o *Operation) authContinueHandler(w http.ResponseWriter, req *http.Request) {
+	logger.Debugf("handling continue request to URL: %s", req.URL.String())
+
 	tokHeader := strings.Split(strings.Trim(req.Header.Get("Authorization"), " "), " ")
 
 	if len(tokHeader) < 2 || tokHeader[0] != "GNAP" {
@@ -654,6 +658,8 @@ func (o *Operation) InternalIntrospectHandler() common.Introspecter {
 }
 
 func (o *Operation) authIntrospectHandler(w http.ResponseWriter, req *http.Request) {
+	logger.Debugf("handling introspect request to URL: %s", req.URL.String())
+
 	introspectRequest := &gnap.IntrospectRequest{}
 
 	bodyBytes, err := ioutil.ReadAll(req.Body)
