@@ -8,7 +8,7 @@ go 1.17
 
 require (
 	github.com/hyperledger/aries-framework-go v0.1.8
-	github.com/lestrrat-go/jwx/v2 v2.0.4
+	github.com/lestrrat-go/jwx/v2 v2.0.5
 	github.com/square/go-jose/v3 v3.0.0-20200630053402-0a67ce9b0693
 	github.com/stretchr/testify v1.8.0
 	github.com/yaronf/httpsign v0.1.13
