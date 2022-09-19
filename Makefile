@@ -62,10 +62,12 @@ bdd-test: clean auth-docker generate-test-keys mock-login-consent-docker
 	@scripts/check_integration.sh
 
 
+# TODO (#288): frapsoft/openssl only has an amd64 version. While this does work under amd64 and arm64 Mac OS currently,
+#               we should add an arm64 version for systems that can only run arm64 code.
 .PHONY: generate-test-keys
 generate-test-keys: clean
 	@mkdir -p -p test/bdd/fixtures/keys/tls
-	@docker run -i --rm \
+	@docker run -i --platform linux/amd64 --rm \
 		-v $(abspath .):/opt/workspace/auth \
 		--entrypoint "/opt/workspace/auth/scripts/generate_test_keys.sh" \
 		frapsoft/openssl
