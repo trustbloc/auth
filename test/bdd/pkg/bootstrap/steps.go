@@ -20,7 +20,7 @@ import (
 )
 
 const (
-	bootstrapDataPath = login.AUTH_HOST + "/bootstrap"
+	bootstrapDataPath = login.AUTH_HOST + "/gnap/bootstrap"
 	docsSDSURL        = "https://TODO.docs.sds.org"
 	keysSDSURL        = "https://TODO.keys.sds.org"
 	authKeyServerURL  = "https://TODO.auth.keyserver.org"
@@ -40,23 +40,11 @@ func NewSteps(ctx *bddctx.BDDContext) *Steps {
 }
 
 func (s *Steps) RegisterSteps(gs *godog.ScenarioContext) {
-	gs.Step("a wallet that has logged in", s.userLoggedIn)
 	gs.Step("a wallet that has logged in with GNAP", s.userLoggedInGNAP)
 	gs.Step("the wallet executes an HTTP GET on the bootstrap endpoint", s.walletFetchesBootstrapData)
 	gs.Step("auth returns the SDS and KeyServer URLs", s.hubAuthReturnsSDSAndKeyServerURLs)
 	gs.Step("the wallet executes an HTTP POST on the bootstrap endpoint", s.walletUpdatesBootstrapData)
 	gs.Step("auth returns the updated bootstrap data", s.hubAuthReturnsUpdatedBootstrapData)
-}
-
-func (s *Steps) userLoggedIn() error {
-	var err error
-
-	s.wallet, err = login.NewSteps(s.ctx).NewWalletLogin()
-	if err != nil {
-		return fmt.Errorf("failed to login user: %w", err)
-	}
-
-	return nil
 }
 
 func (s *Steps) userLoggedInGNAP() error {
@@ -91,12 +79,6 @@ func (s *Steps) hubAuthReturnsSDSAndKeyServerURLs() error {
 	if s.bootstrapDataResult.KeySDSVaultURL != keysSDSURL {
 		return fmt.Errorf(
 			"invalid keys SDS URL: expected %s got %s", keysSDSURL, s.bootstrapDataResult.KeySDSVaultURL,
-		)
-	}
-
-	if s.bootstrapDataResult.AuthZKeyServerURL != authKeyServerURL {
-		return fmt.Errorf(
-			"invalid auth keyserver URL: expected %s got %s", authKeyServerURL, s.bootstrapDataResult.AuthZKeyServerURL,
 		)
 	}
 

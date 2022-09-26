@@ -21,7 +21,7 @@ import (
 	"github.com/trustbloc/edge-core/pkg/log"
 	_ "golang.org/x/crypto/sha3" // nolint:gci // init sha3 hash.
 
-	gnaprest "github.com/trustbloc/auth/pkg/restapi/gnap"
+	gnaprest "github.com/trustbloc/auth/pkg/restapi/operation"
 	"github.com/trustbloc/auth/spi/gnap"
 )
 

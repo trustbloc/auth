@@ -88,10 +88,6 @@ type oauth2Token interface {
 	Extra(string) interface{}
 }
 
-type httpClient interface {
-	Do(req *http.Request) (*http.Response, error)
-}
-
 // Hydra is the client used to interface with the Hydra service.
 type Hydra interface {
 	GetLoginRequest(params *admin.GetLoginRequestParams, opts ...admin.ClientOption) (*admin.GetLoginRequestOK, error)

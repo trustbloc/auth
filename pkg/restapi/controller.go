@@ -10,27 +10,17 @@ import (
 	"fmt"
 
 	"github.com/trustbloc/auth/pkg/restapi/common"
-	"github.com/trustbloc/auth/pkg/restapi/gnap"
 	"github.com/trustbloc/auth/pkg/restapi/operation"
 )
 
 // New returns new controller instance.
-func New(config *operation.Config, gnapConfig *gnap.Config) (*Controller, error) {
+func New(gnapConfig *operation.Config) (*Controller, error) {
 	var allHandlers []common.Handler
 
-	rpService, err := operation.New(config)
-	if err != nil {
-		return nil, fmt.Errorf("failed to initialize auth-rest operations: %w", err)
-	}
-
-	allHandlers = append(allHandlers, rpService.GetRESTHandlers()...)
-
-	gnapService, err := gnap.New(gnapConfig)
+	gnapService, err := operation.New(gnapConfig)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize auth-rest gnap operations: %w", err)
 	}
-
-	rpService.SetIntrospectHandler(gnapService.InternalIntrospectHandler())
 
 	allHandlers = append(allHandlers, gnapService.GetRESTHandlers()...)
 

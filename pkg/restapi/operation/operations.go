@@ -7,17 +7,17 @@ SPDX-License-Identifier: Apache-2.0
 package operation
 
 import (
+	"bytes"
 	"context"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/tls"
-	"crypto/x509"
-	"encoding/base64"
 	"encoding/json"
-	"encoding/pem"
 	"errors"
 	"fmt"
+	"html/template"
+	"io/ioutil"
 	"net/http"
 	"net/url"
 	"strings"
@@ -27,104 +27,121 @@ import (
 	"github.com/cenkalti/backoff"
 	"github.com/coreos/go-oidc/v3/oidc"
 	"github.com/google/uuid"
+	"github.com/hyperledger/aries-framework-go/pkg/common/log"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/jose/jwk"
 	"github.com/hyperledger/aries-framework-go/spi/storage"
-	"github.com/ory/hydra-client-go/client/admin"
-	"github.com/ory/hydra-client-go/models"
 	"github.com/square/go-jose/v3"
-	"github.com/trustbloc/edge-core/pkg/log"
-	tlsutils "github.com/trustbloc/edge-core/pkg/utils/tls"
 	"golang.org/x/oauth2"
 
 	"github.com/trustbloc/auth/pkg/bootstrap/user"
+	"github.com/trustbloc/auth/pkg/gnap/accesspolicy"
+	"github.com/trustbloc/auth/pkg/gnap/api"
+	"github.com/trustbloc/auth/pkg/gnap/authhandler"
 	"github.com/trustbloc/auth/pkg/internal/common/support"
 	"github.com/trustbloc/auth/pkg/restapi/common"
 	oidcmodel "github.com/trustbloc/auth/pkg/restapi/common/oidc"
-	"github.com/trustbloc/auth/pkg/restapi/common/store/cookie"
 	"github.com/trustbloc/auth/spi/gnap"
-)
-
-const (
-	hydraLoginPath    = "/hydra/login"
-	hydraConsentPath  = "/hydra/consent"
-	oidcLoginPath     = "/oauth2/login"
-	oidcCallbackPath  = "/oauth2/callback"
-	bootstrapPath     = "/bootstrap"
-	secretsPath       = "/secret"
-	deviceCertPath    = "/device"
-	authProvidersPath = "/oauth2/providers"
-	// api path params.
-	providerQueryParam        = "provider"
-	stateCookie               = "oauth2_state"
-	providerCookie            = "oauth2_provider"
-	hydraLoginChallengeCookie = "hydra_login_challenge"
-
-	transientStoreName = "transient"
-	bootstrapStoreName = "bootstrapdata"
-	secretsStoreName   = "secrets"
-
-	// redirect url parameter.
-	userProfileQueryParam = "up"
+	"github.com/trustbloc/auth/spi/gnap/proof/httpsig"
 )
 
 var logger = log.New("auth-restapi") //nolint:gochecknoglobals
 
-// Operation defines handlers.
+const (
+	gnapBasePath = "/gnap"
+	// AuthRequestPath endpoint for GNAP authorization request.
+	AuthRequestPath = gnapBasePath + "/auth"
+	// AuthContinuePath endpoint for GNAP authorization continuation.
+	AuthContinuePath = gnapBasePath + "/continue"
+	// AuthIntrospectPath endpoint for GNAP token introspection.
+	AuthIntrospectPath = gnapBasePath + "/introspect"
+	// InteractPath endpoint for GNAP interact.
+	InteractPath = gnapBasePath + "/interact"
+
+	bootstrapPath = gnapBasePath + "/bootstrap"
+
+	// oidc api handlers.
+	authProvidersPath = "/oidc/providers"
+	oidcLoginPath     = "/oidc/login"
+	oidcCallbackPath  = "/oidc/callback"
+
+	// GNAP error response codes.
+	errInvalidRequest = "invalid_request"
+	errRequestDenied  = "request_denied"
+
+	// api path params.
+	providerQueryParam = "provider"
+	txnQueryParam      = "txnID"
+
+	transientStoreName = "gnap_transient"
+	bootstrapStoreName = "bootstrapdata"
+
+	// client redirect query params.
+	interactRefQueryParam  = "interact_ref"
+	responseHashQueryParam = "hash"
+
+	gnapScheme = "GNAP "
+)
+
+// TODO: figure out what logic should go in the access policy vs operation handlers.
+
+// BootstrapData is the user's bootstrap data.
+type BootstrapData struct {
+	DocumentSDSVaultURL string            `json:"documentSDSURL"`
+	KeySDSVaultURL      string            `json:"keySDSURL"`
+	OpsKeyServerURL     string            `json:"opsKeyServerURL"`
+	Data                map[string]string `json:"data,omitempty"`
+}
+
+// UpdateBootstrapDataRequest is a request to update bootstrap data.
+type UpdateBootstrapDataRequest struct {
+	Data map[string]string `json:"data"`
+}
+
+// Operation defines Auth Server GNAP handlers.
 type Operation struct {
-	client              httpClient
-	requestTokens       map[string]string
-	transientStore      storage.Store
+	authHandler         *authhandler.AuthHandler
+	interactionHandler  api.InteractionHandler
+	introspectHandler   common.Introspecter
+	uiEndpoint          string
+	closePopupHTML      string
+	authProviders       []authProvider
 	oidcProvidersConfig map[string]*oidcmodel.ProviderConfig
 	cachedOIDCProviders map[string]oidcProvider
-	uiEndpoint          string
-	bootstrapStore      storage.Store
-	secretsStore        storage.Store
-	bootstrapConfig     *BootstrapConfig
-	hydra               Hydra
-	deviceRootCerts     *x509.CertPool
-	cookies             cookie.Store
-	secretsToken        string
+	cachedOIDCProvLock  sync.RWMutex
 	tlsConfig           *tls.Config
 	callbackURL         string
+	baseURL             string
 	timeout             uint64
-	cachedOIDCProvLock  sync.RWMutex
-	authProviders       []authProvider
-	introspectHandler   common.Introspecter
+	transientStore      storage.Store
+	bootstrapStore      storage.Store
+	bootstrapConfig     *BootstrapConfig
 	gnapRSClient        *gnap.RequestClient
 }
 
-// Config defines configuration for rp operations.
+// Config defines configuration for GNAP operations.
 type Config struct {
-	TLSConfig              *tls.Config
-	RequestTokens          map[string]string
-	OIDC                   *oidcmodel.Config
-	UIEndpoint             string
-	TransientStoreProvider storage.Provider
 	StoreProvider          storage.Provider
-	BootstrapConfig        *BootstrapConfig
-	Hydra                  Hydra
-	DeviceRootCerts        []string
-	DeviceCertSystemPool   bool
-	Cookies                *CookieConfig
+	AccessPolicyConfig     *accesspolicy.Config
+	BaseURL                string
+	ClosePopupHTML         string
+	InteractionHandler     api.InteractionHandler
+	UIEndpoint             string
+	OIDC                   *oidcmodel.Config
 	StartupTimeout         uint64
-	SecretsToken           string
-}
-
-// CookieConfig holds cookie configuration.
-type CookieConfig struct {
-	AuthKey []byte
-	EncKey  []byte
+	TransientStoreProvider storage.Provider
+	TLSConfig              *tls.Config
+	DisableHTTPSigVerify   bool
+	BootstrapConfig        *BootstrapConfig
 }
 
 // BootstrapConfig holds user bootstrap-related config.
 type BootstrapConfig struct {
 	DocumentSDSVaultURL string
 	KeySDSVaultURL      string
-	AuthZKeyServerURL   string
 	OpsKeyServerURL     string
 }
 
-// New returns rp operation instance.
+// New creates GNAP operation handler.
 func New(config *Config) (*Operation, error) {
 	authProviders := make([]authProvider, 0)
 
@@ -137,65 +154,71 @@ func New(config *Config) (*Operation, error) {
 		authProviders = append(authProviders, prov)
 	}
 
-	svc := &Operation{
-		client:              &http.Client{Transport: &http.Transport{TLSClientConfig: config.TLSConfig}},
-		requestTokens:       config.RequestTokens,
-		bootstrapConfig:     config.BootstrapConfig,
-		hydra:               config.Hydra,
+	auth, err := authhandler.New(&authhandler.Config{
+		StoreProvider:      config.StoreProvider,
+		AccessPolicyConfig: config.AccessPolicyConfig,
+		ContinuePath:       config.BaseURL + AuthContinuePath,
+		InteractionHandler: config.InteractionHandler,
+		DisableHTTPSig:     config.DisableHTTPSigVerify,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	transientStore, err := createStore(config.TransientStoreProvider, transientStoreName)
+	if err != nil {
+		return nil, err
+	}
+
+	bootstrapStore, err := createStore(config.StoreProvider, bootstrapStoreName)
+	if err != nil {
+		return nil, err
+	}
+
+	introspectHandler := func(req *gnap.IntrospectRequest) (*gnap.IntrospectResponse, error) {
+		return auth.HandleIntrospection(req, &skipVerify{})
+	}
+
+	gnapRSClient, err := createGNAPClient()
+	if err != nil {
+		return nil, err
+	}
+
+	return &Operation{
+		authHandler:         auth,
 		uiEndpoint:          config.UIEndpoint,
-		cookies:             cookie.NewStore(config.Cookies.AuthKey, config.Cookies.EncKey),
-		secretsToken:        config.SecretsToken,
-		oidcProvidersConfig: config.OIDC.Providers,
-		tlsConfig:           config.TLSConfig,
-		callbackURL:         config.OIDC.CallbackURL,
-		cachedOIDCProviders: make(map[string]oidcProvider),
-		timeout:             config.StartupTimeout,
 		authProviders:       authProviders,
-	}
-
-	var err error
-
-	svc.transientStore, err = createStore(config.TransientStoreProvider)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create store: %w", err)
-	}
-
-	svc.bootstrapStore, err = openStore(config.StoreProvider, bootstrapStoreName)
-	if err != nil {
-		return nil, err
-	}
-
-	svc.deviceRootCerts, err = tlsutils.GetCertPool(config.DeviceCertSystemPool, config.DeviceRootCerts)
-	if err != nil {
-		return nil, err
-	}
-
-	svc.secretsStore, err = openStore(config.StoreProvider, secretsStoreName)
-	if err != nil {
-		return nil, err
-	}
-
-	svc.gnapRSClient, err = createGNAPClient()
-	if err != nil {
-		return nil, err
-	}
-
-	return svc, nil
+		oidcProvidersConfig: config.OIDC.Providers,
+		cachedOIDCProviders: make(map[string]oidcProvider),
+		callbackURL:         config.BaseURL + oidcCallbackPath,
+		timeout:             config.StartupTimeout,
+		transientStore:      transientStore,
+		bootstrapStore:      bootstrapStore,
+		tlsConfig:           config.TLSConfig,
+		interactionHandler:  config.InteractionHandler,
+		closePopupHTML:      config.ClosePopupHTML,
+		bootstrapConfig:     config.BootstrapConfig,
+		introspectHandler:   introspectHandler,
+		gnapRSClient:        gnapRSClient,
+		baseURL:             config.BaseURL,
+	}, nil
 }
 
 // GetRESTHandlers get all controller API handler available for this service.
 func (o *Operation) GetRESTHandlers() []common.Handler {
 	return []common.Handler{
+		support.NewHTTPHandler(AuthRequestPath, http.MethodPost, o.authRequestHandler),
+		// TODO add txn_id to url path
+		support.NewHTTPHandler(InteractPath, http.MethodGet, o.interactHandler),
+		support.NewHTTPHandler(AuthContinuePath, http.MethodPost, o.authContinueHandler),
+		support.NewHTTPHandler(AuthIntrospectPath, http.MethodPost, o.authIntrospectHandler),
+
 		support.NewHTTPHandler(authProvidersPath, http.MethodGet, o.authProvidersHandler),
-		support.NewHTTPHandler(hydraLoginPath, http.MethodGet, o.hydraLoginHandler),
 		support.NewHTTPHandler(oidcLoginPath, http.MethodGet, o.oidcLoginHandler),
 		support.NewHTTPHandler(oidcCallbackPath, http.MethodGet, o.oidcCallbackHandler),
-		support.NewHTTPHandler(hydraConsentPath, http.MethodGet, o.hydraConsentHandler),
+
 		support.NewHTTPHandler(bootstrapPath, http.MethodGet, o.getBootstrapDataHandler),
 		support.NewHTTPHandler(bootstrapPath, http.MethodPost, o.postBootstrapDataHandler),
-		support.NewHTTPHandler(secretsPath, http.MethodPost, o.postSecretHandler),
-		support.NewHTTPHandler(secretsPath, http.MethodGet, o.getSecretHandler),
-		support.NewHTTPHandler(deviceCertPath, http.MethodPost, o.deviceCertHandler),
 	}
 }
 
@@ -204,95 +227,90 @@ func (o *Operation) SetIntrospectHandler(i common.Introspecter) {
 	o.introspectHandler = i
 }
 
+func (o *Operation) authRequestHandler(w http.ResponseWriter, req *http.Request) {
+	logger.Debugf("handling auth request to URL: %s", req.URL.String())
+
+	prevURL := req.URL
+
+	var err error
+
+	req.URL, err = url.Parse(o.baseURL + req.URL.Path)
+	if err != nil {
+		req.URL = prevURL
+	}
+
+	authRequest := &gnap.AuthRequest{}
+
+	bodyBytes, err := ioutil.ReadAll(req.Body)
+	if err != nil {
+		logger.Errorf("error reading request body: %s", err.Error())
+		w.WriteHeader(http.StatusInternalServerError)
+		o.writeResponse(w, &gnap.ErrorResponse{
+			Error: errRequestDenied,
+		})
+
+		return
+	}
+
+	req.Body = ioutil.NopCloser(bytes.NewReader(bodyBytes))
+
+	if err = json.Unmarshal(bodyBytes, authRequest); err != nil {
+		logger.Errorf("failed to parse gnap auth request: %s", err.Error())
+		w.WriteHeader(http.StatusBadRequest)
+		o.writeResponse(w, &gnap.ErrorResponse{
+			Error: errInvalidRequest,
+		})
+
+		return
+	}
+
+	v := httpsig.NewVerifier(req)
+
+	resp, err := o.authHandler.HandleAccessRequest(authRequest, v, "")
+	if err != nil {
+		logger.Errorf("access policy failed to handle access request: %s", err.Error())
+		w.WriteHeader(http.StatusUnauthorized)
+		o.writeResponse(w, &gnap.ErrorResponse{
+			Error: errRequestDenied,
+		})
+
+		return
+	}
+
+	o.writeResponse(w, resp)
+}
+
+func (o *Operation) interactHandler(w http.ResponseWriter, req *http.Request) {
+	// TODO validate txnID
+	txnID := req.URL.Query().Get(txnQueryParam)
+
+	redirURL, err := url.Parse(o.uiEndpoint + "/sign-up")
+	if err != nil {
+		o.writeErrorResponse(w, http.StatusInternalServerError, "failed to construct redirect url")
+
+		return
+	}
+
+	q := redirURL.Query()
+
+	q.Add(txnQueryParam, txnID)
+
+	redirURL.RawQuery = q.Encode()
+
+	// redirect to UI
+	http.Redirect(w, req, redirURL.String(), http.StatusFound)
+}
+
 func (o *Operation) authProvidersHandler(w http.ResponseWriter, _ *http.Request) {
 	o.writeResponse(w, &authProviders{Providers: o.authProviders})
 }
 
-func (o *Operation) hydraLoginHandler(w http.ResponseWriter, r *http.Request) { //nolint:funlen
-	logger.Debugf("handling login request: %s", r.URL.String())
-
-	challenge := r.URL.Query().Get("login_challenge")
-	if challenge == "" {
-		o.writeErrorResponse(w, http.StatusBadRequest, "missing challenge on login request")
-
-		return
-	}
-
-	jar, err := o.cookies.Open(r)
-	if err != nil {
-		o.writeErrorResponse(w, http.StatusInternalServerError, "failed to open cookie store: %s", err.Error())
-
-		return
-	}
-
-	jar.Set(hydraLoginChallengeCookie, challenge)
-
-	err = jar.Save(r, w)
-	if err != nil {
-		o.writeErrorResponse(w, http.StatusInternalServerError, "failed to save hydra login cookie: %s", err.Error())
-
-		return
-	}
-
-	req := admin.NewGetLoginRequestParams()
-
-	req.SetLoginChallenge(challenge)
-
-	// ensure login request is valid
-	resp, err := o.hydra.GetLoginRequest(req)
-	if err != nil {
-		o.writeErrorResponse(w,
-			http.StatusBadGateway, "failed to fetch login request from hydra: %s", err.Error())
-
-		return
-	}
-
-	// TODO need to check if the relying party (login.Payload.Client.ClientID) is registered:
-	//  https://github.com/trustbloc/auth/issues/53.
-
-	// fetching the request url from the valid login request to fetch provider (custom parameter)
-	providerID, err := o.fetchProviderFromURL(resp.Payload.RequestURL)
-	if err != nil {
-		o.writeErrorResponse(w,
-			http.StatusBadRequest, "failed to fetch the provider name: %s", err.Error())
-
-		return
-	}
-
-	if providerID != "" {
-		redirectURL := oidcLoginPath + "?" + providerQueryParam + "=" + providerID
-
-		http.Redirect(w, r, redirectURL, http.StatusFound)
-		logger.Debugf("redirected to oidc login: %s", redirectURL)
-
-		return
-	}
-
-	redirectURL := o.uiEndpoint
-
-	http.Redirect(w, r, redirectURL, http.StatusFound)
-	logger.Debugf("redirected to: %s", redirectURL)
+type oidcTransientData struct {
+	Provider string `json:"provider,omitempty"`
+	TxnID    string `json:"txnID,omitempty"`
 }
 
-func (o *Operation) fetchProviderFromURL(requestURL *string) (string, error) {
-	parsedURL, err := url.Parse(*requestURL)
-	if err != nil {
-		return "", fmt.Errorf("failed to parse url: %s", parsedURL)
-	}
-
-	params, err := url.ParseQuery(parsedURL.RawQuery)
-	if err != nil {
-		return "", fmt.Errorf("failed to parse raw query for provider name: %s", parsedURL.RawQuery)
-	}
-
-	if providerName, ok := params[providerQueryParam]; ok {
-		return providerName[0], nil
-	}
-
-	return "", nil
-}
-
-func (o *Operation) oidcLoginHandler(w http.ResponseWriter, r *http.Request) {
+func (o *Operation) oidcLoginHandler(w http.ResponseWriter, r *http.Request) { // nolint: funlen
 	logger.Debugf("handling request: %s", r.URL.String())
 
 	providerID := r.URL.Query().Get(providerQueryParam)
@@ -302,28 +320,16 @@ func (o *Operation) oidcLoginHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	interactTxnID := r.URL.Query().Get(txnQueryParam)
+	if interactTxnID == "" {
+		o.writeErrorResponse(w, http.StatusBadRequest, "missing transaction ID")
+
+		return
+	}
+
 	provider, err := o.getProvider(providerID)
 	if err != nil {
 		o.writeErrorResponse(w, http.StatusBadRequest, "get provider: %s", err.Error())
-
-		return
-	}
-
-	state := uuid.New().String()
-
-	jar, err := o.cookies.Open(r)
-	if err != nil {
-		o.writeErrorResponse(w, http.StatusInternalServerError, "failed to open session cookies: %s", err.Error())
-
-		return
-	}
-
-	jar.Set(stateCookie, state)
-	jar.Set(providerCookie, provider.Name())
-
-	err = jar.Save(r, w)
-	if err != nil {
-		o.writeErrorResponse(w, http.StatusInternalServerError, "failed to persist session cookies: %w", err.Error())
 
 		return
 	}
@@ -342,6 +348,29 @@ func (o *Operation) oidcLoginHandler(w http.ResponseWriter, r *http.Request) {
 		scopes = append(scopes, "profile", "email")
 	}
 
+	state := uuid.New().String()
+
+	data := &oidcTransientData{
+		Provider: providerID,
+		TxnID:    interactTxnID,
+	}
+
+	dataBytes, err := json.Marshal(data)
+	if err != nil {
+		o.writeErrorResponse(w, http.StatusInternalServerError,
+			fmt.Sprintf("failed to marshal oidc txn data : %s", err))
+
+		return
+	}
+
+	err = o.transientStore.Put(state, dataBytes)
+	if err != nil {
+		o.writeErrorResponse(w,
+			http.StatusInternalServerError, fmt.Sprintf("failed to write state data to transient store: %s", err))
+
+		return
+	}
+
 	authOption := oauth2.SetAuthURLParam(providerQueryParam, providerID)
 	redirectURL := provider.OAuth2Config(
 		scopes...,
@@ -352,7 +381,7 @@ func (o *Operation) oidcLoginHandler(w http.ResponseWriter, r *http.Request) {
 	logger.Debugf("redirected to: %s", redirectURL)
 }
 
-func (o *Operation) oidcCallbackHandler(w http.ResponseWriter, r *http.Request) { //nolint:funlen,gocyclo
+func (o *Operation) oidcCallbackHandler(w http.ResponseWriter, r *http.Request) { // nolint:funlen,gocyclo
 	state := r.URL.Query().Get("state")
 	if state == "" {
 		o.writeErrorResponse(w, http.StatusBadRequest, "missing state")
@@ -367,41 +396,28 @@ func (o *Operation) oidcCallbackHandler(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	jar, err := o.cookies.Open(r)
+	// get state and provider details from transient store
+	dataBytes, err := o.transientStore.Get(state)
 	if err != nil {
-		o.writeErrorResponse(w, http.StatusInternalServerError, "failed to get cookies: %s", err.Error())
+		o.writeErrorResponse(w,
+			http.StatusBadRequest, fmt.Sprintf("failed to get state data to transient store: %s", err))
 
 		return
 	}
 
-	cookieState, found := jar.Get(stateCookie)
-	if !found {
-		o.writeErrorResponse(w, http.StatusBadRequest, "missing state cookie")
+	data := &oidcTransientData{}
+
+	err = json.Unmarshal(dataBytes, data)
+	if err != nil {
+		o.writeErrorResponse(w, http.StatusInternalServerError,
+			fmt.Sprintf("failed to parse oidc txn data : %s", err))
 
 		return
 	}
 
-	if state != cookieState {
-		o.writeErrorResponse(w, http.StatusBadRequest, "invalid state parameter")
+	providerID := data.Provider
 
-		return
-	}
-
-	cookieProvider, found := jar.Get(providerCookie)
-	if !found {
-		o.writeErrorResponse(w, http.StatusBadRequest, "missing provider cookie")
-
-		return
-	}
-
-	hydraLoginChallenge, found := jar.Get(hydraLoginChallengeCookie)
-	if !found {
-		o.writeErrorResponse(w, http.StatusBadRequest, "missing hydra login challenge cookie")
-
-		return
-	}
-
-	provider, err := o.getProvider(fmt.Sprintf("%s", cookieProvider))
+	provider, err := o.getProvider(providerID)
 	if err != nil {
 		o.writeErrorResponse(w, http.StatusBadRequest, "get provider : %s", err.Error())
 
@@ -450,112 +466,118 @@ func (o *Operation) oidcCallbackHandler(w http.ResponseWriter, r *http.Request) 
 		}
 	}
 
+	interactRef, responseHash, clientInteract, err := o.interactionHandler.CompleteInteraction(
+		data.TxnID,
+		&api.ConsentResult{
+			SubjectData: map[string]string{
+				"sub": claims.Sub,
+			},
+		},
+	)
 	if err != nil {
 		o.writeErrorResponse(w, http.StatusInternalServerError,
-			fmt.Sprintf("failed to fetch user profile from store : %s", err))
+			fmt.Sprintf("failed to complete GNAP interaction : %s", err))
 
 		return
 	}
 
-	jar.Delete(hydraLoginChallengeCookie)
-	jar.Delete(stateCookie)
-	jar.Delete(providerCookie)
-
-	err = jar.Save(r, w)
+	clientURI, err := url.Parse(clientInteract.Finish.URI)
 	if err != nil {
-		o.writeErrorResponse(w, http.StatusInternalServerError, "failed to delete cookies: %s", err.Error())
+		o.writeErrorResponse(w, http.StatusBadRequest, "client provided invalid redirect URI : %s", err.Error())
 
 		return
 	}
 
-	accept := admin.NewAcceptLoginRequestParams()
+	// TODO: validate clientURI for security
 
-	accept.SetLoginChallenge(fmt.Sprintf("%s", hydraLoginChallenge))
-	accept.SetBody(&models.AcceptLoginRequest{
-		Subject: &claims.Sub,
-	})
+	q := clientURI.Query()
 
-	loginResponse, err := o.hydra.AcceptLoginRequest(accept)
+	q.Add(interactRefQueryParam, interactRef)
+	q.Add(responseHashQueryParam, responseHash)
+
+	clientURI.RawQuery = q.Encode()
+
+	redirect := clientURI.String()
+
+	t, err := template.ParseFiles(o.closePopupHTML)
 	if err != nil {
-		o.writeErrorResponse(w, http.StatusBadGateway,
-			"hydra failed to accept login request : %s", err.Error())
+		o.writeErrorResponse(w, http.StatusInternalServerError, "failed to parse template : %s", err.Error())
 
 		return
 	}
 
-	redirectURL := *loginResponse.Payload.RedirectTo
-
-	http.Redirect(w, r, redirectURL, http.StatusFound)
-	logger.Debugf("redirected to: %s", redirectURL)
+	if err := t.Execute(w, map[string]interface{}{
+		"RedirectURI": redirect,
+	}); err != nil {
+		logger.Errorf(fmt.Sprintf("failed execute html template: %s", err.Error()))
+	}
 }
 
-func (o *Operation) hydraConsentHandler(w http.ResponseWriter, r *http.Request) {
-	logger.Debugf("handling request: %s", r.URL.String())
+func (o *Operation) authContinueHandler(w http.ResponseWriter, req *http.Request) { // nolint: funlen
+	logger.Debugf("handling continue request to URL: %s", req.URL.String())
 
-	challenge := r.URL.Query().Get("consent_challenge")
-	if challenge == "" {
-		o.writeErrorResponse(w, http.StatusBadRequest, "missing consent_challenge")
+	prevURL := req.URL
+
+	var err error
+
+	req.URL, err = url.Parse(o.baseURL + req.URL.Path)
+	if err != nil {
+		req.URL = prevURL
+	}
+
+	tokHeader := strings.Split(strings.Trim(req.Header.Get("Authorization"), " "), " ")
+
+	if len(tokHeader) < 2 || tokHeader[0] != "GNAP" {
+		logger.Errorf("GNAP continuation endpoint requires GNAP token")
+		w.WriteHeader(http.StatusUnauthorized)
+		o.writeResponse(w, &gnap.ErrorResponse{
+			Error: errRequestDenied,
+		})
 
 		return
 	}
 
-	req := admin.NewGetConsentRequestParamsWithContext(r.Context())
-	req.SetConsentChallenge(challenge)
+	token := tokHeader[1]
 
-	consent, err := o.hydra.GetConsentRequest(req)
+	continueRequest := &gnap.ContinueRequest{}
+
+	bodyBytes, err := ioutil.ReadAll(req.Body)
 	if err != nil {
-		o.writeErrorResponse(w, http.StatusBadGateway,
-			"failed to fetch consent request from hydra : %s", err)
+		logger.Errorf("error reading request body: %s", err.Error())
+		w.WriteHeader(http.StatusInternalServerError)
+		o.writeResponse(w, &gnap.ErrorResponse{
+			Error: errRequestDenied,
+		})
 
 		return
 	}
 
-	// ensure user exists
-	_, err = user.NewStore(o.bootstrapStore).Get(consent.Payload.Subject)
-	if err != nil {
-		o.writeErrorResponse(w, http.StatusInternalServerError, "failed to query for user profile: %s", err.Error())
+	req.Body = ioutil.NopCloser(bytes.NewReader(bodyBytes))
+
+	if err = json.Unmarshal(bodyBytes, continueRequest); err != nil {
+		logger.Errorf("failed to parse gnap continue request: %s", err.Error())
+		w.WriteHeader(http.StatusBadRequest)
+		o.writeResponse(w, &gnap.ErrorResponse{
+			Error: errInvalidRequest,
+		})
 
 		return
 	}
 
-	params := admin.NewAcceptConsentRequestParams()
+	v := httpsig.NewVerifier(req)
 
-	params.SetContext(r.Context())
-	params.SetConsentChallenge(challenge)
-	params.SetBody(&models.AcceptConsentRequest{
-		GrantAccessTokenAudience: consent.Payload.RequestedAccessTokenAudience,
-		GrantScope:               consent.Payload.RequestedScope,
-		HandledAt:                models.NullTime(time.Now()),
-		Remember:                 true,
-		Session:                  nil,
-	})
-
-	accepted, err := o.hydra.AcceptConsentRequest(params)
+	resp, err := o.authHandler.HandleContinueRequest(continueRequest, token, v)
 	if err != nil {
-		o.writeErrorResponse(w, http.StatusBadGateway, "hydra failed to accept consent request: %s", err.Error())
+		logger.Errorf("access policy failed to handle continue request: %s", err.Error())
+		w.WriteHeader(http.StatusUnauthorized)
+		o.writeResponse(w, &gnap.ErrorResponse{
+			Error: errRequestDenied,
+		})
 
 		return
 	}
 
-	redirectURL := *accepted.Payload.RedirectTo
-
-	http.Redirect(w, r, redirectURL, http.StatusFound)
-	logger.Debugf("redirected to: %s", redirectURL)
-}
-
-// TODO onboard user at key server and SDS: https://github.com/trustbloc/auth/issues/38
-func (o *Operation) onboardUser(sub string) (*user.Profile, error) {
-	userProfile := &user.Profile{
-		ID:   sub,
-		Data: make(map[string]string),
-	}
-
-	err := user.NewStore(o.bootstrapStore).Save(userProfile)
-	if err != nil {
-		return nil, fmt.Errorf("failed to save user profile : %w", err)
-	}
-
-	return userProfile, nil
+	o.writeResponse(w, resp)
 }
 
 func (o *Operation) getBootstrapDataHandler(w http.ResponseWriter, r *http.Request) {
@@ -583,7 +605,6 @@ func (o *Operation) getBootstrapDataHandler(w http.ResponseWriter, r *http.Reque
 	response, err := json.Marshal(&BootstrapData{
 		DocumentSDSVaultURL: o.bootstrapConfig.DocumentSDSVaultURL,
 		KeySDSVaultURL:      o.bootstrapConfig.KeySDSVaultURL,
-		AuthZKeyServerURL:   o.bootstrapConfig.AuthZKeyServerURL,
 		OpsKeyServerURL:     o.bootstrapConfig.OpsKeyServerURL,
 		Data:                profile.Data,
 	})
@@ -643,216 +664,80 @@ func (o *Operation) postBootstrapDataHandler(w http.ResponseWriter, r *http.Requ
 	logger.Debugf("finished handling request")
 }
 
-func (o *Operation) postSecretHandler(w http.ResponseWriter, r *http.Request) {
-	logger.Debugf("handling request")
+type skipVerify struct{}
 
-	subject, proceed := o.subject(w, r)
-	if !proceed {
-		return
-	}
-
-	// ensure user exists
-	_, err := user.NewStore(o.bootstrapStore).Get(subject)
-	if errors.Is(err, storage.ErrDataNotFound) {
-		o.writeErrorResponse(w, http.StatusConflict, "no such user")
-
-		return
-	}
-
-	if err != nil {
-		o.writeErrorResponse(w, http.StatusInternalServerError, "failed to query bootstrap store: %s", err.Error())
-
-		return
-	}
-
-	// ensure secret is not set already
-	_, err = o.secretsStore.Get(subject)
-	if err == nil {
-		o.writeErrorResponse(w, http.StatusConflict, "secret already set")
-
-		return
-	}
-
-	if !errors.Is(err, storage.ErrDataNotFound) {
-		o.writeErrorResponse(w, http.StatusInternalServerError, "failed to query secrets store: %s", err.Error())
-
-		return
-	}
-
-	payload := &SetSecretRequest{}
-
-	err = json.NewDecoder(r.Body).Decode(payload)
-	if err != nil {
-		o.writeErrorResponse(w, http.StatusBadRequest, "failed to decode payload: %s", err.Error())
-
-		return
-	}
-
-	err = o.secretsStore.Put(subject, payload.Secret)
-	if err != nil {
-		o.writeErrorResponse(w, http.StatusInternalServerError, "failed to save to secrets store: %s", err.Error())
-
-		return
-	}
-
-	logger.Debugf("finished handling request")
-}
-
-func (o *Operation) getSecretHandler(w http.ResponseWriter, r *http.Request) {
-	logger.Debugf("handling request")
-
-	token, proceed := o.bearerToken(w, r)
-	if !proceed {
-		return
-	}
-
-	if token != o.secretsToken {
-		o.writeErrorResponse(w, http.StatusForbidden, "unauthorized")
-
-		return
-	}
-
-	sub := r.URL.Query().Get("sub")
-	if sub == "" {
-		o.writeErrorResponse(w, http.StatusBadRequest, "missing parameter")
-
-		return
-	}
-
-	secret, err := o.secretsStore.Get(sub)
-	if errors.Is(err, storage.ErrDataNotFound) {
-		o.writeErrorResponse(w, http.StatusBadRequest, "non-existent user")
-
-		return
-	}
-
-	if err != nil {
-		o.writeErrorResponse(w, http.StatusInternalServerError, "failed to query secrets store: %s", err.Error())
-
-		return
-	}
-
-	response, err := json.Marshal(&GetSecretResponse{
-		Secret: base64.StdEncoding.EncodeToString(secret),
-	})
-	if err != nil {
-		o.writeErrorResponse(w, http.StatusInternalServerError, "failed to encode response: %s", err.Error())
-
-		return
-	}
-
-	_, err = w.Write(response)
-	if err != nil {
-		logger.Errorf("failed to write response: %s", err.Error())
-
-		return
-	}
-
-	logger.Debugf("finished handling request")
-}
-
-type certHolder struct {
-	X5C    []string `json:"x5c"`
-	Sub    string   `json:"sub"`
-	AAGUID string   `json:"aaguid,omitempty"`
-}
-
-func (o *Operation) deviceCertHandler(w http.ResponseWriter, r *http.Request) {
-	dec := json.NewDecoder(r.Body)
-
-	var ch certHolder
-
-	err := dec.Decode(&ch)
-	if err != nil {
-		o.writeErrorResponse(w, http.StatusBadRequest, "cert request invalid json")
-
-		return
-	}
-
-	userProfile, err := user.NewStore(o.bootstrapStore).Get(ch.Sub)
-	if errors.Is(err, storage.ErrDataNotFound) {
-		o.writeErrorResponse(w, http.StatusBadRequest, "invalid user profile id")
-
-		return
-	} else if err != nil {
-		o.writeErrorResponse(w, http.StatusInternalServerError, "failed to load user profile")
-
-		return
-	}
-
-	err = o.verifyDeviceCert(&ch)
-	if err != nil {
-		o.writeErrorResponse(w, http.StatusBadRequest, err.Error())
-	}
-
-	userProfile.AAGUID = ch.AAGUID
-
-	profileBytes, err := json.Marshal(userProfile)
-	if err != nil {
-		o.writeErrorResponse(w, http.StatusInternalServerError,
-			fmt.Sprintf("failed to marshal user profile data : %s", err))
-
-		return
-	}
-
-	o.handleAuthResult(w, r, profileBytes)
-}
-
-func (o *Operation) verifyDeviceCert(ch *certHolder) error {
-	if len(ch.X5C) == 0 {
-		return errors.New("missing device certificate")
-	}
-
-	var certs []*x509.Certificate
-
-	for _, x5c := range ch.X5C {
-		block, _ := pem.Decode([]byte(x5c))
-		if block == nil || block.Bytes == nil {
-			return errors.New("can't parse certificate PEM")
-		}
-
-		cert, e := x509.ParseCertificate(block.Bytes)
-		if e != nil {
-			return errors.New("can't parse certificate")
-		}
-
-		certs = append(certs, cert)
-	}
-
-	// first element is cert to verify
-	deviceCert := certs[0]
-	// any additional certs are intermediate certs
-	intermediateCerts := certs[1:]
-
-	intermediatePool := x509.NewCertPool()
-
-	for _, iCert := range intermediateCerts {
-		intermediatePool.AddCert(iCert)
-	}
-
-	_, err := deviceCert.Verify(x509.VerifyOptions{Intermediates: intermediatePool, Roots: o.deviceRootCerts})
-	if err != nil {
-		return errors.New("cert chain fails to authenticate")
-	}
-
+// Verify skip request verification when introspecting internally through Go.
+func (s skipVerify) Verify(_ *gnap.ClientKey) error {
 	return nil
 }
 
-func (o *Operation) handleAuthResult(w http.ResponseWriter, r *http.Request, profileBytes []byte) {
-	handle := url.QueryEscape(uuid.New().String())
+// InternalIntrospectHandler returns a handler that allows the auth server's handlers to perform GNAP introspection
+// with itself as the AS and RS.
+func (o *Operation) InternalIntrospectHandler() common.Introspecter {
+	return o.introspectHandler
+}
 
-	err := o.transientStore.Put(handle, profileBytes)
+func (o *Operation) authIntrospectHandler(w http.ResponseWriter, req *http.Request) {
+	logger.Debugf("handling introspect request to URL: %s", req.URL.String())
+
+	prevURL := req.URL
+
+	var err error
+
+	req.URL, err = url.Parse(o.baseURL + req.URL.Path)
 	if err != nil {
-		o.writeErrorResponse(w,
-			http.StatusInternalServerError, fmt.Sprintf("failed to write handle to transient store: %s", err))
+		req.URL = prevURL
+	}
+
+	introspectRequest := &gnap.IntrospectRequest{}
+
+	bodyBytes, err := ioutil.ReadAll(req.Body)
+	if err != nil {
+		logger.Errorf("error reading request body: %s", err.Error())
+		w.WriteHeader(http.StatusInternalServerError)
+		o.writeResponse(w, &gnap.ErrorResponse{
+			Error: errRequestDenied,
+		})
 
 		return
 	}
 
-	redirectURL := fmt.Sprintf("%s?%s=%s", o.uiEndpoint, userProfileQueryParam, handle)
+	req.Body = ioutil.NopCloser(bytes.NewReader(bodyBytes))
 
-	http.Redirect(w, r, redirectURL, http.StatusFound)
-	logger.Debugf("redirected to: %s", redirectURL)
+	if err = json.Unmarshal(bodyBytes, introspectRequest); err != nil {
+		logger.Errorf("failed to parse gnap introspection request: %s", err.Error())
+		w.WriteHeader(http.StatusBadRequest)
+		o.writeResponse(w, &gnap.ErrorResponse{
+			Error: errInvalidRequest,
+		})
+
+		return
+	}
+
+	v := httpsig.NewVerifier(req)
+
+	resp, err := o.authHandler.HandleIntrospection(introspectRequest, v)
+	if err != nil {
+		logger.Errorf("failed to handle gnap introspection request: %s", err.Error())
+		w.WriteHeader(http.StatusUnauthorized)
+		o.writeResponse(w, &gnap.ErrorResponse{
+			Error: errRequestDenied,
+		})
+
+		return
+	}
+
+	o.writeResponse(w, resp)
+}
+
+// WriteResponse writes interface value to response.
+func (o *Operation) writeResponse(rw http.ResponseWriter, v interface{}) {
+	rw.Header().Set("Content-Type", "application/json")
+
+	err := json.NewEncoder(rw).Encode(v)
+	if err != nil {
+		logger.Errorf("Unable to send response: %s", err.Error())
+	}
 }
 
 // writeResponse writes interface value to response.
@@ -865,116 +750,6 @@ func (o *Operation) writeErrorResponse(rw http.ResponseWriter, status int, msg s
 	if _, err := rw.Write([]byte(msg)); err != nil {
 		logger.Errorf("Unable to send error message, %s", err)
 	}
-}
-
-// WriteResponse writes interface value to response.
-func (o *Operation) writeResponse(rw http.ResponseWriter, v interface{}) {
-	rw.Header().Set("Content-Type", "application/json")
-
-	err := json.NewEncoder(rw).Encode(v)
-	if err != nil {
-		logger.Errorf("Unable to send response, %s", err.Error())
-	}
-}
-
-const (
-	bearerScheme = "Bearer "
-	gnapScheme   = "GNAP "
-)
-
-func (o *Operation) subject(w http.ResponseWriter, r *http.Request) (string, bool) {
-	authHeader := strings.TrimSpace(r.Header.Get("authorization"))
-	if authHeader == "" {
-		o.writeErrorResponse(w, http.StatusForbidden, "no credentials")
-
-		return "", false
-	}
-
-	switch {
-	case strings.HasPrefix(authHeader, bearerScheme):
-		return o.oidcSub(w, r, authHeader)
-	case strings.HasPrefix(authHeader, gnapScheme):
-		return o.gnapSub(w, r, authHeader)
-	default:
-		o.writeErrorResponse(w, http.StatusBadRequest, "invalid authorization scheme")
-
-		return "", false
-	}
-}
-
-func (o *Operation) oidcSub(w http.ResponseWriter, r *http.Request, authHeader string) (string, bool) {
-	encoded := authHeader[len(bearerScheme):]
-
-	token, err := base64.StdEncoding.DecodeString(encoded)
-	if err != nil {
-		o.writeErrorResponse(w, http.StatusBadRequest, "failed to decode token: %s", err.Error())
-
-		return "", false
-	}
-
-	request := admin.NewIntrospectOAuth2TokenParams()
-	request.SetContext(r.Context())
-	request.SetToken(string(token))
-
-	introspection, err := o.hydra.IntrospectOAuth2Token(request)
-	if err != nil {
-		o.writeErrorResponse(w, http.StatusBadGateway, "failed to introspect token: %s", err.Error())
-
-		return "", false
-	}
-
-	return introspection.Payload.Sub, true
-}
-
-func (o *Operation) gnapSub(w http.ResponseWriter, _ *http.Request, authHeader string) (string, bool) {
-	token := authHeader[len(gnapScheme):]
-
-	introspection, err := o.introspectHandler(&gnap.IntrospectRequest{
-		AccessToken:    token,
-		ResourceServer: o.gnapRSClient,
-	})
-	if err != nil {
-		o.writeErrorResponse(w, http.StatusUnauthorized, "failed to introspect token: %s", err.Error())
-
-		return "", false
-	}
-
-	if sub, ok := introspection.SubjectData["sub"]; ok {
-		return sub, true
-	}
-
-	o.writeErrorResponse(w, http.StatusUnauthorized, "token does not grant access to subject id")
-
-	return "", false
-}
-
-func (o *Operation) bearerToken(w http.ResponseWriter, r *http.Request) (string, bool) {
-	const scheme = "Bearer "
-
-	// https://tools.ietf.org/html/rfc6750#section-2.1
-	authHeader := strings.TrimSpace(r.Header.Get("authorization"))
-	if authHeader == "" {
-		o.writeErrorResponse(w, http.StatusForbidden, "no credentials")
-
-		return "", false
-	}
-
-	if !strings.HasPrefix(authHeader, scheme) {
-		o.writeErrorResponse(w, http.StatusBadRequest, "invalid authorization scheme")
-
-		return "", false
-	}
-
-	encoded := authHeader[len(scheme):]
-
-	token, err := base64.StdEncoding.DecodeString(encoded)
-	if err != nil {
-		o.writeErrorResponse(w, http.StatusBadRequest, "failed to decode token: %s", err.Error())
-
-		return "", false
-	}
-
-	return string(token), true
 }
 
 func (o *Operation) getProvider(providerID string) (oidcProvider, error) {
@@ -1001,47 +776,6 @@ func (o *Operation) getProvider(providerID string) (oidcProvider, error) {
 	o.cachedOIDCProvLock.Unlock()
 
 	return prov, nil
-}
-
-func createStore(p storage.Provider) (storage.Store, error) {
-	s, err := p.OpenStore(transientStoreName)
-	if err != nil {
-		return nil, fmt.Errorf("failed to open store [%s] : %w", transientStoreName, err)
-	}
-
-	return s, nil
-}
-
-func openStore(provider storage.Provider, name string) (storage.Store, error) {
-	s, err := provider.OpenStore(name)
-	if err != nil {
-		return nil, fmt.Errorf("failed to open store [%s] : %w", transientStoreName, err)
-	}
-
-	return s, nil
-}
-
-func createGNAPClient() (*gnap.RequestClient, error) {
-	priv, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
-	if err != nil {
-		return nil, fmt.Errorf("creating public key for GNAP RS role: %w", err)
-	}
-
-	return &gnap.RequestClient{
-		IsReference: false,
-		Key: &gnap.ClientKey{
-			Proof: "httpsig",
-			JWK: jwk.JWK{
-				JSONWebKey: jose.JSONWebKey{
-					Key:       &priv.PublicKey,
-					KeyID:     "key1",
-					Algorithm: "ES256",
-				},
-				Kty: "EC",
-				Crv: "P-256",
-			},
-		},
-	}, nil
 }
 
 func (o *Operation) initOIDCProvider(providerID string, config *oidcmodel.ProviderConfig) (oidcProvider, error) {
@@ -1091,6 +825,92 @@ func (o *Operation) initOIDCProvider(providerID string, config *oidcmodel.Provid
 			TLSClientConfig: o.tlsConfig,
 		}},
 	}, nil
+}
+
+func createStore(p storage.Provider, name string) (storage.Store, error) {
+	s, err := p.OpenStore(name)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open store [%s]: %w", name, err)
+	}
+
+	return s, nil
+}
+
+func createGNAPClient() (*gnap.RequestClient, error) {
+	priv, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		return nil, fmt.Errorf("creating public key for GNAP RS role: %w", err)
+	}
+
+	return &gnap.RequestClient{
+		IsReference: false,
+		Key: &gnap.ClientKey{
+			Proof: "httpsig",
+			JWK: jwk.JWK{
+				JSONWebKey: jose.JSONWebKey{
+					Key:       &priv.PublicKey,
+					KeyID:     "key2",
+					Algorithm: "ES256",
+				},
+				Kty: "EC",
+				Crv: "P-256",
+			},
+		},
+	}, nil
+}
+
+func (o *Operation) onboardUser(sub string) (*user.Profile, error) {
+	userProfile := &user.Profile{
+		ID:   sub,
+		Data: make(map[string]string),
+	}
+
+	err := user.NewStore(o.bootstrapStore).Save(userProfile)
+	if err != nil {
+		return nil, fmt.Errorf("failed to save user profile : %w", err)
+	}
+
+	return userProfile, nil
+}
+
+func (o *Operation) subject(w http.ResponseWriter, r *http.Request) (string, bool) {
+	authHeader := strings.TrimSpace(r.Header.Get("authorization"))
+	if authHeader == "" {
+		o.writeErrorResponse(w, http.StatusForbidden, "no credentials")
+
+		return "", false
+	}
+
+	switch {
+	case strings.HasPrefix(authHeader, gnapScheme):
+		return o.gnapSub(w, r, authHeader)
+	default:
+		o.writeErrorResponse(w, http.StatusBadRequest, "invalid authorization scheme")
+
+		return "", false
+	}
+}
+
+func (o *Operation) gnapSub(w http.ResponseWriter, _ *http.Request, authHeader string) (string, bool) {
+	token := authHeader[len(gnapScheme):]
+
+	introspection, err := o.introspectHandler(&gnap.IntrospectRequest{
+		AccessToken:    token,
+		ResourceServer: o.gnapRSClient,
+	})
+	if err != nil {
+		o.writeErrorResponse(w, http.StatusUnauthorized, "failed to introspect token: %s", err.Error())
+
+		return "", false
+	}
+
+	if sub, ok := introspection.SubjectData["sub"]; ok {
+		return sub, true
+	}
+
+	o.writeErrorResponse(w, http.StatusUnauthorized, "token does not grant access to subject id")
+
+	return "", false
 }
 
 func merge(existing *user.Profile, update *UpdateBootstrapDataRequest) *user.Profile {

@@ -17,7 +17,7 @@ import (
 
 	"github.com/trustbloc/edge-core/pkg/log"
 
-	gnaprest "github.com/trustbloc/auth/pkg/restapi/gnap"
+	gnaprest "github.com/trustbloc/auth/pkg/restapi/operation"
 	"github.com/trustbloc/auth/spi/gnap"
 )
 

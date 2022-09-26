@@ -31,9 +31,7 @@ import (
 	"github.com/trustbloc/auth/pkg/gnap/accesspolicy"
 	"github.com/trustbloc/auth/pkg/gnap/interact/redirect"
 	"github.com/trustbloc/auth/pkg/restapi"
-	"github.com/trustbloc/auth/pkg/restapi/common/hydra"
 	oidcmodel "github.com/trustbloc/auth/pkg/restapi/common/oidc"
-	"github.com/trustbloc/auth/pkg/restapi/gnap"
 	"github.com/trustbloc/auth/pkg/restapi/operation"
 )
 
@@ -484,36 +482,13 @@ func startAuthService(parameters *authRestParameters, srv server) error {
 	// TODO: support creating multiple GNAP user interaction handlers
 	interact, err := redirect.New(&redirect.Config{
 		StoreProvider:    provider,
-		InteractBasePath: parameters.externalURL + gnap.InteractPath,
+		InteractBasePath: parameters.externalURL + operation.InteractPath,
 	})
 	if err != nil {
 		return fmt.Errorf("initializing GNAP interaction handler: %w", err)
 	}
 
 	svc, err := restapi.New(&operation.Config{
-		TransientStoreProvider: provider,
-		StoreProvider:          provider,
-		Hydra:                  hydra.NewClient(parameters.oidcParams.hydraURL, rootCAs),
-		OIDC: &oidcmodel.Config{
-			CallbackURL: parameters.oidcParams.callbackURL,
-			Providers:   parameters.oidcParams.providers,
-		},
-		BootstrapConfig: &operation.BootstrapConfig{
-			DocumentSDSVaultURL: parameters.bootstrapParams.documentSDSVaultURL,
-			KeySDSVaultURL:      parameters.bootstrapParams.keySDSVaultURL,
-			AuthZKeyServerURL:   parameters.bootstrapParams.authZKeyServerURL,
-			OpsKeyServerURL:     parameters.bootstrapParams.opsKeyServerURL,
-		},
-		DeviceRootCerts: parameters.devicecertParams.caCerts,
-		TLSConfig:       &tls.Config{RootCAs: rootCAs}, //nolint:gosec
-		UIEndpoint:      uiEndpoint,
-		Cookies: &operation.CookieConfig{
-			AuthKey: parameters.keys.sessionCookieAuthKey,
-			EncKey:  parameters.keys.sessionCookieEncKey,
-		},
-		StartupTimeout: parameters.startupTimeout,
-		SecretsToken:   parameters.secretsAPIToken,
-	}, &gnap.Config{
 		StoreProvider:      provider,
 		BaseURL:            parameters.externalURL,
 		AccessPolicyConfig: gnapAPConfig,
@@ -525,7 +500,7 @@ func startAuthService(parameters *authRestParameters, srv server) error {
 			CallbackURL: parameters.oidcParams.callbackURL,
 			Providers:   parameters.oidcParams.providers,
 		},
-		BootstrapConfig: &gnap.BootstrapConfig{
+		BootstrapConfig: &operation.BootstrapConfig{
 			DocumentSDSVaultURL: parameters.bootstrapParams.documentSDSVaultURL,
 			KeySDSVaultURL:      parameters.bootstrapParams.keySDSVaultURL,
 			OpsKeyServerURL:     parameters.bootstrapParams.opsKeyServerURL,
