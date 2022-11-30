@@ -29,7 +29,7 @@ import (
 	"github.com/square/go-jose/v3"
 	"github.com/stretchr/testify/require"
 
-	gnaprest "github.com/trustbloc/auth/pkg/restapi/gnap"
+	gnaprest "github.com/trustbloc/auth/pkg/restapi/operation"
 	"github.com/trustbloc/auth/spi/gnap"
 )
 

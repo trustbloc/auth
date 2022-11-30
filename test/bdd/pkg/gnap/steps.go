@@ -21,6 +21,7 @@ import (
 	"github.com/cucumber/godog"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/jose/jwk"
 	"github.com/square/go-jose/v3"
+
 	"github.com/trustbloc/auth/component/gnap/as"
 	"github.com/trustbloc/auth/component/gnap/rs"
 	"github.com/trustbloc/auth/spi/gnap"
@@ -34,10 +35,9 @@ const (
 	expectedInteractURL = authServerURL + "/gnap/interact"
 
 	oidcProviderSelectorURL = authServerURL + "/oidc/login"
-	oidcCallbackURLURL      = authServerURL + "/oidc/callback"
 	authServerSignUpURL     = authServerURL + "/ui/sign-up"
 
-	mockOIDCProviderName = "mockbank1" // providers.yaml
+	mockOIDCProviderName = "mockbank" // providers.yaml
 )
 
 type Steps struct {

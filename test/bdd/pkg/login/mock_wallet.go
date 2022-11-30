@@ -20,6 +20,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"regexp"
 	"strings"
 
 	"github.com/coreos/go-oidc/v3/oidc"
@@ -29,12 +30,14 @@ import (
 	"github.com/ory/hydra-client-go/client/admin"
 	"github.com/ory/hydra-client-go/models"
 	"github.com/square/go-jose/v3"
+	"golang.org/x/oauth2"
+
 	"github.com/trustbloc/auth/component/gnap/as"
 	"github.com/trustbloc/auth/spi/gnap"
 	"github.com/trustbloc/auth/spi/gnap/proof/httpsig"
-	"golang.org/x/oauth2"
 
-	"github.com/trustbloc/auth/pkg/restapi/operation"
+	restapi_gnap "github.com/trustbloc/auth/pkg/restapi/operation"
+
 )
 
 type MockWallet struct {
@@ -53,7 +56,6 @@ type MockWallet struct {
 	ReceivedCallback bool
 	UserData         *UserClaims
 	CallbackErr      error
-	Secret           string
 	gnap             *gnapParams
 }
 
@@ -193,13 +195,9 @@ func (m *MockWallet) gnapReqAccess() error {
 
 const (
 	authServerURL       = "https://auth.trustbloc.local:8070"
-	expectedInteractURL = authServerURL + "/gnap/interact"
-
 	oidcProviderSelectorURL = authServerURL + "/oidc/login"
-	oidcCallbackURLURL      = authServerURL + "/oidc/callback"
 	authServerSignUpURL     = authServerURL + "/ui/sign-up"
-
-	gnapOIDCProviderName = "mockbank1" // providers.yaml
+	gnapOIDCProviderName = "mockbank" // providers.yaml
 )
 
 func (m *MockWallet) gnapInteract() error {
@@ -297,6 +295,18 @@ func (m *MockWallet) gnapInteract() error {
 
 	clientRedirect := result.Header.Get("Location")
 
+	body, err := ioutil.ReadAll(result.Body)
+	if err != nil {
+		return fmt.Errorf("failed to read result body: %w", err)
+	}
+
+	rx := regexp.MustCompile("window.opener.location.href = '(.*)';")
+	res := rx.FindStringSubmatch(string(body))
+
+	clientRedirect = res[1]
+	clientRedirect = strings.Replace(clientRedirect, "\\u0026", "\u0026", -1)
+	clientRedirect = strings.Replace(clientRedirect, "\\/", "/", -1)
+
 	// TODO validate the client finishURL
 	if !strings.HasPrefix(clientRedirect, mockClientFinishURI) {
 		return fmt.Errorf(
@@ -347,7 +357,7 @@ func (m *MockWallet) gnapContinueRequest() error {
 	return nil
 }
 
-func (m *MockWallet) FetchBootstrapData(endpoint string) (*operation.BootstrapData, error) {
+func (m *MockWallet) FetchBootstrapData(endpoint string) (*restapi_gnap.BootstrapData, error) {
 	request, err := http.NewRequest(http.MethodGet, endpoint, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to construct http request: %w", err)
@@ -381,12 +391,12 @@ func (m *MockWallet) FetchBootstrapData(endpoint string) (*operation.BootstrapDa
 		)
 	}
 
-	data := &operation.BootstrapData{}
+	data := &restapi_gnap.BootstrapData{}
 
 	return data, json.NewDecoder(response.Body).Decode(data)
 }
 
-func (m *MockWallet) UpdateBootstrapData(endpoint string, update *operation.UpdateBootstrapDataRequest) error {
+func (m *MockWallet) UpdateBootstrapData(endpoint string, update *restapi_gnap.UpdateBootstrapDataRequest) error {
 	payload, err := json.Marshal(update)
 	if err != nil {
 		return fmt.Errorf("failed to marshal payload: %w", err)
@@ -411,52 +421,6 @@ func (m *MockWallet) UpdateBootstrapData(endpoint string, update *operation.Upda
 		closeErr := response.Body.Close()
 		if closeErr != nil {
 			fmt.Printf("WARNING - failed to close http response body: %s\n", closeErr.Error())
-		}
-	}()
-
-	if response.StatusCode != http.StatusOK {
-		msg, err := ioutil.ReadAll(response.Body)
-		if err != nil {
-			fmt.Printf("WARNING - failed to read response body: %s\n", err.Error())
-		}
-
-		return fmt.Errorf(
-			"unexpected response: code=%d msg=%s", response.StatusCode, msg,
-		)
-	}
-
-	return nil
-}
-
-func (m *MockWallet) CreateAndPushSecretToHubAuth(endpoint string) error {
-	m.Secret = uuid.New().String()
-
-	payload, err := json.Marshal(&operation.SetSecretRequest{
-		Secret: []byte(m.Secret),
-	})
-	if err != nil {
-		return fmt.Errorf("failed to marshal request: %w", err)
-	}
-
-	request, err := http.NewRequest(http.MethodPost, endpoint, bytes.NewReader(payload))
-	if err != nil {
-		return fmt.Errorf("failed to create http request: %w", err)
-	}
-
-	err = m.addAuthHeaders(request, payload)
-	if err != nil {
-		return err
-	}
-
-	response, err := m.httpClient.Do(request)
-	if err != nil {
-		return fmt.Errorf("failed to push secret to auth: %w", err)
-	}
-
-	defer func() {
-		closeErr := response.Body.Close()
-		if closeErr != nil {
-			fmt.Printf("WARNING - failed to close response body: %s\n", closeErr.Error())
 		}
 	}()
 

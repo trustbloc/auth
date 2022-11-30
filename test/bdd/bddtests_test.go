@@ -21,8 +21,6 @@ import (
 	"github.com/trustbloc/auth/test/bdd/pkg/common"
 	bddctx "github.com/trustbloc/auth/test/bdd/pkg/context"
 	"github.com/trustbloc/auth/test/bdd/pkg/gnap"
-	"github.com/trustbloc/auth/test/bdd/pkg/login"
-	"github.com/trustbloc/auth/test/bdd/pkg/secrets"
 )
 
 func TestMain(m *testing.M) {
@@ -133,8 +131,6 @@ func FeatureContext(s *godog.ScenarioContext) {
 	}
 
 	common.NewSteps(bddContext).RegisterSteps(s)
-	login.NewSteps(bddContext).RegisterSteps(s)
 	bootstrap.NewSteps(bddContext).RegisterSteps(s)
-	secrets.NewSteps(bddContext).RegisterSteps(s)
 	gnap.NewSteps(bddContext).RegisterSteps(s)
 }
