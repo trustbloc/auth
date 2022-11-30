@@ -11,14 +11,14 @@ require (
 	github.com/lestrrat-go/jwx/v2 v2.0.6
 	github.com/square/go-jose/v3 v3.0.0-20200630053402-0a67ce9b0693
 	github.com/stretchr/testify v1.8.0
-	github.com/yaronf/httpsign v0.1.13
+	github.com/yaronf/httpsign v0.1.14
 )
 
 require (
 	github.com/btcsuite/btcd v0.22.0-beta // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.1.0 // indirect
-	github.com/dunglas/httpsfv v0.1.1 // indirect
+	github.com/dunglas/httpsfv v1.0.0 // indirect
 	github.com/goccy/go-json v0.9.11 // indirect
 	github.com/google/go-cmp v0.5.5 // indirect
 	github.com/hyperledger/aries-framework-go/spi v0.0.0-20220322085443-50e8f9bd208b // indirect
