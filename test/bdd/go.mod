@@ -24,15 +24,15 @@ require (
 
 require (
 	github.com/Azure/go-ansiterm v0.0.0-20170929234023-d6e3b3328b78 // indirect
-	github.com/Microsoft/go-winio v0.4.15-0.20200113171025-3fe6c5262873 // indirect
-	github.com/Microsoft/hcsshim v0.8.9 // indirect
+	github.com/Microsoft/go-winio v0.5.2 // indirect
+	github.com/Microsoft/hcsshim v0.8.25 // indirect
 	github.com/PuerkitoBio/purell v1.1.1 // indirect
 	github.com/PuerkitoBio/urlesc v0.0.0-20170810143723-de5bf2ad4578 // indirect
 	github.com/asaskevich/govalidator v0.0.0-20200907205600-7a23bdc65eef // indirect
 	github.com/btcsuite/btcd v0.22.0-beta // indirect
 	github.com/cenkalti/backoff v2.2.1+incompatible // indirect
-	github.com/containerd/containerd v1.3.4 // indirect
-	github.com/containerd/continuity v0.0.0-20200710164510-efbc4488d8fe // indirect
+	github.com/containerd/containerd v1.5.18 // indirect
+	github.com/containerd/continuity v0.3.0 // indirect
 	github.com/cucumber/gherkin-go/v19 v19.0.3 // indirect
 	github.com/cucumber/messages-go/v16 v16.0.1 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
@@ -65,7 +65,6 @@ require (
 	github.com/hyperledger/aries-framework-go/spi v0.0.0-20220330140627-07042d78580c // indirect
 	github.com/josharian/intern v1.0.0 // indirect
 	github.com/kilic/bls12-381 v0.1.1-0.20210503002446-7b7597926c69 // indirect
-	github.com/konsorten/go-windows-terminal-sequences v1.0.3 // indirect
 	github.com/lestrrat-go/blackmagic v1.0.1 // indirect
 	github.com/lestrrat-go/httpcc v1.0.1 // indirect
 	github.com/lestrrat-go/httprc v1.0.1 // indirect
@@ -77,11 +76,11 @@ require (
 	github.com/morikuni/aec v1.0.0 // indirect
 	github.com/oklog/ulid v1.3.1 // indirect
 	github.com/opencontainers/go-digest v1.0.0 // indirect
-	github.com/opencontainers/image-spec v1.0.1 // indirect
-	github.com/opencontainers/runc v0.1.1 // indirect
+	github.com/opencontainers/image-spec v1.0.2 // indirect
+	github.com/opencontainers/runc v1.0.2 // indirect
 	github.com/opentracing/opentracing-go v1.2.0 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
-	github.com/sirupsen/logrus v1.6.0 // indirect
+	github.com/sirupsen/logrus v1.8.1 // indirect
 	github.com/spf13/pflag v1.0.5 // indirect
 	github.com/stretchr/testify v1.7.5 // indirect
 	github.com/teserakt-io/golang-ed25519 v0.0.0-20210104091850-3888c087a4c8 // indirect
@@ -92,7 +91,7 @@ require (
 	golang.org/x/crypto v0.0.0-20220427172511-eb4f295cb31f // indirect
 	golang.org/x/net v0.0.0-20211112202133-69e39bad7dc2 // indirect
 	golang.org/x/sync v0.0.0-20210220032951-036812b2e83c // indirect
-	golang.org/x/sys v0.0.0-20211216021012-1d35b9e2eb4e // indirect
+	golang.org/x/sys v0.0.0-20220722155257-8c9f86f7a55f // indirect
 	golang.org/x/text v0.3.7 // indirect
 	google.golang.org/appengine v1.6.7 // indirect
 	google.golang.org/genproto v0.0.0-20211208223120-3a66f561d7aa // indirect
@@ -101,7 +100,6 @@ require (
 	gopkg.in/square/go-jose.v2 v2.5.1 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
-	gotest.tools/v3 v3.0.3 // indirect
 )
 
 replace github.com/trustbloc/auth => ../..
